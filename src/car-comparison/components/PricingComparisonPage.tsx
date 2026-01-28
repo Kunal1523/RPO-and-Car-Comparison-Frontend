@@ -1554,7 +1554,6 @@
 // export default PriceComparisonPage;
 
 
-
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, TrendingUp, List, LayoutGrid, ChevronDown } from 'lucide-react';
@@ -1582,6 +1581,9 @@ interface PricingData {
 interface GroupedVariant { variant_id: string; variant_name: string; avg_price: number; min_price: number; max_price: number; types: { type: string; price: number }[]; }
 interface SelectedCar { id: string; brand: string; model: string; pricing?: PricingData[]; }
 
+// FIX 1: Use environment variable or relative API URL instead of localhost
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+alert(API_BASE_URL);
 const groupByVariant = (pricing: PricingData[]): GroupedVariant[] => {
   const grouped = new Map<string, GroupedVariant>();
   pricing.forEach(p => {
@@ -1723,10 +1725,8 @@ const PriceComparisonPage = () => {
   ]);
   const [selectedVariant, setSelectedVariant] = useState<{ variant: GroupedVariant; carId: string } | null>(null);
   const [domReady, setDomReady] = useState(false);
-
-  useEffect(() => {
-    setDomReady(true);
-  }, []);
+  // FIX 2: Add loading state to prevent premature API calls
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
 
   const carColors = { '1': 'bg-blue-600', '2': 'bg-red-600' };
 
@@ -1748,49 +1748,64 @@ const PriceComparisonPage = () => {
   });
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/catalog')
-      .then(r => r.json()).then(d => setCatalog(d.brands))
+    setDomReady(true);
+  }, []);
+
+  // FIX 3: Fixed API URL and added proper error handling
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/catalog`)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP error! status: ${r.status}`);
+        return r.json();
+      })
+      .then(d => {
+        setCatalog(d.brands);
+        setCatalogLoaded(true);
+      })
       .catch(err => console.error('Catalog Error:', err));
   }, []);
 
+  // FIX 4: Fixed API URL
   const fetchPricing = async (car: SelectedCar) => {
     try {
-      const res = await fetch(`http://localhost:8000/v1/pricing?brand_name=${encodeURIComponent(car.brand)}&car_name=${encodeURIComponent(car.model)}`);
+      const res = await fetch(`${API_BASE_URL}/v1/pricing?brand_name=${encodeURIComponent(car.brand)}&car_name=${encodeURIComponent(car.model)}`);
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
       if (data.success && data.pricing) {
         setCars(p => p.map(c => (c.id === car.id ? { ...c, pricing: data.pricing } : c)));
       }
-    } catch (err) { console.error('Pricing Error:', err); }
+    } catch (err) { 
+      console.error('Pricing Error:', err); 
+    }
   };
 
-  // Auto-fetch pricing for prefilled cars
+  // FIX 5: Fixed hook dependencies - only run when catalog is loaded
   useEffect(() => {
-    if (catalog.length > 0) {
-      cars.forEach(car => {
-        if (car.brand && car.model && !car.pricing) {
-          fetchPricing(car);
-        }
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catalog, cars.length]);
-
-  // Auto-prefill vehicle 2 when catalog loads
-  useEffect(() => {
-    if (catalog.length > 0 && cars[1].brand === '' && cars[1].model === '') {
-      const vehicle2Brand = catalog.find(b => b.brand_name !== cars[0].brand) || catalog[0];
-      const vehicle2Car = vehicle2Brand?.cars[0];
-
-      if (vehicle2Brand && vehicle2Car) {
-        setCars(prev => prev.map(c =>
-          c.id === '2'
-            ? { ...c, brand: vehicle2Brand.brand_name, model: vehicle2Car.car_name }
-            : c
-        ));
+    if (!catalogLoaded) return;
+    
+    cars.forEach(car => {
+      if (car.brand && car.model && !car.pricing) {
+        fetchPricing(car);
       }
+    });
+  }, [catalogLoaded, cars.map(c => `${c.id}-${c.brand}-${c.model}-${!!c.pricing}`).join(',')]);
+
+  // FIX 6: Fixed hook dependencies - only run once when catalog loads
+  useEffect(() => {
+    if (!catalogLoaded || catalog.length === 0) return;
+    if (cars[1].brand !== '' || cars[1].model !== '') return;
+    
+    const vehicle2Brand = catalog.find(b => b.brand_name !== cars[0].brand) || catalog[0];
+    const vehicle2Car = vehicle2Brand?.cars[0];
+
+    if (vehicle2Brand && vehicle2Car) {
+      setCars(prev => prev.map(c =>
+        c.id === '2'
+          ? { ...c, brand: vehicle2Brand.brand_name, model: vehicle2Car.car_name }
+          : c
+      ));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catalog]);
+  }, [catalogLoaded, catalog.length]);
 
   const updateCar = (id: string, key: 'brand' | 'model', value: string) => {
     setCars(p => p.map(c => {
@@ -1801,32 +1816,30 @@ const PriceComparisonPage = () => {
     }));
   };
 
-  // Initialize common filters when pricing data is loaded
-  React.useEffect(() => {
+  // FIX 7: Fixed hook dependencies
+  useEffect(() => {
     const allPricing = cars.flatMap(c => c.pricing || []);
-    if (allPricing.length > 0) {
-      const uniqueFuelTypes = Array.from(new Set(allPricing.map(p => p.fuel_type).filter((t): t is string => !!t)));
-      const uniqueTransmissions = Array.from(new Set(allPricing.map(p => p.transmission_type).filter((t): t is string => !!t)));
-      const uniqueVariants = Array.from(new Set(allPricing.map(p => p.variant_id)));
-      const uniquePaintTypes = Array.from(new Set(allPricing.map(p => p.paint_type).filter((t): t is string => !!t)));
-      const uniqueEditions = Array.from(new Set(allPricing.map(p => p.edition).filter((t): t is string => !!t)));
+    if (allPricing.length === 0) return;
 
-      // --- KEY CHANGE: APPLY SPECIFIC DEFAULTS ---
-      const defaultFuel = uniqueFuelTypes.filter((f: string) => f.toLowerCase() === 'petrol');
-      const defaultTrans = uniqueTransmissions.filter((t: string) => ['at', 'dct', 'ivt'].includes(t.toLowerCase()));
-      const defaultPaint = uniquePaintTypes.filter((p: string) => ['dual tone', 'dual_tone'].includes(p.toLowerCase()));
-      const defaultEdition = uniqueEditions.filter((e: string) => ['limited edition', 'limited_edition'].includes(e.toLowerCase()));
+    const uniqueFuelTypes: string[] = Array.from(new Set(allPricing.map(p => p.fuel_type).filter((t): t is string => !!t)));
+    const uniqueTransmissions: string[] = Array.from(new Set(allPricing.map(p => p.transmission_type).filter((t): t is string => !!t)));
+    const uniqueVariants: string[] = Array.from(new Set(allPricing.map(p => p.variant_id)));
+    const uniquePaintTypes: string[] = Array.from(new Set(allPricing.map(p => p.paint_type).filter((t): t is string => !!t)));
+    const uniqueEditions: string[] = Array.from(new Set(allPricing.map(p => p.edition).filter((t): t is string => !!t)));
 
-      setCommonFilters({
-        selectedFuelTypes: new Set(defaultFuel.length > 0 ? defaultFuel : uniqueFuelTypes),
-        selectedTransmissions: new Set(defaultTrans.length > 0 ? defaultTrans : uniqueTransmissions),
-        selectedVariants: new Set(uniqueVariants),
-        selectedPaintTypes: new Set(defaultPaint.length > 0 ? defaultPaint : uniquePaintTypes),
-        selectedEditions: new Set(defaultEdition.length > 0 ? defaultEdition : uniqueEditions)
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cars[0].pricing?.length, cars[1].pricing?.length]);
+    const defaultFuel = uniqueFuelTypes.filter((f) => f.toLowerCase() === 'petrol');
+    const defaultTrans = uniqueTransmissions.filter((t) => ['at', 'dct', 'ivt'].includes(t.toLowerCase()));
+    const defaultPaint = uniquePaintTypes.filter((p) => ['dual tone', 'dual_tone'].includes(p.toLowerCase()));
+    const defaultEdition = uniqueEditions.filter((e) => ['limited edition', 'limited_edition'].includes(e.toLowerCase()));
+
+    setCommonFilters({
+      selectedFuelTypes: new Set(defaultFuel.length > 0 ? defaultFuel : uniqueFuelTypes),
+      selectedTransmissions: new Set(defaultTrans.length > 0 ? defaultTrans : uniqueTransmissions),
+      selectedVariants: new Set(uniqueVariants),
+      selectedPaintTypes: new Set(defaultPaint.length > 0 ? defaultPaint : uniquePaintTypes),
+      selectedEditions: new Set(defaultEdition.length > 0 ? defaultEdition : uniqueEditions)
+    });
+  }, [cars.map(c => c.pricing?.length || 0).join(',')]);
 
   // Toggle a single filter value
   const toggleCommonFilter = (filterType: keyof CommonFilters, value: string) => {
@@ -1878,7 +1891,8 @@ const PriceComparisonPage = () => {
     <div className="h-screen w-screen overflow-hidden bg-slate-50 flex flex-col">
       {/* TOP NAV - Moved Action Buttons to Header via Portal */}
       <div className="hidden" />
-      {domReady && document.getElementById('header-action-bar') && createPortal(
+      {/* FIX 8: Added null check for portal target */}
+      {domReady && typeof document !== 'undefined' && document.getElementById('header-action-bar') && createPortal(
         <div className="flex items-center gap-3">
           <div className="flex bg-slate-100 p-1 rounded-xl border">
             <button
@@ -1998,10 +2012,10 @@ const PriceComparisonPage = () => {
           {/* Common Filters - Horizontal Layout */}
           {carsWithPricing.length > 0 && (() => {
             const allPricing = cars.flatMap(c => c.pricing || []);
-            const uniqueFuelTypes = Array.from(new Set(allPricing.map(p => p.fuel_type).filter(Boolean))).sort();
-            const uniqueTransmissions = Array.from(new Set(allPricing.map(p => p.transmission_type).filter(Boolean))).sort();
-            const uniquePaintTypes = Array.from(new Set(allPricing.map(p => p.paint_type).filter(Boolean))).sort();
-            const uniqueEditions = Array.from(new Set(allPricing.map(p => p.edition).filter(Boolean))).sort();
+            const uniqueFuelTypes: string[] = Array.from(new Set(allPricing.map(p => p.fuel_type).filter((t): t is string => !!t))).sort();
+            const uniqueTransmissions: string[] = Array.from(new Set(allPricing.map(p => p.transmission_type).filter((t): t is string => !!t))).sort();
+            const uniquePaintTypes: string[] = Array.from(new Set(allPricing.map(p => p.paint_type).filter((t): t is string => !!t))).sort();
+            const uniqueEditions: string[] = Array.from(new Set(allPricing.map(p => p.edition).filter((t): t is string => !!t))).sort();
 
             return (
               <div className="space-y-3 pt-3 border-t">
@@ -2027,7 +2041,7 @@ const PriceComparisonPage = () => {
                         </summary>
                         <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
                           <div className="p-2 space-y-1">
-                            {uniqueFuelTypes.map((fuel: string) => (
+                            {uniqueFuelTypes.map((fuel) => (
                               <label key={fuel} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors">
                                 <input
                                   type="checkbox"
@@ -2059,7 +2073,7 @@ const PriceComparisonPage = () => {
                         </summary>
                         <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
                           <div className="p-2 space-y-1">
-                            {uniqueTransmissions.map((transmission: string) => (
+                            {uniqueTransmissions.map((transmission) => (
                               <label key={transmission} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors">
                                 <input
                                   type="checkbox"
@@ -2091,7 +2105,7 @@ const PriceComparisonPage = () => {
                         </summary>
                         <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
                           <div className="p-2 space-y-1">
-                            {uniquePaintTypes.map((paint: string) => (
+                            {uniquePaintTypes.map((paint) => (
                               <label key={paint} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors">
                                 <input
                                   type="checkbox"
@@ -2125,7 +2139,7 @@ const PriceComparisonPage = () => {
                         </summary>
                         <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
                           <div className="p-2 space-y-1">
-                            {uniqueEditions.map((edition: string) => (
+                            {uniqueEditions.map((edition) => (
                               <label key={edition} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors">
                                 <input
                                   type="checkbox"
@@ -2257,7 +2271,6 @@ const PriceComparisonPage = () => {
 };
 
 export default PriceComparisonPage
-
 
 
 
