@@ -1,0 +1,388 @@
+/* App.css */
+
+/* Restored excel-like table styling from original standalone RPO index.html */
+.excel-container {
+  overflow: auto;
+  max-height: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: white;
+  position: relative;
+}
+
+.excel-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  color: black;
+}
+
+/* Sticky first column and headers (original behavior) */
+.excel-table th,
+.excel-table td {
+  border-right: 1px solid #d1d5db;
+  border-bottom: 1px solid #d1d5db;
+  padding: 4px 8px;
+  min-width: 60px;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: black;
+}
+
+/* STICKY COLUMN: First column (Regulation/Model names) */
+.excel-table td:first-child,
+.excel-table th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 20;
+  background-color: #f3f4f6;
+  min-width: 140px;
+  border-right: 2px solid #94a3b8;
+}
+
+/* STICKY HEADERS: Top rows */
+.excel-table thead tr:nth-child(1) th {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background-color: #e5e7eb;
+}
+
+.excel-table thead tr:nth-child(2) th {
+  position: sticky;
+  top: 24px;
+  z-index: 30;
+  background-color: #f3f4f6;
+}
+
+.excel-table thead tr:nth-child(3) th {
+  position: sticky;
+  top: 48px;
+  z-index: 30;
+  background-color: #ffffff;
+}
+
+/* TOP-LEFT CORNER: Highest z-index to stay above both sticky rows and sticky columns */
+.excel-table thead tr:nth-child(1) th:first-child {
+  z-index: 41;
+  top: 0;
+}
+
+.excel-table thead tr:nth-child(2) th:first-child {
+  z-index: 41;
+  top: 24px;
+}
+
+.excel-table thead tr:nth-child(3) th:first-child {
+  z-index: 41;
+  top: 48px;
+}
+
+/* Custom scrollbar (original) */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 5px;
+  border: 2px solid #f1f1f1;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ---- sticky layers ---- */
+.sticky-top {
+  position: sticky;
+  z-index: 40 !important;
+  background: #eff6ff !important;
+  /* ✅ ADD: consistent border on all sides */
+  border-right: 1px solid #87b7f6;
+  border-bottom: 1px solid #87b7f6;
+}
+
+.sticky-left {
+  position: sticky;
+  left: 0;
+  z-index: 60 !important;
+  background: #eff6ff !important;
+  border-right: 2px solid #87b7f6;
+}
+
+.sticky-corner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 100 !important;
+  background: #87b7f6 !important;
+  border-right: 2px solid #87b7f6;
+  border-bottom: 1px solid #87b7f6;
+}
+
+/* ---- top offsets for 3 header rows ---- */
+.sticky-top-0 {
+  top: 0;
+}
+
+.sticky-top-1 {
+  top: 24px;
+}
+
+.sticky-top-2 {
+  top: 48px;
+}
+
+:root {
+  --frozen-col: 180px;
+  --month-col-min: 72px;
+  --month-col-max: 220px;
+}
+
+.sticky-corner,
+.sticky-left {
+  min-width: var(--frozen-col);
+  white-space: nowrap;
+}
+
+/* ✅ KEY FIX: All month columns should have exactly the same width */
+.month-col {
+  width: 72px !important;
+  /* Force consistent width */
+  min-width: 72px !important;
+  max-width: 72px !important;
+  box-sizing: border-box;
+  /* Include borders in width calculation */
+  /* ✅ Use 1px borders consistently */
+  border-right: 1px solid #87b7f6 !important;
+  border-bottom: 1px solid #87b7f6 !important;
+}
+
+.sticky-top-offset-left {
+  z-index: 30 !important;
+}
+
+.sticky-top,
+.sticky-left {
+  background-clip: padding-box;
+}
+
+/* ✅ Ensure quarter headers don't add extra borders */
+.sticky-top th {
+  box-sizing: border-box;
+  border-right: 1px solid #87b7f6;
+}
+
+/* ✅ Make year header borders consistent with quarters */
+.sticky-top-0 th {
+  border-right: 2px solid #d1d5db;
+  /* Slightly thicker for year separators */
+}
+
+/* Rest of your CSS... */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ---------- AG Grid wrapper ---------- */
+.rp-grid {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  /* makes grid corners rounded */
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* nicer row label column */
+.rp-rowlabel {
+  font-weight: 800;
+  color: #111827;
+  background: #fafafa;
+  border-right: 2px solid #e5e7eb !important;
+}
+
+/* cell chips */
+.rp-cell-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 4px;
+  min-height: 40px;
+}
+
+.rp-dash {
+  opacity: 0.35;
+  font-weight: 600;
+}
+
+.rp-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.rp-chip-model {
+  background: #2563eb;
+  color: white;
+}
+
+.rp-chip-deadline {
+  background: #ef4444;
+  color: white;
+}
+
+/* Armed cell highlight */
+.rp-armed {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+  background: rgba(37, 99, 235, 0.06);
+}
+
+/* grid lines look cleaner */
+.ag-theme-quartz.rp-grid .ag-cell {
+  border-color: #eef2f7 !important;
+}
+
+/* headers */
+.ag-theme-quartz.rp-grid .ag-header {
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.ag-theme-quartz.rp-grid .ag-header-group-cell,
+.ag-theme-quartz.rp-grid .ag-header-cell {
+  font-weight: 900;
+  color: #111827;
+}
+
+/* hover */
+.ag-theme-quartz.rp-grid .ag-row-hover .ag-cell {
+  background: #f8fafc !important;
+}
+
+.rp-drop-target {
+  outline: 2px dashed #2563eb;
+  outline-offset: -2px;
+  background: rgba(37, 99, 235, 0.04);
+}
+
+/* overall grid container */
+.rp-grid {
+  width: 100%;
+  height: 100%;
+}
+
+/* left pinned row label look */
+.rp-rowlabel {
+  font-weight: 800;
+  background: #f9fafb;
+  border-right: 2px solid #e5e7eb !important;
+}
+
+/* chips INLINE (no stacking) */
+.rp-cell-inline {
+  display: flex;
+  flex-wrap: nowrap;
+  /* ✅ no wrap -> stays in one line */
+  gap: 6px;
+  align-items: center;
+  overflow: hidden;
+  /* if still too tight */
+}
+
+/* dash placeholder */
+.rp-dash {
+  opacity: 0.35;
+}
+
+/* chip look */
+.rp-chip {
+  padding: 4px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.rp-chip-model {
+  background: #2563eb;
+  color: white;
+}
+
+.rp-chip-deadline {
+  background: #ef4444;
+  color: white;
+}
+
+/* selected cell border */
+.rp-selected {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+  background: rgba(37, 99, 235, 0.03);
+}
+
+/* dragging source */
+.rp-drag-from {
+  outline: 2px solid #111827;
+  outline-offset: -2px;
+  background: rgba(17, 24, 39, 0.04);
+}
+
+/* drop target */
+.rp-drop-target {
+  outline: 2px dashed #2563eb;
+  outline-offset: -2px;
+  background: rgba(37, 99, 235, 0.06);
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+} 
+
+/* Container when embedded in unified shell */
+.rpo-app-container {
+  min-height: 100vh;
+  background-color: #f9fafb;
+}

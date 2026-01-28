@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Regulation Planning</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f9fafb;
+      margin: 0;
+    }
+
+    .excel-container {
+      overflow: auto;
+      max-height: 100%;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: white;
+      position: relative;
+    }
+
+    .excel-table {
+      border-collapse: separate;
+      border-spacing: 0;
+      color: black;
+      /* Force black text */
+    }
+
+    .excel-table th,
+    .excel-table td {
+      border-right: 1px solid #d1d5db;
+      border-bottom: 1px solid #d1d5db;
+      padding: 4px 8px;
+      min-width: 60px;
+      white-space: nowrap;
+      font-size: 0.75rem;
+      color: black;
+      /* Force black text */
+    }
+
+    /* STICKY COLUMN: First column (Regulation/Model names) */
+    .excel-table td:first-child,
+    .excel-table th:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 20;
+      background-color: #f3f4f6;
+      /* Light gray for fixed column */
+      min-width: 140px;
+      border-right: 2px solid #94a3b8;
+    }
+
+    /* STICKY HEADERS: Top rows */
+    .excel-table thead tr:nth-child(1) th {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background-color: #e5e7eb;
+    }
+
+    .excel-table thead tr:nth-child(2) th {
+      position: sticky;
+      top: 24px;
+      z-index: 30;
+      background-color: #f3f4f6;
+    }
+
+    .excel-table thead tr:nth-child(3) th {
+      position: sticky;
+      top: 48px;
+      z-index: 30;
+      background-color: #ffffff;
+    }
+
+    /* TOP-LEFT CORNER: Highest z-index to stay above both sticky rows and sticky columns */
+    .excel-table thead tr:nth-child(1) th:first-child {
+      z-index: 41;
+      top: 0;
+    }
+
+    .excel-table thead tr:nth-child(2) th:first-child {
+      z-index: 41;
+      top: 24px;
+    }
+
+    .excel-table thead tr:nth-child(3) th:first-child {
+      z-index: 41;
+      top: 48px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f1f1;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 5px;
+      border: 2px solid #f1f1f1;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+  }
+}
+</script>
+  <link rel="stylesheet" href="/index.css">
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+
+</html>
