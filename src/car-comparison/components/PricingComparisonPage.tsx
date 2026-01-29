@@ -1583,7 +1583,6 @@ interface SelectedCar { id: string; brand: string; model: string; pricing?: Pric
 
 // FIX 1: Use environment variable or relative API URL instead of localhost
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
-alert(API_BASE_URL);
 const groupByVariant = (pricing: PricingData[]): GroupedVariant[] => {
   const grouped = new Map<string, GroupedVariant>();
   pricing.forEach(p => {
@@ -1774,15 +1773,15 @@ const PriceComparisonPage = () => {
       if (data.success && data.pricing) {
         setCars(p => p.map(c => (c.id === car.id ? { ...c, pricing: data.pricing } : c)));
       }
-    } catch (err) { 
-      console.error('Pricing Error:', err); 
+    } catch (err) {
+      console.error('Pricing Error:', err);
     }
   };
 
   // FIX 5: Fixed hook dependencies - only run when catalog is loaded
   useEffect(() => {
     if (!catalogLoaded) return;
-    
+
     cars.forEach(car => {
       if (car.brand && car.model && !car.pricing) {
         fetchPricing(car);
@@ -1794,7 +1793,7 @@ const PriceComparisonPage = () => {
   useEffect(() => {
     if (!catalogLoaded || catalog.length === 0) return;
     if (cars[1].brand !== '' || cars[1].model !== '') return;
-    
+
     const vehicle2Brand = catalog.find(b => b.brand_name !== cars[0].brand) || catalog[0];
     const vehicle2Car = vehicle2Brand?.cars[0];
 
