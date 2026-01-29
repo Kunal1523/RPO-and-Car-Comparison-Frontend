@@ -12,10 +12,15 @@ import {
     Award,
     ChevronRight,
 } from 'lucide-react';
+import { em } from 'framer-motion/client';
 
 interface GlobalLoginProps {
     onLoginSuccess: () => void;
 }
+
+const ENV_EMAIL = import.meta.env.VITE_EMAIL;
+
+const ENV_PASSWORD = import.meta.env.VITE_PASSWORD;
 
 const GlobalLogin: React.FC<GlobalLoginProps> = ({ onLoginSuccess }) => {
     const [email, setEmail] = useState('');
@@ -29,7 +34,7 @@ const GlobalLogin: React.FC<GlobalLoginProps> = ({ onLoginSuccess }) => {
 
         // Simulate network delay for effect
         setTimeout(() => {
-            if (email === 'admin@gmail.com' && password === 'admin123') {
+            if (email === ENV_EMAIL && password === ENV_PASSWORD) {
                 // Shared login state for both apps
                 sessionStorage.setItem('isLoggedIn', 'true');
                 const user = { username: email, name: 'Admin User', loginType: 'manual' };
@@ -259,11 +264,10 @@ const GlobalLogin: React.FC<GlobalLoginProps> = ({ onLoginSuccess }) => {
                                 whileTap={{ scale: email && password && !isLoading ? 0.98 : 1 }}
                                 onClick={handleSubmit}
                                 disabled={isLoading || !email || !password}
-                                className={`w-full py-3.5 px-4 rounded-xl font-bold text-white transition-all relative overflow-hidden ${
-                                    isLoading || !email || !password
-                                        ? 'bg-slate-400 cursor-not-allowed'
-                                        : 'bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700'
-                                } shadow-lg`}
+                                className={`w-full py-3.5 px-4 rounded-xl font-bold text-white transition-all relative overflow-hidden ${isLoading || !email || !password
+                                    ? 'bg-slate-400 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700'
+                                    } shadow-lg`}
                             >
                                 {!isLoading && email && password && (
                                     <motion.div

@@ -232,17 +232,17 @@
 // };
 
 // src/services/api.ts
-import { 
-  ComparisonResponse, 
-  ModelDetails, 
-  SelectionState, 
+import {
+  ComparisonResponse,
+  ModelDetails,
+  SelectionState,
   DropdownOption,
   NewsResponse,
   Brand,
   Variant
 } from '../types';
 
-const BASE_API = import.meta.env.VITE_BASE_API || 'http://localhost:8000';
+const BASE_API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 // ============== OLD API TYPES (for reference/fallback) ==============
 
@@ -290,7 +290,7 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
     // Step 1: Get all brands and cars
     const brandsRes = await fetch(`${BASE_API}/api/brands-cars`);
     if (!brandsRes.ok) throw new Error(`Failed to fetch brands: ${brandsRes.status}`);
-    
+
     const brandsData: { success: boolean; brands: Brand[] } = await brandsRes.json();
     const brands = brandsData.brands || [];
 
@@ -303,7 +303,7 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
     // Step 2: For each car, fetch variants
     for (const brand of brands) {
       brandsSet.add(brand.brand_name);
-      
+
       if (!models[brand.brand_name]) {
         models[brand.brand_name] = [];
       }
@@ -318,8 +318,8 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
           const variantsRes = await fetch(`${BASE_API}/api/cars/${car.car_id}/variants`);
           if (!variantsRes.ok) continue;
 
-          const variantsData: { 
-            success: boolean; 
+          const variantsData: {
+            success: boolean;
             brand_name: string;
             car_name: string;
             variants: Variant[];
@@ -391,7 +391,7 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
 export const fetchComparisonDetails = async (
   selections: SelectionState[]
 ): Promise<ComparisonResponse> => {
-  
+
   if (selections.length < 2) {
     throw new Error('At least 2 vehicles required for comparison');
   }
@@ -427,7 +427,7 @@ export const fetchComparisonDetails = async (
   }
 
   const data = await res.json();
-  
+
   // The new API already returns in the correct format
   return {
     columns: data.columns,

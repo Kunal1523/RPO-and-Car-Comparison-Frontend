@@ -1582,7 +1582,7 @@ interface GroupedVariant { variant_id: string; variant_name: string; avg_price: 
 interface SelectedCar { id: string; brand: string; model: string; pricing?: PricingData[]; }
 
 // FIX 1: Use environment variable or relative API URL instead of localhost
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+const API_BASE_URL = import.meta.env.VITE_REACT_APP_API_URL;
 const groupByVariant = (pricing: PricingData[]): GroupedVariant[] => {
   const grouped = new Map<string, GroupedVariant>();
   pricing.forEach(p => {
