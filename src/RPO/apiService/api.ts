@@ -1,6 +1,7 @@
 import { Draft, PlanData, FinalPlanResponse } from "../utils/types";
-import { API_BASE_URL } from "./config";
+// import { API_BASE_URL } from "./config";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const getHeaders = (email?: string, accessToken?: string) => {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
