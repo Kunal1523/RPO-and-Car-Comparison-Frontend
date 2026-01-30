@@ -33,20 +33,20 @@ const ProjectSelection: React.FC = () => {
     ];
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-200 p-8 flex flex-col items-center justify-center relative overflow-hidden">
+        <div className="min-h-screen bg-blue-100 text-slate-900 p-8 flex flex-col items-center justify-center relative overflow-hidden">
             {/* Background Gradients */}
-            <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-900/20 rounded-full blur-[100px] pointer-events-none" />
-            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-emerald-900/20 rounded-full blur-[100px] pointer-events-none" />
+            <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-200/40 rounded-full blur-[100px] pointer-events-none" />
+            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-emerald-200/40 rounded-full blur-[100px] pointer-events-none" />
 
             <motion.div
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="text-center mb-16 z-10"
             >
-                <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-100 to-slate-400 mb-4">
+                <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 mb-4">
                     Select Your Workspace
                 </h1>
-                <p className="text-slate-400 text-lg max-w-2xl mx-auto">
+                <p className="text-slate-600 text-lg max-w-2xl mx-auto">
                     Choose the application you want to access. You can switch between them later.
                 </p>
             </motion.div>
@@ -58,13 +58,13 @@ const ProjectSelection: React.FC = () => {
                         initial={{ opacity: 0, y: 30 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.1 + 0.2 }}
-                        className={`group relative bg-slate-900/50 backdrop-blur-sm border ${project.borderColor} ${project.hoverBorder} rounded-3xl p-8 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:shadow-${project.id === 'rpo' ? 'emerald' : 'blue'}-900/20 hover:-translate-y-2`}
+                        className={`group relative bg-slate-900 border ${project.borderColor} ${project.hoverBorder} rounded-3xl p-8 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:shadow-${project.id === 'rpo' ? 'emerald' : 'blue'}-900/20 hover:-translate-y-2`}
                         onClick={() => navigate(project.path)}
                     >
                         <div className={`absolute inset-0 bg-gradient-to-br ${project.color} opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-3xl`} />
 
                         <div className="relative z-10 flex flex-col h-full">
-                            <div className="bg-slate-800/80 p-4 rounded-2xl w-fit mb-6 ring-1 ring-white/10 group-hover:scale-110 transition-transform duration-300">
+                            <div className="bg-slate-800 p-4 rounded-2xl w-fit mb-6 ring-1 ring-white/10 group-hover:scale-110 transition-transform duration-300">
                                 {project.icon}
                             </div>
 
@@ -77,7 +77,7 @@ const ProjectSelection: React.FC = () => {
                             </p>
 
                             <div className="flex items-center text-sm font-bold uppercase tracking-wider">
-                                <span className={`px-6 py-3 rounded-xl ${project.btnColor} text-white flex items-center gap-2 transition-all`}>
+                                <span className={`px-6 py-3 rounded-xl ${project.btnColor} text-white flex items-center gap-2 transition-all shadow-lg`}>
                                     Launch App <ArrowRight className="w-4 h-4" />
                                 </span>
                             </div>
@@ -94,7 +94,7 @@ const ProjectSelection: React.FC = () => {
                     sessionStorage.clear();
                     window.location.reload();
                 }}
-                className="mt-16 text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-2 text-sm"
+                className="mt-16 text-slate-500 hover:text-slate-800 transition-colors flex items-center gap-2 text-sm font-medium"
             >
                 Sign Out
             </motion.button>
