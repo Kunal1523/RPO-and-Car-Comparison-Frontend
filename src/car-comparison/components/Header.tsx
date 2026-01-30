@@ -60,7 +60,7 @@
 
 // src/components/Header.tsx
 import React from 'react';
-import { LogOut, BarChart3, GitCompare } from 'lucide-react';
+import { LogOut, BarChart3, GitCompare, Upload } from 'lucide-react';
 import logo from '../Images/amlgolabslogowhite.png';
 
 interface HeaderProps {
@@ -115,8 +115,8 @@ const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChang
             <button
               onClick={() => onPageChange('comparison')}
               className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${currentPage === 'comparison'
-                  ? 'bg-blue-900 text-white shadow'
-                  : 'bg-white text-blue-900 hover:bg-blue-100'
+                ? 'bg-blue-900 text-white shadow'
+                : 'bg-white text-blue-900 hover:bg-blue-100'
                 }`}
             >
               <GitCompare size={16} />
@@ -126,15 +126,25 @@ const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChang
             <button
               onClick={() => onPageChange('pricing')}
               className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${currentPage === 'pricing'
-                  ? 'bg-blue-900 text-white shadow'
-                  : 'bg-white text-blue-900 hover:bg-blue-100'
+                ? 'bg-blue-900 text-white shadow'
+                : 'bg-white text-blue-900 hover:bg-blue-100'
                 }`}
             >
               <BarChart3 size={16} />
               Pricing Comparison
             </button>
           </div>
-          <div id="header-action-bar" className="flex items-center gap-3"></div>
+          <div id="header-action-bar" className="flex items-center gap-3">
+            {currentPage === 'comparison' && (
+              <button
+                onClick={() => alert("Coming Soon")}
+                className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-bold text-slate-500 hover:text-blue-600 transition-colors border border-dashed border-slate-300 hover:border-blue-400 bg-white shadow-sm"
+                title="Upload New Car (Features)"
+              >
+                <Upload size={16} /> <span className="hidden sm:inline">Upload New Car (Features)</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
     </>
