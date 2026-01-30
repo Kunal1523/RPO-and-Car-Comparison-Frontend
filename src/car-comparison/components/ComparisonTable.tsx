@@ -1254,8 +1254,10 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
                                         return { price, label };
                                       })
-                                      .sort((a, b) => a.label.localeCompare(b.label))
-                                      .map(({ price, label }, pIdx: number) => {
+                                      // .sort((a, b) => a.label.localeCompare(b.label))
+                                      // .map(({ price, label }, pIdx: number) => {
+                                      .sort((a: { price: any; label: string }, b: { price: any; label: string }) => a.label.localeCompare(b.label))
+                                      .map(({ price, label }: { price: any; label: string }, pIdx: number) => {
                                         const formattedPrice = new Intl.NumberFormat('en-IN', {
                                           style: 'currency',
                                           currency: price.currency || 'INR',

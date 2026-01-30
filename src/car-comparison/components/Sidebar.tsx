@@ -393,19 +393,45 @@ const cardsContainerVariant = {
   },
 };
 
+// ✅ FIXED: Changed ease from string to array
 const cardVariant = {
   hidden: { opacity: 0, y: 40 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' } },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.45,
+      ease: [0.4, 0, 0.2, 1] as const  // Material Design easeOut
+    }
+  },
 };
 
+// ✅ FIXED: Changed ease from string to array
 const tipVariant = {
   hidden: { opacity: 0, y: 18 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.35, delay: 0.25, ease: 'easeOut' } },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.35,
+      delay: 0.25,
+      ease: [0.4, 0, 0.2, 1] as const
+    }
+  },
 };
 
+// ✅ FIXED: Changed ease from string to array
 const buttonVariant = {
   hidden: { opacity: 0, y: 40 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.35, ease: 'easeOut' } },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.4,
+      delay: 0.35,
+      ease: [0.4, 0, 0.2, 1] as const
+    }
+  },
 };
 
 // ✅ NEW: Map version numbers to display labels
@@ -787,8 +813,8 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading }) => {
               onClick={() => onCompare(selections)}
               disabled={isCompareDisabled}
               className={`w-full py-2.5 px-4 rounded-lg font-semibold text-sm shadow-md transition-all duration-200 ${isCompareDisabled
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700 text-white active:scale-[0.98]'
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white active:scale-[0.98]'
                 }`}
             >
               {isLoading ? 'Comparing...' : `Compare ${selections.length} Vehicles`}
