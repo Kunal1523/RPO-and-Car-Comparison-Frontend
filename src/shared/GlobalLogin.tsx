@@ -37,7 +37,7 @@ const GlobalLogin: React.FC<GlobalLoginProps> = ({ onLoginSuccess }) => {
             if (email === ENV_EMAIL && password === ENV_PASSWORD) {
                 // Shared login state for both apps
                 sessionStorage.setItem('isLoggedIn', 'true');
-                const user = { username: email, name: 'Admin User', loginType: 'manual' };
+                const user = { username: email, name: 'Guest User', loginType: 'manual' };
                 sessionStorage.setItem('manualLoginUser', JSON.stringify(user));
                 onLoginSuccess();
             } else {
