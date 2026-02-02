@@ -820,40 +820,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp, AlertCircle, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-// Types
-interface PriceDetail {
-  type: string;
-  currency: string;
-  ex_showroom_price: number;
-  price_display: string;
-}
-
-interface VariantPriceData {
-  variant_id: string;
-  variant_name: string;
-  prices: PriceDetail[];
-  avg_price: {
-    value: number;
-    display: string;
-  };
-}
-
-interface ComparisonResponse {
-  columns: string[];
-  data: Array<{ feature: string;[key: string]: any }>;
-  variant_pricing?: { [variantName: string]: VariantPriceData };
-}
-
-interface GroupedFeature {
-  featureName: string;
-  values: { [key: string]: string };
-}
-
-interface FeatureGroup {
-  groupName: string;
-  items: GroupedFeature[];
-  hasDifferences: boolean;
-}
+import { ComparisonResponse, FeatureGroup, GroupedFeature, VariantPriceData, PriceDetail } from '../types';
 
 interface ComparisonTableProps {
   data: ComparisonResponse | null;

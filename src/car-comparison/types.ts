@@ -144,9 +144,28 @@ export interface ModelDetails {
   variantIds: Record<string, string>; // ✅ NEW: Map variant name to ID
 }
 
+
+export interface PriceDetail {
+  type: string;
+  currency: string;
+  ex_showroom_price: number;
+  price_display: string;
+}
+
+export interface VariantPriceData {
+  variant_id: string;
+  variant_name: string;
+  prices: PriceDetail[];
+  avg_price: {
+    value: number;
+    display: string;
+  };
+}
+
 export interface ComparisonResponse {
   columns: string[];
-  data: Record<string, any>[];
+  data: Array<{ feature: string;[key: string]: any }>;
+  variant_pricing?: { [variantName: string]: VariantPriceData };
 }
 
 export interface GroupedFeature {
@@ -157,6 +176,7 @@ export interface GroupedFeature {
 export interface FeatureGroup {
   groupName: string;
   items: GroupedFeature[];
+  hasDifferences?: boolean;
 }
 
 export interface NewsArticle {
