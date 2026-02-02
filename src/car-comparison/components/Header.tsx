@@ -71,6 +71,7 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChange }) => {
   const handleLogout = () => {
     sessionStorage.removeItem('isLoggedIn');
+    sessionStorage.removeItem('manualLoginUser');
     window.location.reload();
   };
 

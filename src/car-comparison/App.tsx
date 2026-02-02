@@ -163,7 +163,7 @@
 // const App: React.FC = () => {
 //   // Auth state
 //   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  
+
 //   // Page navigation state
 //   const [currentPage, setCurrentPage] = useState<PageView>('comparison');
 
@@ -330,7 +330,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const loggedIn = sessionStorage.getItem('isLoggedIn');
-    if (loggedIn === 'true') {
+    const manualUser = sessionStorage.getItem('manualLoginUser');
+    if (loggedIn === 'true' || manualUser) {
       setIsAuthenticated(true);
     }
   }, []);
