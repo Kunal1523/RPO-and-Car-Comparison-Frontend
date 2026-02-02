@@ -220,7 +220,7 @@ const GlobalLogin: React.FC<GlobalLoginProps> = ({ onLoginSuccess }) => {
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                         onKeyPress={handleKeyPress}
-                                        placeholder="admin@gmail.com"
+                                        placeholder="Enter your Email address"
                                         className="w-full pl-10 pr-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none bg-slate-50 focus:bg-white"
                                     />
                                 </motion.div>
@@ -240,7 +240,7 @@ const GlobalLogin: React.FC<GlobalLoginProps> = ({ onLoginSuccess }) => {
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         onKeyPress={handleKeyPress}
-                                        placeholder="admin123"
+                                        placeholder="Enter your Password"
                                         className="w-full pl-10 pr-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none bg-slate-50 focus:bg-white"
                                     />
                                 </motion.div>
