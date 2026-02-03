@@ -18,9 +18,23 @@ interface GlobalLoginProps {
     onLoginSuccess: () => void;
 }
 
-const ENV_EMAIL = import.meta.env.VITE_EMAIL;
-
-const ENV_PASSWORD = import.meta.env.VITE_PASSWORD;
+const USERS = [
+    {
+        email: import.meta.env.VITE_EMAIL_1 || import.meta.env.VITE_EMAIL,
+        password: import.meta.env.VITE_PASSWORD_1 || import.meta.env.VITE_PASSWORD,
+        name: 'msil User1'
+    },
+    {
+        email: import.meta.env.VITE_EMAIL_2,
+        password: import.meta.env.VITE_PASSWORD_2,
+        name: 'msil User2'
+    },
+    {
+        email: import.meta.env.VITE_EMAIL_3,
+        password: import.meta.env.VITE_PASSWORD_3,
+        name: 'msil User3'
+    }
+].filter(u => u.email && u.password);
 
 const GlobalLogin: React.FC<GlobalLoginProps> = ({ onLoginSuccess }) => {
     const [email, setEmail] = useState('');
@@ -34,10 +48,12 @@ const GlobalLogin: React.FC<GlobalLoginProps> = ({ onLoginSuccess }) => {
 
         // Simulate network delay for effect
         setTimeout(() => {
-            if (email === ENV_EMAIL && password === ENV_PASSWORD) {
+            const validUser = USERS.find(u => u.email === email && u.password === password);
+
+            if (validUser) {
                 // Shared login state for both apps
                 sessionStorage.setItem('isLoggedIn', 'true');
-                const user = { username: email, name: 'Guest User', loginType: 'manual' };
+                const user = { username: email, name: validUser.name, loginType: 'manual' };
                 sessionStorage.setItem('manualLoginUser', JSON.stringify(user));
                 onLoginSuccess();
             } else {
