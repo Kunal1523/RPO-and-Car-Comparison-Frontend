@@ -167,13 +167,15 @@
 // export default Sidebar;
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { NavTab, Draft } from '../utils/types';
 import {
     CheckCircle,
     FileText,
     Plus,
     Trash2,
-    LogOut
+    LogOut,
+    ArrowLeft
 } from 'lucide-react';
 import Logo from '../Images/amlgolabslogowhite.png';
 
@@ -209,6 +211,8 @@ const Sidebar: React.FC<SidebarProps> = ({
     user,
     onLogout
 }) => {
+    const navigate = useNavigate();
+
     const getInitials = (name: string) => {
         if (!name) return '??';
         const parts = name.trim().split(' ');
@@ -217,9 +221,17 @@ const Sidebar: React.FC<SidebarProps> = ({
     };
 
     return (
-        <nav className={`bg-gradient-to-b from-blue-900 to-blue-900 flex flex-col shadow-xl transition-all duration-300 ease-in-out ${isOpen ? 'w-80' : 'w-0 opacity-0 overflow-hidden'}`}>
+        <nav className={`bg-gradient-to-b from-blue-900 to-blue-900 flex flex-col shadow-xl transition-all duration-300 ease-in-out ${isOpen ? 'w-96' : 'w-0 opacity-0 overflow-hidden'}`}>
             {/* Logo Section */}
-            <div className="bg-gray-50/50 px-5 py-4 shadow-lg">
+            {/* Logo Section */}
+            <div
+                className="bg-gray-50/50 px-5 pl-16 py-4 shadow-lg relative cursor-pointer group"
+                onClick={() => navigate('/select')}
+                title="Back to Project Selection"
+            >
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full hover:bg-white/20 transition-all z-10">
+                    <ArrowLeft size={24} className="text-white drop-shadow-md" />
+                </div>
                 <div className="h-8 w-full flex items-center justify-center">
                     <img src={Logo} alt="Logo" className="w-full object-contain object-center" />
                 </div>
