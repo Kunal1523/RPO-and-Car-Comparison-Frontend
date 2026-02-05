@@ -614,12 +614,14 @@ const ChartView: React.FC<ChartViewProps> = ({
 
   const CustomLabel = ({ cx, cy, value }: any) => {
     if (!value) return null;
-    const textWidth = value.length * 6.5 + 8;
+    // Tighter width calculation to prevent empty white box overlap
+    // Approx 6px per char for 11px font + small padding
+    const textWidth = value.length * 6 + 10;
 
     return (
       <g>
         <rect
-          x={cx + 22}
+          x={cx + 12}
           y={cy - 9}
           width={textWidth}
           height={18}
@@ -630,10 +632,10 @@ const ChartView: React.FC<ChartViewProps> = ({
           rx={3}
         />
         <text
-          x={cx + 26}
+          x={cx + 17}
           y={cy + 1}
           fill="#0f172a"
-          fontSize={11}
+          fontSize={10}
           fontWeight={600}
           textAnchor="start"
           dominantBaseline="middle"

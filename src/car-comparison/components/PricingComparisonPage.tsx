@@ -377,12 +377,7 @@ const PriceComparisonPage = () => {
                       {idx + 1}
                     </div>
                     <span className="font-bold text-slate-700 text-xs">Vehicle {idx + 1}</span>
-                    {c.pricing && c.pricing.length > 0 && (
-                      <div className="ml-auto flex items-center gap-1.5 text-[10px] text-green-600">
-                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
-                        <span className="font-medium">{c.pricing.length}</span>
-                      </div>
-                    )}
+
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
@@ -459,9 +454,7 @@ const PriceComparisonPage = () => {
               <div className="space-y-3 pt-3 border-t">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Filters</p>
-                  <div className="text-[10px] text-slate-500">
-                    {cars.reduce((sum, c) => sum + getFilteredPricingForCar(c.id).length, 0)}/{allPricing.length} shown
-                  </div>
+
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">

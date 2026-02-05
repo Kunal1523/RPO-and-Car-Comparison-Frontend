@@ -2,7 +2,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BarChart3, Car, ArrowRight, LayoutDashboard, PieChart } from 'lucide-react';
+import { BarChart3, Car, ArrowRight, LayoutDashboard, PieChart, LogOut } from 'lucide-react';
 
 const ProjectSelection: React.FC = () => {
     const navigate = useNavigate();
@@ -31,6 +31,8 @@ const ProjectSelection: React.FC = () => {
             path: '/car-comparison'
         }
     ];
+
+
 
     return (
         <div className="min-h-screen bg-blue-100 text-slate-900 p-8 flex flex-col items-center justify-center relative overflow-hidden">
@@ -92,10 +94,11 @@ const ProjectSelection: React.FC = () => {
                 transition={{ delay: 1 }}
                 onClick={() => {
                     sessionStorage.clear();
-                    window.location.reload();
+                    navigate('/login');
                 }}
-                className="mt-16 text-slate-500 hover:text-slate-800 transition-colors flex items-center gap-2 text-sm font-medium"
+                className="mt-16 bg-red-500 hover:bg-red-600 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg hover:shadow-red-500/30 flex items-center gap-2 transform hover:scale-105 active:scale-95"
             >
+                <LogOut className="w-5 h-5" />
                 Sign Out
             </motion.button>
         </div>
@@ -103,3 +106,4 @@ const ProjectSelection: React.FC = () => {
 };
 
 export default ProjectSelection;
+

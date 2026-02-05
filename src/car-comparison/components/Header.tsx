@@ -60,7 +60,8 @@
 
 // src/components/Header.tsx
 import React from 'react';
-import { LogOut, BarChart3, GitCompare, Upload } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { LogOut, BarChart3, GitCompare, Upload, ArrowLeft } from 'lucide-react';
 import logo from '../Images/amlgolabslogowhite.png';
 
 interface HeaderProps {
@@ -69,6 +70,8 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChange }) => {
+  const navigate = useNavigate();
+
   const handleLogout = () => {
     sessionStorage.removeItem('isLoggedIn');
     sessionStorage.removeItem('manualLoginUser');
@@ -83,7 +86,14 @@ const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChang
 
         {/* LEFT LOGO */}
         <div className="flex items-center gap-3">
-          <div className="bg-white rounded-xl px-3 py-1 shadow flex items-center justify-center">
+          <button
+            onClick={() => navigate('/select')}
+            className="text-white/80 hover:text-white transition-colors"
+            title="Back to Project Selection"
+          >
+            <ArrowLeft size={24} />
+          </button>
+          <div className="bg-white rounded-xl px-3 py-1 shadow flex items-center justify-center cursor-pointer" onClick={() => navigate('/select')}>
             <div className="h-10 w-32 overflow-hidden flex items-center justify-center">
               <img src={logo} alt="Logo" className="w-full object-cover object-center" />
             </div>
