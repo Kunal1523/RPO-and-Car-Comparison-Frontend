@@ -442,16 +442,27 @@ const App: React.FC = () => {
     <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
       <Header currentPage={currentPage} onPageChange={setCurrentPage} />
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar onCompare={handleCompare} isLoading={isLoading} />
-        <main className="flex-1 overflow-auto p-4 md:p-8 lg:p-10 relative">
-          <div className="max-w-6xl mx-auto pb-10">
-            <NewsButtonCards news1={news1} news2={news2} isLoading={isLoadingNews} />
+        <Sidebar onCompare={handleCompare} isLoading={isLoading} initialSelections={currentSelections} />
 
-            <div className="mb-4 md:mb-6">
-              <h2 className="text-2xl font-bold text-slate-900">Comparison Result</h2>
-              <p className="text-sm text-slate-500">
-                Detailed breakdown of features and specifications for {currentSelections.length} vehicles.
-              </p>
+        {/* Main Content Area - FLEX COL, NO SCROLL on itself */}
+        <main className="flex-1 flex flex-col overflow-hidden relative bg-slate-100">
+          <div className="flex-1 flex flex-col p-2 md:p-4 gap-2 h-full">
+
+            {/* Top Section: News & Heading - Compact */}
+            <div className="flex-shrink-0 space-y-2">
+              {/* Wrapped in a smaller container or just provided as is. 
+                   If NewsButtonCards is too big, it might still push content. 
+                   For now, let's just render it. */}
+              <NewsButtonCards news1={news1} news2={news2} isLoading={isLoadingNews} />
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 leading-tight">Comparison Result</h2>
+                  <p className="text-[10px] text-slate-500">
+                    Detailed specifications{currentSelections.length > 0 ? ` for ${currentSelections.length} vehicles` : ''}.
+                  </p>
+                </div>
+              </div>
             </div>
 
             {isLoading && (
@@ -463,7 +474,10 @@ const App: React.FC = () => {
               </div>
             )}
 
-            <ComparisonTable data={comparisonData} />
+            {/* Table Container - Takes remaining height */}
+            <div className="flex-1 overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white relative">
+              <ComparisonTable data={comparisonData} />
+            </div>
           </div>
         </main>
       </div>

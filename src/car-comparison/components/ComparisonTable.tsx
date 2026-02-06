@@ -237,7 +237,7 @@
 
 
 // import React, { useMemo, useState, useEffect } from 'react';
-// import { ChevronDown, ChevronUp, AlertCircle, Info, Download } from 'lucide-react';
+// import { ChevronDown, ChevronUp, AlertCircle, Info, Download, Plus, Minus } from 'lucide-react';
 // import * as XLSX from 'xlsx';
 
 // // Types
@@ -817,8 +817,9 @@
 
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp, AlertCircle, Download } from 'lucide-react';
+import { ChevronDown, ChevronUp, AlertCircle, Download, Plus, Minus } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import TableSearch from './TableSearch';
 
 import { ComparisonResponse, FeatureGroup, GroupedFeature, VariantPriceData, PriceDetail } from '../types';
 
@@ -830,12 +831,13 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [showDiffOnly, setShowDiffOnly] = useState(false);
   const [expandAll, setExpandAll] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const NO_INFO = 'No information Available';
 
   const groups: FeatureGroup[] = useMemo(() => {
     if (!data) return [];
-
+    // ... feature group items ...
     const groupMap: Record<string, GroupedFeature[]> = {};
     const priceGroup: GroupedFeature[] = [];
     const additionalGroup: GroupedFeature[] = [];
@@ -909,16 +911,94 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
       result.push({ groupName: 'Additional Features', items: additionalGroup, hasDifferences });
     }
 
+    const CATEGORY_ORDER = [
+      'Price & Basic Info',
+      'Brake', 'Brakes',
+      'Dimension', 'Dimensions',
+      'Engine',
+      'Fuel',
+      'Transmission',
+      'Suspension', 'Suspensions',
+      'Tyre', 'Tyres',
+      'Exterior',
+      'Interior',
+      'Safety',
+      'Infotainment', 'Infotainemt',
+      'Comfort and Convenience',
+      'Audio and Entertainment',
+      'Connected Car Technology'
+    ];
+
+    result.sort((a, b) => {
+      const getIndex = (name: string) => {
+        const lowerName = name.toLowerCase();
+        // Check for exact match or includes to be safe, but exact is better for order list
+        const idx = CATEGORY_ORDER.findIndex(cat =>
+          cat.toLowerCase() === lowerName || lowerName.includes(cat.toLowerCase())
+        );
+        return idx === -1 ? 999 : idx;
+      };
+
+      const idxA = getIndex(a.groupName);
+      const idxB = getIndex(b.groupName);
+
+      return idxA - idxB;
+    });
+
     return result;
   }, [data]);
 
+  // Filter groups based on search term and re-calculate hasDifferences
+  const filteredGroups = useMemo(() => {
+    if (!data) return [];
+    const variants = data.columns.slice(1);
+
+    if (!searchTerm.trim()) return groups;
+    const lowerTerm = searchTerm.toLowerCase();
+
+    return groups.map(group => {
+      // If group name matches, keep all items (and original hasDifferences)
+      const groupMatches = group.groupName.toLowerCase().includes(lowerTerm);
+      if (groupMatches) return group;
+
+      // Otherwise filter items
+      const filteredItems = group.items.filter(item =>
+        item.featureName.toLowerCase().includes(lowerTerm)
+      );
+
+      if (filteredItems.length === 0) return null;
+
+      // Re-calculate hasDifferences for the subset of items
+      const hasDifferences = filteredItems.some(item => {
+        const variantValues = variants.map(v => item.values[v]);
+        const nonNoInfoValues = variantValues.filter(v => v !== NO_INFO);
+        const uniqueVals = new Set(nonNoInfoValues);
+        return uniqueVals.size > 1;
+      });
+
+      return { ...group, items: filteredItems, hasDifferences };
+    }).filter(Boolean) as FeatureGroup[];
+  }, [groups, searchTerm, data]);
+
+  // Apply "Differs Only" filter to groups
+  const displayGroups = useMemo(() => {
+    if (!showDiffOnly) return filteredGroups;
+    return filteredGroups.filter(g => g.hasDifferences);
+  }, [filteredGroups, showDiffOnly]);
+
+  // When search is active, default to expanded view
   useEffect(() => {
-    if (groups.length > 0) {
-      const s: Record<string, boolean> = {};
-      groups.forEach(g => s[g.groupName] = expandAll);
-      setOpenGroups(s);
+    if (searchTerm) {
+      setExpandAll(true);
     }
-  }, [groups, expandAll]);
+  }, [searchTerm]);
+
+  // Sync openGroups with displayGroups and expandAll state
+  useEffect(() => {
+    const s: Record<string, boolean> = {};
+    displayGroups.forEach(g => s[g.groupName] = expandAll);
+    setOpenGroups(s);
+  }, [displayGroups, expandAll]);
 
   const toggleGroup = (groupName: string) =>
     setOpenGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
@@ -1037,11 +1117,11 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
   const getGridColumns = () => {
     if (variants.length <= 3) {
-      return `minmax(180px, 1fr) repeat(${variants.length}, minmax(180px, 1fr))`;
+      return `minmax(160px, 1fr) repeat(${variants.length}, minmax(160px, 1fr))`;
     } else if (variants.length === 4) {
-      return `minmax(160px, 0.9fr) repeat(${variants.length}, minmax(160px, 1fr))`;
+      return `minmax(140px, 0.9fr) repeat(${variants.length}, minmax(140px, 1fr))`;
     } else {
-      return `minmax(140px, 0.8fr) repeat(${variants.length}, minmax(140px, 1fr))`;
+      return `minmax(110px, 0.8fr) repeat(${variants.length}, minmax(110px, 1fr))`;
     }
   };
 
@@ -1073,10 +1153,14 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
   };
 
   return (
-    <div className="bg-white shadow-md rounded-2xl overflow-hidden border border-slate-200">
+    <div className="h-full flex flex-col bg-white">
 
-      <div className="flex items-center justify-between gap-4 px-4 py-3 border-b bg-gradient-to-r from-slate-50 to-blue-50">
+      <div className="flex-shrink-0 flex items-center justify-between gap-4 px-4 py-2 border-b bg-gradient-to-r from-slate-50 to-blue-50">
         <div className="flex items-center gap-4">
+          <TableSearch searchTerm={searchTerm} onSearchChange={setSearchTerm} />
+
+          <div className="hidden md:block h-6 w-px bg-slate-300" />
+
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -1084,7 +1168,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
               onChange={() => setShowDiffOnly(prev => !prev)}
               className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
             />
-            <span className="text-sm font-medium text-slate-700">Show only differing rows</span>
+            <span className="text-sm font-medium text-slate-700 whitespace-nowrap">Differs only</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -1094,7 +1178,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
               onChange={() => setExpandAll(prev => !prev)}
               className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
             />
-            <span className="text-sm font-medium text-slate-700">Expand all sections</span>
+            <span className="text-sm font-medium text-slate-700 whitespace-nowrap">Expand all</span>
           </div>
 
           <div className="flex items-center gap-2 opacity-50 cursor-not-allowed">
@@ -1104,7 +1188,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
               disabled={true}
               className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 cursor-not-allowed"
             />
-            <span className="text-sm font-medium text-slate-500">Include unofficial sources</span>
+            <span className="text-sm font-medium text-slate-500 whitespace-nowrap">Unofficial</span>
           </div>
         </div>
 
@@ -1117,17 +1201,19 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
         </button>
       </div>
 
-      <div className="overflow-x-auto w-full">
+      <div
+        className="flex-1 overflow-x-auto w-full"
+      >
 
-        <div className="grid border-b-2 border-slate-300" style={gridColsStyle}>
-          <div className={`p-3 font-semibold uppercase tracking-[0.08em] ${getFontSize()} flex items-center bg-slate-900 text-white border-r border-slate-700`}>
+        <div className="grid border-b-2 border-slate-300 sticky top-0 z-20 shadow-sm" style={gridColsStyle}>
+          <div className={`p-2 font-semibold uppercase tracking-[0.08em] text-[10px] md:text-xs flex items-center bg-slate-900 text-white border-r border-slate-700`}>
             Feature
           </div>
 
           {variants.map((v, idx) => (
             <div
               key={idx}
-              className={`p-3 font-semibold ${getHeaderFontSize()} border-l border-white flex items-center ${variantBg(idx)}`}
+              className={`p-2 font-semibold text-[10px] md:text-xs border-l border-white flex items-center ${variantBg(idx)}`}
               title={v}
             >
               <span className="truncate">{v}</span>
@@ -1136,7 +1222,14 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
         </div>
 
         <div className="divide-y divide-slate-200">
-          {groups.map((group) => {
+          {displayGroups.length === 0 ? (
+            <div className="p-8 text-center text-slate-500">
+              {searchTerm
+                ? `No features match your search "${searchTerm}"${showDiffOnly ? ' (with differences)' : ''}`
+                : (showDiffOnly ? "No differing features found across selected vehicles." : "No data available.")
+              }
+            </div>
+          ) : displayGroups.map((group, groupIdx) => {
             const isOpen = openGroups[group.groupName] ?? false;
 
             return (
@@ -1145,26 +1238,33 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                 <button
                   onClick={() => toggleGroup(group.groupName)}
                   disabled={showDiffOnly && !group.hasDifferences}
-                  className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors text-left border-b border-slate-200 ${showDiffOnly && !group.hasDifferences
+                  className={`w-full flex items-center justify-between px-3 py-1.5 transition-colors text-left border-b border-slate-100 ${showDiffOnly && !group.hasDifferences
                     ? 'bg-slate-50 text-slate-400 cursor-default'
-                    : 'bg-sky-50 hover:bg-sky-100 text-slate-900'
+                    : 'bg-sky-50 hover:bg-sky-100 text-slate-900 sticky top-[33px] z-10'  // Sticky group header
                     }`}
                 >
-                  <span className={`font-semibold flex items-center gap-2 ${getFontSize()}`}>
-                    <span className={`inline-block w-1.5 h-5 rounded-full ${showDiffOnly && !group.hasDifferences ? 'bg-slate-300' : 'bg-blue-500'}`} />
-                    {group.groupName}
+                  <span className="font-semibold flex items-center gap-2 text-[11px]">
+
+                    {/* Toggle Icon instead of Blue Bar */}
+                    <span className="mr-1 text-blue-600">
+                      {isOpen && !(showDiffOnly && !group.hasDifferences) ? <Minus size={12} /> : <Plus size={12} />}
+                    </span>
+
+                    {/* Numbering 1, 2, 3... */}
+                    <span>{groupIdx + 1}. {group.groupName}</span>
+
                     {showDiffOnly && !group.hasDifferences && (
-                      <span className="ml-2 text-[10px] font-medium bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      <span className="ml-2 text-[9px] font-medium bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full uppercase tracking-wider">
                         No Differences
                       </span>
                     )}
                   </span>
 
-                  {isOpen && !(showDiffOnly && !group.hasDifferences) ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  {/* Removed end Chevron as requested to use start icon */}
                 </button>
 
                 {isOpen && (
-                  <div className="divide-y divide-slate-200">
+                  <div className="divide-y divide-slate-100 max-h-[50vh] overflow-y-auto custom-scrollbar">
                     {group.items.map((item, idx) => {
 
                       const isPriceRow = item.featureName.toLowerCase().trim() === 'price value';
@@ -1179,20 +1279,17 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                       return (
                         <div
                           key={idx}
-                          className={`grid ${isDifferent && !isPriceRow ? 'bg-yellow-50' : ''}`}
+                          className={`grid ${isDifferent && !isPriceRow ? 'bg-yellow-100' : ''}`}
                           style={gridColsStyle}
                         >
 
-                          <div className={`p-3 ${getFontSize()} font-medium text-slate-700 bg-slate-50 border-r border-slate-200 flex items-center justify-between gap-2`}>
-                            <span className={isPriceRow ? 'font-bold text-slate-900' : ''}>
+                          <div className="p-1 pl-6 pr-2 text-[10px] font-medium text-slate-700 bg-slate-50 border-r border-slate-200 flex items-start justify-start text-left gap-1.5">
+                            <span className="text-slate-500 inline-block min-w-[30px] text-right">
+                              {groupIdx + 1}.{idx + 1}
+                            </span>
+                            <span className="flex-1 break-words text-slate-900">
                               {item.featureName}
                             </span>
-
-                            {isDifferent && !isPriceRow && (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-800 border border-amber-300 whitespace-nowrap">
-                                Differs
-                              </span>
-                            )}
                           </div>
 
                           {variants.map((v, vIdx) => {
@@ -1202,11 +1299,11 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                             return (
                               <div
                                 key={vIdx}
-                                className={`relative p-3 ${getFontSize()} border-l border-slate-200 ${item.values[v] === NO_INFO ? 'text-slate-400 italic' : 'text-slate-900'
+                                className={`relative p-1 px-2 text-[10px] border-l border-slate-200 ${item.values[v] === NO_INFO ? 'text-slate-400 italic' : 'text-slate-900'
                                   }`}
                               >
                                 {isPriceCell ? (
-                                  <div className="space-y-2">
+                                  <div className="space-y-1">
                                     {((item.values[v] as any)?.pricing?.prices || [])
                                       .map((price: any) => {
                                         const parts = [
@@ -1221,8 +1318,6 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
                                         return { price, label };
                                       })
-                                      // .sort((a, b) => a.label.localeCompare(b.label))
-                                      // .map(({ price, label }, pIdx: number) => {
                                       .sort((a: { price: any; label: string }, b: { price: any; label: string }) => a.label.localeCompare(b.label))
                                       .map(({ price, label }: { price: any; label: string }, pIdx: number) => {
                                         const formattedPrice = new Intl.NumberFormat('en-IN', {
@@ -1232,11 +1327,11 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                                         }).format(price.ex_showroom_price);
 
                                         return (
-                                          <div key={pIdx} className="flex items-center justify-between border-b border-slate-200 pb-2 last:border-0 last:pb-0">
-                                            <span className="text-[10px] text-slate-600 font-medium uppercase tracking-wide">
+                                          <div key={pIdx} className="flex flex-col xl:flex-row xl:items-center xl:justify-between border-b border-slate-200 pb-1 last:border-0 last:pb-0 gap-0.5">
+                                            <span className="text-[9px] text-slate-600 font-medium uppercase tracking-wide break-words">
                                               {label}
                                             </span>
-                                            <span className="text-sm md:text-base font-bold text-green-700">
+                                            <span className="text-xs font-bold text-green-700 whitespace-nowrap">
                                               {formattedPrice}
                                             </span>
                                           </div>

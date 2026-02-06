@@ -555,6 +555,7 @@ const ChartView: React.FC<ChartViewProps> = ({
       data,
       carName: data[0].carName,
       carColor: data[0].carColor,
+      xPosition: data[0].x, // Preserve the original x-position
       min: Math.min(...data.map(d => d.y)),
       max: Math.max(...data.map(d => d.y))
     }));
@@ -732,11 +733,11 @@ const ChartView: React.FC<ChartViewProps> = ({
 
             {/* GAP ADJUSTED HERE */}
             {isCombinedMode ? (
-              carGroups.map((group, index) => (
+              [...carGroups].reverse().map((group) => (
                 <React.Fragment key={group.carId}>
                   <ReferenceArea
-                    x1={index + 0.8}
-                    x2={index + 1.2}
+                    x1={group.xPosition - 0.2}
+                    x2={group.xPosition + 0.2}
                     y1={group.min}
                     y2={group.max}
                     fill={group.carColor}
