@@ -1003,11 +1003,31 @@ const VariantModal = ({
 
 const PriceComparisonPage = () => {
   const [catalog, setCatalog] = useState<CatalogBrand[]>([]);
-  const [globalViewMode, setGlobalViewMode] = useState<'chart' | 'table'>('chart');
-  const [cars, setCars] = useState<SelectedCar[]>([
-    { id: '1', brand: 'Maruti', model: 'Grand Vitara' },
-    { id: '2', brand: '', model: '' }
-  ]);
+
+  // State with sessionStorage persistence
+  const [globalViewMode, setGlobalViewMode] = useState<'chart' | 'table'>(() => {
+    const saved = sessionStorage.getItem('pricingViewMode');
+    return (saved === 'chart' || saved === 'table') ? saved : 'chart';
+  });
+
+  const [cars, setCars] = useState<SelectedCar[]>(() => {
+    const saved = sessionStorage.getItem('pricingCars');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Ensure we preserve the ID and other structure
+        return parsed.map((c: any, idx: number) => ({
+          ...c,
+          id: (idx + 1).toString()
+        }));
+      } catch (e) { console.error('Error parsing saved cars', e); }
+    }
+    return [
+      { id: '1', brand: 'Maruti', model: 'Grand Vitara' },
+      { id: '2', brand: '', model: '' }
+    ];
+  });
+
   const [selectedVariant, setSelectedVariant] = useState<{ variant: GroupedVariant; carId: string } | null>(null);
   const [domReady, setDomReady] = useState(false);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
@@ -1031,7 +1051,7 @@ const PriceComparisonPage = () => {
     selectedEditions: new Set<string>()
   });
 
-  // Store all available options (never changes - used for reset)
+  // Store all available options (used to detect new options and for reset)
   const [allAvailableOptions, setAllAvailableOptions] = useState<{
     allFuelTypes: string[];
     allTransmissions: string[];
@@ -1146,89 +1166,95 @@ const PriceComparisonPage = () => {
     }));
   };
 
-  // Initialize filters and all available options when pricing data loads
+  // 1. Restore state from sessionStorage on component mount (once)
+  useEffect(() => {
+    const savedFilters = sessionStorage.getItem('pricingFilters');
+    const savedOptions = sessionStorage.getItem('pricingAvailableOptions');
+
+    if (savedFilters) {
+      try {
+        const parsed = JSON.parse(savedFilters);
+        setCommonFilters({
+          selectedFuelTypes: new Set(parsed.selectedFuelTypes || []),
+          selectedTransmissions: new Set(parsed.selectedTransmissions || []),
+          selectedVariants: new Set(parsed.selectedVariants || []),
+          selectedPaintTypes: new Set(parsed.selectedPaintTypes || []),
+          selectedEditions: new Set(parsed.selectedEditions || [])
+        });
+      } catch (e) { console.error('Error parsing saved filters', e); }
+    }
+
+    if (savedOptions) {
+      try {
+        const parsed = JSON.parse(savedOptions);
+        setAllAvailableOptions(parsed);
+      } catch (e) { console.error('Error parsing saved options', e); }
+    }
+
+    setFiltersInitialized(true);
+  }, []);
+
+  // 2. Additive logic for filters: select new options by default when pricing data loads
   useEffect(() => {
     const allPricing = cars.flatMap(c => c.pricing || []);
-    if (allPricing.length === 0) return;
+    if (allPricing.length === 0 || !filtersInitialized) return;
 
-    const uniqueFuelTypes: string[] = Array.from(new Set(allPricing.map(p => p.fuel_type).filter((t): t is string => !!t))).sort();
-    const uniqueTransmissions: string[] = Array.from(new Set(allPricing.map(p => p.transmission_type).filter((t): t is string => !!t))).sort();
-    const uniqueVariants: string[] = Array.from(new Set(allPricing.map(p => p.variant_id)));
-    const uniquePaintTypes: string[] = Array.from(new Set(allPricing.map(p => p.paint_type).filter((t): t is string => !!t))).sort();
-    const uniqueEditions: string[] = Array.from(new Set(allPricing.map(p => p.edition).filter((t): t is string => !!t))).sort();
+    const uniqueFuelTypes = Array.from(new Set(allPricing.map(p => p.fuel_type).filter((t): t is string => !!t))).sort();
+    const uniqueTransmissions = Array.from(new Set(allPricing.map(p => p.transmission_type).filter((t): t is string => !!t))).sort();
+    const uniqueVariants = Array.from(new Set(allPricing.map(p => p.variant_id))).sort();
+    const uniquePaintTypes = Array.from(new Set(allPricing.map(p => p.paint_type).filter((t): t is string => !!t))).sort();
+    const uniqueEditions = Array.from(new Set(allPricing.map(p => p.edition).filter((t): t is string => !!t))).sort();
 
-    // Store all available options
-    setAllAvailableOptions({
-      allFuelTypes: uniqueFuelTypes,
-      allTransmissions: uniqueTransmissions,
-      allVariants: uniqueVariants,
-      allPaintTypes: uniquePaintTypes,
-      allEditions: uniqueEditions
+    setCommonFilters(prev => {
+      const next = { ...prev };
+      let changed = false;
+
+      const updateSet = (currentSet: Set<string>, allValues: string[], alreadySeenValues: string[]) => {
+        const newSet = new Set(currentSet);
+        let setChanged = false;
+        allValues.forEach(val => {
+          // If this is a brand new value we haven't seen across all cars in this session
+          if (!alreadySeenValues.includes(val)) {
+            newSet.add(val);
+            setChanged = true;
+          }
+        });
+        return { newSet, setChanged };
+      };
+
+      const fuel = updateSet(prev.selectedFuelTypes, uniqueFuelTypes, allAvailableOptions.allFuelTypes);
+      if (fuel.setChanged) { next.selectedFuelTypes = fuel.newSet; changed = true; }
+
+      const trans = updateSet(prev.selectedTransmissions, uniqueTransmissions, allAvailableOptions.allTransmissions);
+      if (trans.setChanged) { next.selectedTransmissions = trans.newSet; changed = true; }
+
+      const variants = updateSet(prev.selectedVariants, uniqueVariants, allAvailableOptions.allVariants);
+      if (variants.setChanged) { next.selectedVariants = variants.newSet; changed = true; }
+
+      const paints = updateSet(prev.selectedPaintTypes, uniquePaintTypes, allAvailableOptions.allPaintTypes);
+      if (paints.setChanged) { next.selectedPaintTypes = paints.newSet; changed = true; }
+
+      const editions = updateSet(prev.selectedEditions, uniqueEditions, allAvailableOptions.allEditions);
+      if (editions.setChanged) { next.selectedEditions = editions.newSet; changed = true; }
+
+      return changed ? next : prev;
     });
 
-    // Only initialize filters if not already initialized
-    if (!filtersInitialized) {
-      // Try to load from sessionStorage first
-      const savedFilters = sessionStorage.getItem('pricingFilters');
-      const savedCars = sessionStorage.getItem('pricingCars');
+    // Update the master list of "seen" options
+    setAllAvailableOptions(prev => {
+      const merge = (oldArray: string[], newValues: string[]) => Array.from(new Set([...oldArray, ...newValues])).sort();
+      return {
+        allFuelTypes: merge(prev.allFuelTypes, uniqueFuelTypes),
+        allTransmissions: merge(prev.allTransmissions, uniqueTransmissions),
+        allVariants: merge(prev.allVariants, uniqueVariants),
+        allPaintTypes: merge(prev.allPaintTypes, uniquePaintTypes),
+        allEditions: merge(prev.allEditions, uniqueEditions),
+      };
+    });
 
-      if (savedFilters && savedCars) {
-        try {
-          const parsed = JSON.parse(savedFilters);
-          const parsedCars = JSON.parse(savedCars);
-
-          // Check if the saved cars match current cars
-          const carsMatch = parsedCars.length === cars.length &&
-            parsedCars.every((savedCar: any, idx: number) =>
-              savedCar.brand === cars[idx].brand && savedCar.model === cars[idx].model
-            );
-
-          if (carsMatch) {
-            // Restore saved filters
-            setCommonFilters({
-              selectedFuelTypes: new Set(parsed.selectedFuelTypes || []),
-              selectedTransmissions: new Set(parsed.selectedTransmissions || []),
-              selectedVariants: new Set(parsed.selectedVariants || []),
-              selectedPaintTypes: new Set(parsed.selectedPaintTypes || []),
-              selectedEditions: new Set(parsed.selectedEditions || [])
-            });
-          } else {
-            // Cars changed, initialize with all selected
-            setCommonFilters({
-              selectedFuelTypes: new Set(uniqueFuelTypes),
-              selectedTransmissions: new Set(uniqueTransmissions),
-              selectedVariants: new Set(uniqueVariants),
-              selectedPaintTypes: new Set(uniquePaintTypes),
-              selectedEditions: new Set(uniqueEditions)
-            });
-          }
-        } catch (err) {
-          console.error('Error loading saved filters:', err);
-          // Initialize with all selected
-          setCommonFilters({
-            selectedFuelTypes: new Set(uniqueFuelTypes),
-            selectedTransmissions: new Set(uniqueTransmissions),
-            selectedVariants: new Set(uniqueVariants),
-            selectedPaintTypes: new Set(uniquePaintTypes),
-            selectedEditions: new Set(uniqueEditions)
-          });
-        }
-      } else {
-        // No saved filters, initialize with all selected
-        setCommonFilters({
-          selectedFuelTypes: new Set(uniqueFuelTypes),
-          selectedTransmissions: new Set(uniqueTransmissions),
-          selectedVariants: new Set(uniqueVariants),
-          selectedPaintTypes: new Set(uniquePaintTypes),
-          selectedEditions: new Set(uniqueEditions)
-        });
-      }
-
-      setFiltersInitialized(true);
-    }
   }, [cars.map(c => c.pricing?.length || 0).join(','), filtersInitialized]);
 
-  // Save filters to sessionStorage whenever they change (only after initialization)
+  // 3. Save all state to sessionStorage whenever it changes
   useEffect(() => {
     if (!filtersInitialized) return;
 
@@ -1240,11 +1266,11 @@ const PriceComparisonPage = () => {
       selectedEditions: Array.from(commonFilters.selectedEditions)
     };
 
-    const carsToSave = cars.map(c => ({ brand: c.brand, model: c.model }));
-
     sessionStorage.setItem('pricingFilters', JSON.stringify(filtersToSave));
-    sessionStorage.setItem('pricingCars', JSON.stringify(carsToSave));
-  }, [commonFilters, filtersInitialized, cars.map(c => `${c.brand}-${c.model}`).join(',')]);
+    sessionStorage.setItem('pricingCars', JSON.stringify(cars.map(c => ({ brand: c.brand, model: c.model }))));
+    sessionStorage.setItem('pricingViewMode', globalViewMode);
+    sessionStorage.setItem('pricingAvailableOptions', JSON.stringify(allAvailableOptions));
+  }, [commonFilters, cars.map(c => `${c.brand}-${c.model}`).join(','), globalViewMode, filtersInitialized, allAvailableOptions]);
 
   // Simple toggle - just add/remove from set, no cascading
   const toggleCommonFilter = (filterType: keyof CommonFilters, value: string) => {
@@ -1292,13 +1318,12 @@ const PriceComparisonPage = () => {
     const car = cars.find(c => c.id === carId);
     if (!car || !car.pricing) return [];
 
-    // If no filters are selected for a category, show all items (don't filter by that category)
     return car.pricing.filter(p => {
-      const fuelMatch = commonFilters.selectedFuelTypes.size === 0 || !p.fuel_type || commonFilters.selectedFuelTypes.has(p.fuel_type);
-      const transmissionMatch = commonFilters.selectedTransmissions.size === 0 || !p.transmission_type || commonFilters.selectedTransmissions.has(p.transmission_type);
-      const variantMatch = commonFilters.selectedVariants.size === 0 || commonFilters.selectedVariants.has(p.variant_id);
-      const paintMatch = commonFilters.selectedPaintTypes.size === 0 || !p.paint_type || commonFilters.selectedPaintTypes.has(p.paint_type);
-      const editionMatch = commonFilters.selectedEditions.size === 0 || !p.edition || commonFilters.selectedEditions.has(p.edition);
+      const fuelMatch = !p.fuel_type || commonFilters.selectedFuelTypes.has(p.fuel_type);
+      const transmissionMatch = !p.transmission_type || commonFilters.selectedTransmissions.has(p.transmission_type);
+      const variantMatch = commonFilters.selectedVariants.has(p.variant_id);
+      const paintMatch = !p.paint_type || commonFilters.selectedPaintTypes.has(p.paint_type);
+      const editionMatch = !p.edition || commonFilters.selectedEditions.has(p.edition);
       return fuelMatch && transmissionMatch && variantMatch && paintMatch && editionMatch;
     });
   };

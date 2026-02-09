@@ -8,7 +8,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 interface SidebarProps {
   onCompare: (selections: SelectionState[]) => void;
   isLoading: boolean;
-  initialSelections?: SelectionState[];
+  selections: SelectionState[];
+  setSelections: React.Dispatch<React.SetStateAction<SelectionState[]>>;
 }
 
 // ---------------- Animations ----------------
@@ -48,17 +49,8 @@ const getVersionLabel = (versionValue: string): string => {
   return `${months[monthIndex]} ${year + yearOffset}`;
 };
 
-const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, initialSelections }) => {
+const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, setSelections }) => {
   const [modelData, setModelData] = useState<ModelDetails | null>(null);
-
-  const [selections, setSelections] = useState<SelectionState[]>(
-    initialSelections && initialSelections.length > 0
-      ? initialSelections
-      : [
-        { brand: '', model: '', version: '', variant: '' },
-        { brand: '', model: '', version: '', variant: '' },
-      ]
-  );
 
   const [isOpen, setIsOpen] = useState<boolean>(true);
   const [contentKey, setContentKey] = useState(0);
@@ -101,14 +93,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, initialSelectio
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none'; // Prevent selection while dragging
   };
-
-  // Sync selections if initialSelections changes from outside
-  useEffect(() => {
-    if (initialSelections && initialSelections.length > 0) {
-      setSelections(initialSelections);
-      setContentKey(k => k + 1);
-    }
-  }, [initialSelections]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -205,9 +189,16 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, initialSelectio
       if (field === 'brand') {
         next[idx] = { brand: value, model: '', version: '', variant: '' };
       } else if (field === 'model') {
-        next[idx] = { ...current, model: value, version: '', variant: '' };
+        // Find first available version for this car
+        const bmKeyStr = `${current.brand}__${value}`;
+        const firstVer = modelData?.versions[bmKeyStr]?.[0]?.value || '';
+        next[idx] = { ...current, model: value, version: firstVer, variant: '' };
       } else if (field === 'variant') {
-        next[idx] = { ...current, variant: value, version: '' };
+        const bmvKey = `${current.brand}__${current.model}__${current.version}`;
+        const variantKey = `${bmvKey}__${value}`;
+        const variantId = modelData?.variantIds?.[variantKey] || '';
+
+        next[idx] = { ...current, variant: value, variant_id: variantId };
       } else if (field === 'version') {
         const bmvKey = `${current.brand}__${current.model}__${value}`;
         const variantKey = `${bmvKey}__${current.variant}`;
@@ -218,6 +209,20 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, initialSelectio
 
       return next;
     });
+  };
+
+  const moveVehicle = (idx: number, direction: 'left' | 'right') => {
+    setSelections((prev) => {
+      const next = [...prev];
+      const targetIdx = direction === 'left' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= next.length) return prev;
+
+      const temp = next[idx];
+      next[idx] = next[targetIdx];
+      next[targetIdx] = temp;
+      return next;
+    });
+    setContentKey((k) => k + 1);
   };
 
   const bmKey = (s: SelectionState) => (s.brand && s.model ? `${s.brand}__${s.model}` : '');
@@ -360,7 +365,27 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, initialSelectio
                           {selections.map((_, idx) => (
                             <th key={`head-${idx}`} className="p-1 border-b border-slate-200 bg-slate-50">
                               <div className="flex items-center justify-between px-1">
-                                <span className="text-[9px] font-bold text-slate-700">V{idx + 1}</span>
+                                <div className="flex items-center gap-1">
+                                  {idx > 0 && (
+                                    <button
+                                      onClick={() => moveVehicle(idx, 'left')}
+                                      className="text-slate-400 hover:text-blue-500 transition-colors"
+                                      title="Move Left"
+                                    >
+                                      <ChevronLeft size={10} />
+                                    </button>
+                                  )}
+                                  <span className="text-[9px] font-bold text-slate-700 whitespace-nowrap">Veh {idx + 1}</span>
+                                  {idx < selections.length - 1 && (
+                                    <button
+                                      onClick={() => moveVehicle(idx, 'right')}
+                                      className="text-slate-400 hover:text-blue-500 transition-colors"
+                                      title="Move Right"
+                                    >
+                                      <ChevronRight size={10} />
+                                    </button>
+                                  )}
+                                </div>
                                 {selections.length > 2 && (
                                   <button
                                     onClick={() => removeVehicleCard(idx)}

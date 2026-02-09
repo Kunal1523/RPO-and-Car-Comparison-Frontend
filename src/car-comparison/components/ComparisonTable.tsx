@@ -1213,10 +1213,11 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
           {variants.map((v, idx) => (
             <div
               key={idx}
-              className={`p-2 font-semibold text-[10px] md:text-xs border-l border-white flex items-center ${variantBg(idx)}`}
+              className={`p-2 font-semibold text-[10px] md:text-xs border-l border-white flex flex-col items-start justify-center ${variantBg(idx)}`}
               title={v}
             >
-              <span className="truncate">{v}</span>
+              <div className="text-[9px] opacity-80 uppercase tracking-tighter">Veh {idx + 1}</div>
+              <span className="truncate w-full">{v}</span>
             </div>
           ))}
         </div>
@@ -1267,29 +1268,48 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                   <div className="divide-y divide-slate-100 max-h-[50vh] overflow-y-auto custom-scrollbar">
                     {group.items.map((item, idx) => {
 
-                      const isPriceRow = item.featureName.toLowerCase().trim() === 'price value';
+                      const ftLower = item.featureName.toLowerCase().trim();
+                      const isBrand = ftLower === 'brand';
+                      const isCar = ftLower === 'car';
+                      const isVar = ftLower === 'variant';
+                      const isDate = ftLower === 'variant launched';
+                      const isPriceRow = ftLower === 'price value';
 
                       const variantValues = variants.map(v => item.values[v]);
                       const nonNoInfoValues = variantValues.filter(v => v !== NO_INFO);
                       const uniqueVals = Array.from(new Set(nonNoInfoValues));
                       const isDifferent = uniqueVals.length > 1;
 
-                      if (showDiffOnly && !isDifferent && !isPriceRow) return null;
+                      if (showDiffOnly && !isDifferent && !isPriceRow && !isBrand && !isCar && !isVar && !isDate) return null;
+
+                      // Custom row background based on type
+                      let rowBg = 'hover:bg-slate-50';
+                      if (isBrand) rowBg = 'bg-blue-50 hover:bg-blue-100/80';
+                      else if (isCar) rowBg = 'bg-indigo-50 hover:bg-indigo-100/80';
+                      else if (isVar) rowBg = 'bg-violet-50 hover:bg-violet-100/80';
+                      else if (isDate) rowBg = 'bg-emerald-50 hover:bg-emerald-100/80';
+                      else if (isPriceRow) rowBg = 'bg-slate-50';
+                      else if (isDifferent) rowBg = 'bg-amber-50 hover:bg-amber-100/80';
 
                       return (
                         <div
                           key={idx}
-                          className={`grid ${isDifferent && !isPriceRow ? 'bg-yellow-100' : ''}`}
+                          className={`grid transition-colors ${rowBg}`}
                           style={gridColsStyle}
                         >
 
-                          <div className="p-1 pl-6 pr-2 text-[10px] font-medium text-slate-700 bg-slate-50 border-r border-slate-200 flex items-start justify-start text-left gap-1.5">
+                          <div className={`p-1 pl-6 pr-2 text-[10px] font-medium border-r border-slate-200 flex items-start justify-start text-left gap-1.5 ${isBrand || isCar || isVar || isDate ? 'text-blue-900 font-bold' : 'text-slate-700'}`}>
                             <span className="text-slate-500 inline-block min-w-[30px] text-right">
                               {groupIdx + 1}.{idx + 1}
                             </span>
-                            <span className="flex-1 break-words text-slate-900">
+                            <span className={`flex-1 break-words ${isBrand || isCar || isVar || isDate ? 'uppercase tracking-tight text-[9px]' : ''}`}>
                               {item.featureName}
                             </span>
+                            {isDifferent && !isPriceRow && !isBrand && !isCar && !isVar && !isDate && (
+                              <span className="text-[8px] px-1 py-0.5 rounded-full bg-amber-200 text-amber-800 border border-amber-300">
+                                DIFF
+                              </span>
+                            )}
                           </div>
 
                           {variants.map((v, vIdx) => {

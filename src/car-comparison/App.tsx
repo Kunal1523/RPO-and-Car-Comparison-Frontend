@@ -343,7 +343,48 @@ const App: React.FC = () => {
   const [news2, setNews2] = useState<NewsResponse | null>(null);
   const [isLoadingNews, setIsLoadingNews] = useState(false);
 
-  const [currentSelections, setCurrentSelections] = useState<SelectionState[]>([]);
+  const [currentSelections, setCurrentSelections] = useState<SelectionState[]>([
+    { brand: '', model: '', version: '', variant: '' },
+    { brand: '', model: '', version: '', variant: '' },
+  ]);
+
+  // Track the variant IDs currently shown in comparisonData
+  const lastFetchedVariantIds = React.useRef<string[]>([]);
+
+  // ✅ Instant Updates Logic: Reflect sidebar changes (reorder/remove) in the table immediately
+  useEffect(() => {
+    if (!comparisonData || currentSelections.length === 0 || isLoading) return;
+
+    const newIds = currentSelections.map(s => s.variant_id).filter(Boolean) as string[];
+    const oldIds = lastFetchedVariantIds.current;
+
+    if (newIds.length === 0) return;
+
+    // Detect if we can update locally (reorder or removal)
+    const isSubset = newIds.length < oldIds.length && newIds.every(id => oldIds.includes(id));
+    const isPermutation = newIds.length === oldIds.length &&
+      newIds.every(id => oldIds.includes(id)) &&
+      oldIds.some((id, i) => id !== newIds[i]);
+
+    if (isSubset || isPermutation) {
+      const newColumns = ['Feature'];
+      let mappingFound = true;
+
+      newIds.forEach(id => {
+        const oldIdx = oldIds.indexOf(id);
+        if (oldIdx !== -1) {
+          newColumns.push(comparisonData.columns[oldIdx + 1]);
+        } else {
+          mappingFound = false;
+        }
+      });
+
+      if (mappingFound && newColumns.length === newIds.length + 1) {
+        setComparisonData(prev => prev ? { ...prev, columns: newColumns } : null);
+        lastFetchedVariantIds.current = newIds;
+      }
+    }
+  }, [currentSelections, comparisonData, isLoading]);
 
   // ✅ UPDATED: Fetch news only for unique car models
   useEffect(() => {
@@ -413,6 +454,8 @@ const App: React.FC = () => {
       // ✅ NEW: Pass entire selections array to API
       const data = await fetchComparisonDetails(selections);
       setComparisonData(data);
+      // Store IDs for future local reordering
+      lastFetchedVariantIds.current = selections.map(s => s.variant_id!).filter(Boolean);
     } catch (error) {
       console.error('Error fetching comparison details:', error);
       alert('Failed to fetch comparison details. Please try again.');
@@ -442,7 +485,12 @@ const App: React.FC = () => {
     <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
       <Header currentPage={currentPage} onPageChange={setCurrentPage} />
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar onCompare={handleCompare} isLoading={isLoading} initialSelections={currentSelections} />
+        <Sidebar
+          onCompare={handleCompare}
+          isLoading={isLoading}
+          selections={currentSelections}
+          setSelections={setCurrentSelections}
+        />
 
         {/* Main Content Area - FLEX COL, NO SCROLL on itself */}
         <main className="flex-1 flex flex-col overflow-hidden relative bg-slate-100">
