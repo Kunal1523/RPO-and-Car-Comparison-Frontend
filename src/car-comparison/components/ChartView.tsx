@@ -555,6 +555,7 @@ const ChartView: React.FC<ChartViewProps> = ({
       data,
       carName: data[0].carName,
       carColor: data[0].carColor,
+      xPosition: data[0].x, // Preserve the original x-position
       min: Math.min(...data.map(d => d.y)),
       max: Math.max(...data.map(d => d.y))
     }));
@@ -615,27 +616,27 @@ const ChartView: React.FC<ChartViewProps> = ({
   const CustomLabel = ({ cx, cy, value }: any) => {
     if (!value) return null;
     // Tighter width calculation to prevent empty white box overlap
-    // Approx 6px per char for 11px font + small padding
-    const textWidth = value.length * 6 + 10;
+    // Using 5.2px per character for size 9 font to be very conservative
+    const textWidth = value.length * 5.2 + 10;
 
     return (
       <g>
         <rect
-          x={cx + 12}
-          y={cy - 9}
+          x={cx + 18}
+          y={cy - 10}
           width={textWidth}
-          height={18}
+          height={20}
           fill="white"
-          fillOpacity={0.95}
-          stroke="#e2e8f0"
+          fillOpacity={0.9}
+          stroke="#cbd5e1"
           strokeWidth={1}
-          rx={3}
+          rx={4}
         />
         <text
-          x={cx + 17}
+          x={cx + 23}
           y={cy + 1}
-          fill="#0f172a"
-          fontSize={10}
+          fill="#334155"
+          fontSize={9}
           fontWeight={600}
           textAnchor="start"
           dominantBaseline="middle"
@@ -704,7 +705,7 @@ const ChartView: React.FC<ChartViewProps> = ({
 
       <div className="flex-1 relative" ref={chartContainerRef}>
         <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart margin={{ top: 20, right: 250, left: 60, bottom: 20 }}>
+          <ScatterChart margin={{ top: 20, right: 300, left: 60, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis
               type="number"
@@ -732,11 +733,11 @@ const ChartView: React.FC<ChartViewProps> = ({
 
             {/* GAP ADJUSTED HERE */}
             {isCombinedMode ? (
-              carGroups.map((group, index) => (
+              [...carGroups].reverse().map((group) => (
                 <React.Fragment key={group.carId}>
                   <ReferenceArea
-                    x1={index + 0.8}
-                    x2={index + 1.2}
+                    x1={group.xPosition - 0.15}
+                    x2={group.xPosition + 0.15}
                     y1={group.min}
                     y2={group.max}
                     fill={group.carColor}
@@ -752,8 +753,8 @@ const ChartView: React.FC<ChartViewProps> = ({
             ) : (
               verticalChartData.length > 0 && (
                 <ReferenceArea
-                  x1={0.8}
-                  x2={1.2}
+                  x1={0.85}
+                  x2={1.15}
                   y1={priceRange.min}
                   y2={priceRange.max}
                   fill={chartColor}

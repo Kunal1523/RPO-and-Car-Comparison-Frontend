@@ -343,7 +343,48 @@ const App: React.FC = () => {
   const [news2, setNews2] = useState<NewsResponse | null>(null);
   const [isLoadingNews, setIsLoadingNews] = useState(false);
 
-  const [currentSelections, setCurrentSelections] = useState<SelectionState[]>([]);
+  const [currentSelections, setCurrentSelections] = useState<SelectionState[]>([
+    { brand: '', model: '', version: '', variant: '' },
+    { brand: '', model: '', version: '', variant: '' },
+  ]);
+
+  // Track the variant IDs currently shown in comparisonData
+  const lastFetchedVariantIds = React.useRef<string[]>([]);
+
+  // ✅ Instant Updates Logic: Reflect sidebar changes (reorder/remove) in the table immediately
+  useEffect(() => {
+    if (!comparisonData || currentSelections.length === 0 || isLoading) return;
+
+    const newIds = currentSelections.map(s => s.variant_id).filter(Boolean) as string[];
+    const oldIds = lastFetchedVariantIds.current;
+
+    if (newIds.length === 0) return;
+
+    // Detect if we can update locally (reorder or removal)
+    const isSubset = newIds.length < oldIds.length && newIds.every(id => oldIds.includes(id));
+    const isPermutation = newIds.length === oldIds.length &&
+      newIds.every(id => oldIds.includes(id)) &&
+      oldIds.some((id, i) => id !== newIds[i]);
+
+    if (isSubset || isPermutation) {
+      const newColumns = ['Feature'];
+      let mappingFound = true;
+
+      newIds.forEach(id => {
+        const oldIdx = oldIds.indexOf(id);
+        if (oldIdx !== -1) {
+          newColumns.push(comparisonData.columns[oldIdx + 1]);
+        } else {
+          mappingFound = false;
+        }
+      });
+
+      if (mappingFound && newColumns.length === newIds.length + 1) {
+        setComparisonData(prev => prev ? { ...prev, columns: newColumns } : null);
+        lastFetchedVariantIds.current = newIds;
+      }
+    }
+  }, [currentSelections, comparisonData, isLoading]);
 
   // ✅ UPDATED: Fetch news only for unique car models
   useEffect(() => {
@@ -413,6 +454,8 @@ const App: React.FC = () => {
       // ✅ NEW: Pass entire selections array to API
       const data = await fetchComparisonDetails(selections);
       setComparisonData(data);
+      // Store IDs for future local reordering
+      lastFetchedVariantIds.current = selections.map(s => s.variant_id!).filter(Boolean);
     } catch (error) {
       console.error('Error fetching comparison details:', error);
       alert('Failed to fetch comparison details. Please try again.');
@@ -442,16 +485,32 @@ const App: React.FC = () => {
     <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
       <Header currentPage={currentPage} onPageChange={setCurrentPage} />
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar onCompare={handleCompare} isLoading={isLoading} />
-        <main className="flex-1 overflow-auto p-4 md:p-8 lg:p-10 relative">
-          <div className="max-w-6xl mx-auto pb-10">
-            <NewsButtonCards news1={news1} news2={news2} isLoading={isLoadingNews} />
+        <Sidebar
+          onCompare={handleCompare}
+          isLoading={isLoading}
+          selections={currentSelections}
+          setSelections={setCurrentSelections}
+        />
 
-            <div className="mb-4 md:mb-6">
-              <h2 className="text-2xl font-bold text-slate-900">Comparison Result</h2>
-              <p className="text-sm text-slate-500">
-                Detailed breakdown of features and specifications for {currentSelections.length} vehicles.
-              </p>
+        {/* Main Content Area - FLEX COL, NO SCROLL on itself */}
+        <main className="flex-1 flex flex-col overflow-hidden relative bg-slate-100">
+          <div className="flex-1 flex flex-col p-2 md:p-4 gap-2 h-full">
+
+            {/* Top Section: News & Heading - Compact */}
+            <div className="flex-shrink-0 space-y-2">
+              {/* Wrapped in a smaller container or just provided as is. 
+                   If NewsButtonCards is too big, it might still push content. 
+                   For now, let's just render it. */}
+              <NewsButtonCards news1={news1} news2={news2} isLoading={isLoadingNews} />
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 leading-tight">Comparison Result</h2>
+                  <p className="text-[10px] text-slate-500">
+                    Detailed specifications{currentSelections.length > 0 ? ` for ${currentSelections.length} vehicles` : ''}.
+                  </p>
+                </div>
+              </div>
             </div>
 
             {isLoading && (
@@ -463,7 +522,10 @@ const App: React.FC = () => {
               </div>
             )}
 
-            <ComparisonTable data={comparisonData} />
+            {/* Table Container - Takes remaining height */}
+            <div className="flex-1 overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white relative">
+              <ComparisonTable data={comparisonData} />
+            </div>
           </div>
         </main>
       </div>
