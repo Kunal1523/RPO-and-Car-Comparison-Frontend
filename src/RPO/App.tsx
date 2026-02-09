@@ -1,727 +1,4 @@
-// // App.tsx
-// import React, { useState, useEffect, useCallback, useMemo } from "react";
-// import { useMsal } from "@azure/msal-react";
-// import { NavTab, ViewMode, PlanData, Draft } from "./types";
-
-// import {
-//   deriveModelData,
-//   validatePlanning,
-//   getCellKey,
-//   isModel,
-//   getCurrentFinancialYears,
-//   getUniqueModels,
-//   getDraftRegList, // ✅ you added in utils
-// } from "./utils";
-
-// import PlanningGrid from "./components/PlanningGrid";
-// import Sidebar from "./components/Sidebar";
-// import Header from "./components/Header";
-// import ComplianceSidebar from "./components/ComplianceSidebar";
-// import DrillDownModal from "./components/DrillDownModal";
-// import LoginPage from "./components/LoginPage";
-// import ShareModal from "./components/ShareModal";
-// import { getAllowedEmails } from "./authConfig";
-// import { Settings2 } from "lucide-react";
-// import { api } from "./apiService/api";
-
-// const INITIAL_PLAN_DATA: PlanData = { regulationCells: {}, regOrder: [] };
-
-// type FinalPlanResponse = {
-//   publishedAt: number;
-//   publishedBy?: string;
-//   data: PlanData;
-//   missingByReg?: Record<string, string[]>;
-// };
-
-// const stableStringify = (obj: any) => {
-//   try {
-//     const sorter = (_k: string, v: any) => {
-//       if (v && typeof v === "object" && !Array.isArray(v)) {
-//         return Object.keys(v)
-//           .sort()
-//           .reduce((acc: any, key) => {
-//             acc[key] = v[key];
-//             return acc;
-//           }, {});
-//       }
-//       return v;
-//     };
-//     return JSON.stringify(obj, sorter);
-//   } catch {
-//     return JSON.stringify(obj);
-//   }
-// };
-
-// const App: React.FC = () => {
-//   // const { instance } = useMsal();
-//   // const activeAccount = instance.getActiveAccount();
-//   // const userEmail = activeAccount?.username?.toLowerCase() || "";
-//   const { instance } = useMsal();
-//   const activeAccount = instance.getActiveAccount();
-
-//   const manualLoginUser = sessionStorage.getItem('manualLoginUser');
-//   const manualUser = manualLoginUser ? JSON.parse(manualLoginUser) : null;
-//   const userEmail = manualUser?.username || activeAccount?.username?.toLowerCase() || "";
-
-//   const [activeTab, setActiveTab] = useState<NavTab>("Draft");
-//   const [viewMode, setViewMode] = useState<ViewMode>("Regulation");
-//   const [viewResolution, setViewResolution] = useState<"Month" | "Quarter" | "Year">("Month");
-
-//   // Drafts (DB)
-//   const [drafts, setDrafts] = useState<Draft[]>([]);
-//   const [currentPlan, setCurrentPlan] = useState<PlanData>(INITIAL_PLAN_DATA);
-//   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
-
-//   // Track "last saved" snapshot for unsaved indicator
-//   const [lastSavedPlanSnapshot, setLastSavedPlanSnapshot] = useState<string>(
-//     stableStringify(INITIAL_PLAN_DATA)
-//   );
-
-//   // Final (DB)
-//   const [finalPlan, setFinalPlan] = useState<PlanData | null>(null);
-//   const [finalModels, setFinalModels] = useState<string[]>([]);
-//   const [finalCompliance, setFinalCompliance] = useState<Record<string, string[]>>({});
-
-//   // Final regulations (from backend)
-//   const [finalRegulations, setFinalRegulations] = useState<string[]>([]);
-
-//   // Draft regulations (LOCAL ONLY, ORDERED using currentPlan.regOrder + cell keys)
-//   const draftRegulations = useMemo(() => getDraftRegList(currentPlan), [currentPlan]);
-
-//   // Regulation list used by UI depends on tab
-//   const regulationsForUI = useMemo(
-//     () => (activeTab === "Draft" ? draftRegulations : finalRegulations),
-//     [activeTab, draftRegulations, finalRegulations]
-//   );
-
-//   const [newRegName, setNewRegName] = useState("");
-
-//   // Final drilldown modal
-//   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-
-//   // Share token
-//   const [shareModalOpen, setShareModalOpen] = useState(false);
-//   const [accessToken, setAccessToken] = useState("");
-
-//   // Years
-//   const [years] = useState(getCurrentFinancialYears());
-
-//   // Sidebars
-//   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
-//   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
-
-//   // Auth
-//   const allowedEmails = getAllowedEmails();
-//   const isAuthorized = allowedEmails.length > 0 ? allowedEmails.includes(userEmail) : true;
-
-//   // -----------------------
-//   // Unsaved indicator
-//   // -----------------------
-//   const isDraftDirty = useMemo(() => {
-//     if (activeTab !== "Draft") return false;
-//     return stableStringify(currentPlan) !== lastSavedPlanSnapshot;
-//   }, [activeTab, currentPlan, lastSavedPlanSnapshot]);
-
-//   // -----------------------
-//   // Helpers
-//   // -----------------------
-//   const removeRegFromPlan = useCallback((plan: PlanData, reg: string): PlanData => {
-//     const prefix = `${reg}|`;
-//     const nextCells: Record<string, string[]> = {};
-//     for (const [k, v] of Object.entries(plan.regulationCells || {})) {
-//       if (!k.startsWith(prefix)) nextCells[k] = v;
-//     }
-//     const nextOrder = (plan.regOrder || []).filter((r) => r !== reg);
-//     return { ...plan, regulationCells: nextCells, regOrder: nextOrder };
-//   }, []);
-
-//   // ensure a new regulation "appears" immediately by seeding an empty cell + adding to regOrder
-//   const addRegulationDraftOnly = useCallback(() => {
-//     const name = newRegName.trim();
-//     if (!name) return;
-
-//     setCurrentPlan((prev) => {
-//       const cells = prev.regulationCells || {};
-//       const seedKey = getCellKey(name, years[0].label, 4);
-
-//       const nextCells = { ...cells };
-//       if (!nextCells[seedKey]) nextCells[seedKey] = [];
-
-//       const nextOrder = Array.from(new Set([...(prev.regOrder || []), name]));
-//       return { ...prev, regulationCells: nextCells, regOrder: nextOrder };
-//     });
-
-//     setNewRegName("");
-//   }, [newRegName, years]);
-
-//   // Draft delete regulation: LOCAL ONLY
-//   const deleteRegulationDraftOnly = useCallback(
-//     (reg: string) => {
-//       setCurrentPlan((prev) => removeRegFromPlan(prev, reg));
-//     },
-//     [removeRegFromPlan]
-//   );
-
-//   // Draft reorder: LOCAL ONLY (stored in currentPlan.regOrder and saved inside Draft row)
-//   const handleDraftRegReorder = useCallback((newOrder: string[]) => {
-//     setCurrentPlan((prev) => ({ ...prev, regOrder: newOrder }));
-//   }, []);
-
-//   // -----------------------
-//   // Graph token for Share
-//   // -----------------------
-//   useEffect(() => {
-//     if (!shareModalOpen || !instance || !activeAccount) return;
-
-//     instance
-//       .acquireTokenSilent({
-//         scopes: ["Mail.Send", "User.Read", "User.Read.All"],
-//         account: activeAccount,
-//       })
-//       .then((res) => setAccessToken(res.accessToken))
-//       .catch(() => {
-//         instance
-//           .acquireTokenPopup({
-//             scopes: ["Mail.Send", "User.Read", "User.Read.All"],
-//             account: activeAccount,
-//           })
-//           .then((res) => setAccessToken(res.accessToken));
-//       });
-//   }, [shareModalOpen, instance, activeAccount]);
-
-//   // -----------------------
-//   // Load backend data
-//   // -----------------------
-//   useEffect(() => {
-//     if (!userEmail) return;
-
-//     const loadAll = async () => {
-//       const [d, f, r, m] = await Promise.all([
-//         api.fetchDrafts(userEmail).catch(() => []),
-//         api.fetchFinalPlan(userEmail).catch(() => null as FinalPlanResponse | null),
-//         api.fetchRegulations(userEmail).catch(() => []),
-//         api.fetchModels(userEmail).catch(() => []),
-//       ]);
-
-//       setDrafts(d);
-//       setFinalRegulations(Array.isArray(r) ? r : []);
-//       setFinalModels(Array.isArray(m) ? m : []);
-
-//       if (f) {
-//         setFinalPlan(f.data);
-//         setFinalCompliance(f.missingByReg || {});
-//       } else {
-//         setFinalPlan(null);
-//         setFinalCompliance({});
-//       }
-//     };
-
-//     loadAll();
-//   }, [userEmail]);
-
-//   // -----------------------
-//   // Draft editing (state only)
-//   // -----------------------
-//   const handleCellChange = useCallback(
-//     (rowId: string, year: string, month: number, value: string) => {
-//       setCurrentPlan((prev) => {
-//         const key = getCellKey(rowId, year, month);
-//         const newValues = value
-//           .split(",")
-//           .map((v) => v.trim())
-//           .filter(Boolean);
-
-//         return {
-//           ...prev,
-//           regulationCells: {
-//             ...prev.regulationCells,
-//             [key]: newValues,
-//           },
-//         };
-//       });
-//     },
-//     []
-//   );
-
-//   const handleRenameRow = useCallback((oldName: string, newName: string) => {
-//     // 1. Check duplicate
-//     setCurrentPlan((prev) => {
-//       const existing = prev.regOrder || [];
-//       if (existing.includes(newName)) {
-//         alert(`Regulation "${newName}" already exists.`);
-//         return prev;
-//       }
-
-//       // 2. Update regOrder
-//       const newOrder = existing.map(r => r === oldName ? newName : r);
-
-//       // 3. Update cells
-//       const newCells: Record<string, string[]> = {};
-//       const oldPrefix = `${oldName}|`;
-//       const newPrefix = `${newName}|`;
-
-//       const cells: Record<string, string[]> = prev.regulationCells || {};
-//       for (const [k, v] of Object.entries(cells)) {
-//         if (k.startsWith(oldPrefix)) {
-//           // Replace prefix
-//           const suffix = k.substring(oldPrefix.length);
-//           newCells[newPrefix + suffix] = v;
-//         } else {
-//           newCells[k] = v;
-//         }
-//       }
-
-//       // 4. Update row heights (layout)
-//       const newRowHeights: Record<string, number> = { ...(prev.layout?.rowHeights || {}) };
-//       if (newRowHeights[oldName]) {
-//         newRowHeights[newName] = newRowHeights[oldName];
-//         delete newRowHeights[oldName];
-//       }
-
-//       return {
-//         ...prev,
-//         regOrder: newOrder,
-//         regulationCells: newCells,
-//         layout: {
-//           ...prev.layout,
-//           rowHeights: newRowHeights,
-//           colWidths: prev.layout?.colWidths || {}
-//         }
-//       };
-//     });
-//   }, []);
-
-//   // Layout change helper (updates current draft state only, saves when user clicks Save)
-//   const handleLayoutChange = useCallback(
-//     (colWidths: Record<string, number>, rowHeights: Record<string, number>) => {
-//       // Avoid spamming state updates if no change (checking reference equality handled by caller usually, but good practice)
-//       setCurrentPlan((prev) => ({
-//         ...prev,
-//         layout: { colWidths, rowHeights },
-//       }));
-//     },
-//     []
-//   );
-
-//   // -----------------------
-//   // Active plan per tab
-//   // -----------------------
-//   const activePlan: PlanData = activeTab === "Draft" ? currentPlan : finalPlan || INITIAL_PLAN_DATA;
-
-//   // -----------------------
-//   // Models per tab
-//   // -----------------------
-//   const draftModels = useMemo(() => getUniqueModels(currentPlan), [currentPlan]);
-//   const modelsForUI = activeTab === "Draft" ? draftModels : finalModels;
-
-//   const modelData = useMemo(() => {
-//     return deriveModelData(activePlan, modelsForUI);
-//   }, [activePlan, modelsForUI]);
-
-//   // -----------------------
-//   // Compliance
-//   // -----------------------
-//   const draftCompliance = useMemo(() => {
-//     return validatePlanning(currentPlan, draftRegulations, draftModels);
-//   }, [currentPlan, draftRegulations, draftModels]);
-
-//   const validationForSidebar = activeTab === "Final" ? finalCompliance : draftCompliance;
-
-//   // -----------------------
-//   // Draft save/update (updates current draft if currentDraftId exists)
-//   // -----------------------
-//   const saveDraft = async () => {
-//     if (!userEmail) return;
-
-//     const draftId = currentDraftId || crypto.randomUUID();
-
-//     const payload: Draft = {
-//       id: draftId,
-//       name: currentDraftId
-//         ? `Draft (updated) ${new Date().toLocaleString()}`
-//         : `Draft ${new Date().toLocaleString()}`,
-//       updatedAt: Date.now(),
-//       data: { ...currentPlan },
-//     };
-
-//     try {
-//       const saved = await api.saveDraft(payload, userEmail);
-
-//       setCurrentDraftId(saved.id);
-//       setLastSavedPlanSnapshot(stableStringify(saved.data));
-
-//       setDrafts((prev) => {
-//         const idx = prev.findIndex((x) => x.id === saved.id);
-//         if (idx >= 0) {
-//           const copy = [...prev];
-//           copy[idx] = saved;
-//           copy.sort((a, b) => b.updatedAt - a.updatedAt);
-//           return copy;
-//         }
-//         return [saved, ...prev];
-//       });
-//     } catch (e) {
-//       console.error(e);
-//       alert("Failed to save draft");
-//     }
-//   };
-
-//   // ✅ Save as NEW draft (always creates new row)
-//   const saveDraftAsNew = async () => {
-//     if (!userEmail) return;
-
-//     const draftId = crypto.randomUUID();
-//     const payload: Draft = {
-//       id: draftId,
-//       name: `Draft ${new Date().toLocaleString()}`,
-//       updatedAt: Date.now(),
-//       data: { ...currentPlan },
-//     };
-
-//     try {
-//       const saved = await api.saveDraft(payload, userEmail);
-
-//       setCurrentDraftId(saved.id);
-//       setLastSavedPlanSnapshot(stableStringify(saved.data));
-
-//       setDrafts((prev) => {
-//         const next = [saved, ...prev];
-//         next.sort((a, b) => b.updatedAt - a.updatedAt);
-//         return next;
-//       });
-//     } catch (e) {
-//       console.error(e);
-//       alert("Failed to save draft");
-//     }
-//   };
-
-//   const loadDraft = (draft: Draft) => {
-//     setCurrentPlan(draft.data);
-//     setCurrentDraftId(draft.id);
-//     setLastSavedPlanSnapshot(stableStringify(draft.data));
-//     setActiveTab("Draft");
-//     setViewMode("Regulation");
-//   };
-
-//   const deleteDraft = async (id: string) => {
-//     if (!userEmail) return;
-//     try {
-//       await api.deleteDraft(id, userEmail);
-//       setDrafts((prev) => prev.filter((d) => d.id !== id));
-
-//       if (currentDraftId === id) {
-//         setCurrentPlan(INITIAL_PLAN_DATA);
-//         setCurrentDraftId(null);
-//         setLastSavedPlanSnapshot(stableStringify(INITIAL_PLAN_DATA));
-//       }
-//     } catch (e) {
-//       console.error(e);
-//       alert("Failed to delete draft");
-//     }
-//   };
-
-//   const clearDraft = () => {
-//     if (!window.confirm("Are you sure you want to clear all data in the cells? Rows and layout will be preserved.")) return;
-
-//     const clearedPlan: PlanData = {
-//       ...currentPlan,
-//       regulationCells: {},
-//     };
-
-//     setCurrentPlan(clearedPlan);
-//     setCurrentDraftId(null);
-//     setLastSavedPlanSnapshot(stableStringify(clearedPlan));
-//   };
-
-//   // -----------------------
-//   // Publish
-//   // -----------------------
-//   const publishToFinal = async () => {
-//     if (!userEmail) return;
-
-//     // Sync Regulations and Models to DB
-//     try {
-//       // 1. Fetch current lists
-//       const [existingRegs, existingModels] = await Promise.all([
-//         api.fetchRegulations(userEmail).catch(() => [] as string[]),
-//         api.fetchModels(userEmail).catch(() => [] as string[])
-//       ]);
-
-//       const currentRegs = new Set(existingRegs);
-//       const currentModels = new Set(existingModels);
-
-//       const draftRegs = getDraftRegList(currentPlan);
-//       const draftModelsList = getUniqueModels(currentPlan);
-
-//       // 2. Add missing regs
-//       const regsToAdd = draftRegs.filter(r => !currentRegs.has(r));
-//       if (regsToAdd.length > 0) {
-//         await Promise.all(regsToAdd.map(r => api.addRegulation(r, userEmail)));
-//       }
-
-//       // 3. Add missing models
-//       const modelsToAdd = draftModelsList.filter(m => !currentModels.has(m));
-//       if (modelsToAdd.length > 0) {
-//         await Promise.all(modelsToAdd.map(m => api.addModel(m, userEmail)));
-//       }
-
-//     } catch (e) {
-//       console.error("Error syncing Master Lists:", e);
-//       // Continue to publish anyway? User might expect sync. 
-//       // If sync fails, plan might refer to non-existent master items if backend enforces referential integrity.
-//       // Assuming loose coupling, we proceed but log.
-//     }
-
-//     const plan = { publishedAt: Date.now(), data: currentPlan };
-
-//     try {
-//       await api.publishFinalPlan(plan, userEmail);
-
-//       const f = await api.fetchFinalPlan(userEmail);
-//       if (f) {
-//         setFinalPlan(f.data);
-//         setFinalCompliance(f.missingByReg || {});
-//       } else {
-//         setFinalPlan(null);
-//         setFinalCompliance({});
-//       }
-
-//       // Re-fetch master lists to ensure UI is in sync
-//       const [m, r] = await Promise.all([
-//         api.fetchModels(userEmail).catch(() => []),
-//         api.fetchRegulations(userEmail).catch(() => []),
-//       ]);
-
-//       setFinalModels(Array.isArray(m) ? m : []);
-//       setFinalRegulations(Array.isArray(r) ? r : []);
-
-//       setActiveTab("Final");
-//       setViewMode("Regulation");
-//     } catch (e) {
-//       console.error(e);
-//       alert("Failed to publish plan");
-//     }
-//   };
-
-//   // Copy Final -> Draft: create NEW draft when saved
-//   const copyToDraft = () => {
-//     if (!finalPlan) return;
-//     setCurrentPlan(JSON.parse(JSON.stringify(finalPlan)));
-//     setCurrentDraftId(null);
-//     setLastSavedPlanSnapshot(stableStringify(INITIAL_PLAN_DATA)); // new unsaved draft
-//     setActiveTab("Draft");
-//     setViewMode("Regulation");
-//   };
-
-//   // -----------------------
-//   // Regulation add
-//   // Draft-only local add (Final tab does nothing)
-//   // -----------------------
-//   const addRegulation = () => {
-//     if (activeTab === "Draft") {
-//       addRegulationDraftOnly();
-//       return;
-//     }
-//     setNewRegName("");
-//   };
-
-//   // Final cell click -> drilldown only for models in frozen models list
-//   const handleFinalCellClick = (rowId: string, values: string[]) => {
-//     const onlyModels = values.map((v) => String(v || "").trim()).filter((v) => isModel(v));
-//     const allowed = new Set(finalModels.map((m) => (m || "").trim()).filter(Boolean));
-//     const filtered = onlyModels.filter((m) => allowed.has(m));
-//     if (filtered.length > 0) setSelectedModels(filtered);
-//   };
-
-//   // Export
-//   const handleDownloadExcel = () => {
-//     const rowIds = viewMode === "Regulation" ? regulationsForUI : modelsForUI;
-//     const cellData = viewMode === "Regulation" ? activePlan.regulationCells : modelData;
-
-//     const now = new Date();
-//     const dateStr = now.toISOString().split("T")[0];
-//     const timeStr = now.toTimeString().split(" ")[0].replace(/:/g, "-");
-//     const fileName = `ReguPlan_${activeTab}_${viewMode}_${dateStr}_${timeStr}`;
-
-//     import("./exportUtils").then((module) => {
-//       module.exportToExcel(viewMode, rowIds, cellData, years, fileName);
-//     });
-//   };
-
-//   // -----------------------
-//   // Auth guard
-//   // -----------------------
-//   // if (!activeAccount) return <LoginPage />;
-//   if (!activeAccount && !manualUser) return <LoginPage />;
-
-//   if (!isAuthorized) {
-//     return (
-//       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-4">
-//         <div className="p-8 bg-white rounded-xl shadow-lg border border-red-100 text-center max-w-md">
-//           <div className="mx-auto w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
-//             <Settings2 className="w-6 h-6 text-red-600" />
-//           </div>
-//           <h2 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h2>
-//           <p className="text-gray-600 mb-6">
-//             The account{" "}
-//             <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">{userEmail}</span>{" "}
-//             is not authorized to access this application.
-//           </p>
-//           <button
-//             onClick={() => instance.logoutPopup()}
-//             className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-black transition-colors text-sm font-medium"
-//           >
-//             Sign Out
-//           </button>
-//         </div>
-//       </div>
-//     );
-//   }
-
-//   // -----------------------
-//   // UI
-//   // -----------------------
-//   return (
-//     <div className="flex h-screen bg-gray-50 text-gray-900 overflow-hidden font-sans">
-//       <Sidebar
-//         isOpen={leftSidebarOpen}
-//         activeTab={activeTab}
-//         setActiveTab={setActiveTab}
-//         setSelectedModels={setSelectedModels}
-//         drafts={drafts}
-//         loadDraft={loadDraft}
-//         deleteDraft={deleteDraft}
-//         newRegName={newRegName}
-//         setNewRegName={setNewRegName}
-//         addRegulation={addRegulation}
-//         user={{
-//           name: manualUser?.name || activeAccount?.name || "User",
-//           username: manualUser?.username || activeAccount?.username || "",
-//         }}
-//         onLogout={() => {
-//           if (manualUser) {
-//             sessionStorage.removeItem('manualLoginUser');
-//             window.location.reload();
-//           } else {
-//             instance.logoutPopup();
-//           }
-//         }}
-//       />
-
-//       <main className="flex-grow flex flex-col overflow-hidden relative">
-//         <Header
-//           leftSidebarOpen={leftSidebarOpen}
-//           setLeftSidebarOpen={setLeftSidebarOpen}
-//           rightSidebarOpen={rightSidebarOpen}
-//           setRightSidebarOpen={setRightSidebarOpen}
-//           activeTab={activeTab}
-//           viewMode={viewMode}
-//           setViewMode={setViewMode}
-//           handleDownloadExcel={handleDownloadExcel}
-//           copyToDraft={copyToDraft}
-//           clearDraft={clearDraft}
-//           saveDraft={saveDraft}
-//           saveDraftAsNew={saveDraftAsNew} // ✅ NEW for split-button option
-//           publishToFinal={publishToFinal}
-//           onShare={() => setShareModalOpen(true)}
-//           isDraftDirty={activeTab === "Draft" && isDraftDirty}
-//         />
-
-//         <div className="px-6 pt-2 pb-0 flex items-center justify-center">
-//           <div className="flex bg-gray-100 p-1 rounded-lg">
-//             <button
-//               onClick={() => setViewResolution("Month")}
-//               className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${viewResolution === "Month" ? "bg-white shadow text-blue-600" : "text-gray-500 hover:text-gray-700"}`}
-//             >
-//               Months
-//             </button>
-//             <button
-//               onClick={() => setViewResolution("Quarter")}
-//               className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${viewResolution === "Quarter" ? "bg-white shadow text-blue-600" : "text-gray-500 hover:text-gray-700"}`}
-//             >
-//               Quarters
-//             </button>
-//             <button
-//               onClick={() => setViewResolution("Year")}
-//               className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${viewResolution === "Year" ? "bg-white shadow text-blue-600" : "text-gray-500 hover:text-gray-700"}`}
-//             >
-//               Years
-//             </button>
-//           </div>
-//         </div>
-
-//         <ShareModal
-//           isOpen={shareModalOpen}
-//           onClose={() => setShareModalOpen(false)}
-//           userEmail={userEmail}
-//           accessToken={accessToken}
-//         />
-
-//         <div className="flex-grow p-1  overflow-hidden flex flex-col gap-6">
-//           <div className="flex h-full gap-6">
-//             <div className="flex-grow flex flex-col min-w-0">
-//               <div className="flex-grow bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex flex-col overflow-hidden relative">
-//                 <div className="flex-grow overflow-hidden">
-//                   <PlanningGrid
-//                     viewMode={viewMode}
-//                     rowIds={viewMode === "Regulation" ? regulationsForUI : modelsForUI}
-//                     cellData={viewMode === "Regulation" ? activePlan.regulationCells : modelData}
-//                     isEditable={activeTab === "Draft" && viewMode === "Regulation"}
-//                     onCellChange={handleCellChange}
-//                     onCellClick={
-//                       activeTab === "Final" && viewMode === "Regulation" ? handleFinalCellClick : undefined
-//                     }
-//                     financialYears={years}
-//                     onDeleteRow={
-//                       activeTab === "Draft" && viewMode === "Regulation" ? deleteRegulationDraftOnly : undefined
-//                     }
-//                     // ✅ Draft reorder enabled and stored in draft (regOrder)
-//                     onRowReorder={
-//                       activeTab === "Draft" && viewMode === "Regulation" ? handleDraftRegReorder : undefined
-//                     }
-//                     layout={viewMode === "Regulation" ? activePlan.layout : undefined}
-//                     onLayoutChange={
-//                       activeTab === "Draft" && viewMode === "Regulation" ? handleLayoutChange : undefined
-//                     }
-//                     onRenameRow={
-//                       activeTab === "Draft" && viewMode === "Regulation" ? handleRenameRow : undefined
-//                     }
-//                     viewResolution={viewResolution}
-//                   />
-//                 </div>
-//               </div>
-
-//               <DrillDownModal
-//                 isOpen={activeTab === "Final" && selectedModels.length > 0}
-//                 selectedModels={selectedModels}
-//                 onClose={() => setSelectedModels([])}
-//                 modelData={modelData}
-//                 years={years}
-//               />
-//             </div>
-
-//             <ComplianceSidebar
-//               isOpen={rightSidebarOpen}
-//               regulations={regulationsForUI}
-//               validation={validationForSidebar}
-//               activeTab={activeTab}
-//               deleteRegulation={activeTab === "Draft" ? deleteRegulationDraftOnly : (() => { })}
-//             />
-//           </div>
-//         </div>
-//       </main>
-//     </div>
-//   );
-// };
-
-// export default App;
-
-
-
-
-
-
-// App.tsx - Fixed for backend OAuth
+// App.tsx
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { NavTab, ViewMode, PlanData, Draft } from "./utils/types";
 
@@ -746,7 +23,12 @@ import { getAllowedEmails, BACKEND_BASE_URL } from "./authConfig";
 import { Settings2 } from "lucide-react";
 import { api } from "./apiService/api";
 
-const INITIAL_PLAN_DATA: PlanData = { regulationCells: {}, regOrder: [] };
+const INITIAL_PLAN_DATA: PlanData = {
+  regulationCells: {},
+  regOrder: [],
+  customModels: [],
+  customRegulations: []
+};
 
 type FinalPlanResponse = {
   publishedAt: number;
@@ -774,15 +56,20 @@ const stableStringify = (obj: any) => {
       }
       return v;
     };
-    return JSON.stringify(obj, sorter);
+    return JSON.stringify(obj, sorter) || "";
   } catch {
-    return JSON.stringify(obj);
+    return JSON.stringify(obj) || "";
   }
 };
+
+type UnsavedAction = 'SAVE_AS_NEW' | 'UPDATE' | 'DISCARD';
 
 const App: React.FC = () => {
   // ✅ Auth state (no MSAL)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+
+  // Pending navigation state (to resume after save/discard)
+  const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState<NavTab>("Draft");
@@ -811,6 +98,10 @@ const App: React.FC = () => {
   const draftRegulations = useMemo(() => getDraftRegList(currentPlan), [currentPlan]);
 
   // Regulation list used by UI depends on tab
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [showUnsavedPrompt, setShowUnsavedPrompt] = useState(false);
+
+  // Regulation list used by UI depends on tab
   const regulationsForUI = useMemo(
     () => (activeTab === "Draft" ? draftRegulations : finalRegulations),
     [activeTab, draftRegulations, finalRegulations]
@@ -822,7 +113,6 @@ const App: React.FC = () => {
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
 
   // Share token
-  const [shareModalOpen, setShareModalOpen] = useState(false);
   const [accessToken, setAccessToken] = useState("");
 
   // Years
@@ -831,6 +121,10 @@ const App: React.FC = () => {
   // Sidebars
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+
+  // Highlighting state for double-click on model/regulation in sidebar
+  const [highlightedModel, setHighlightedModel] = useState<string | null>(null);
+  const [highlightedRegulation, setHighlightedRegulation] = useState<string | null>(null);
 
   // ✅ Check authentication on mount
   useEffect(() => {
@@ -1036,7 +330,188 @@ const App: React.FC = () => {
     []
   );
 
+  const handleUpdateCustomLists = useCallback((models: string[], regs: string[]) => {
+    setCurrentPlan(prev => ({
+      ...prev,
+      customModels: models,
+      customRegulations: regs
+    }));
+  }, []);
+
+  const handleAddRegulationRow = useCallback((name: string) => {
+    if (!name.trim()) return;
+    setCurrentPlan((prev) => {
+      // Check if exists in regOrder
+      if ((prev.regOrder || []).includes(name)) return prev;
+
+      const cells = prev.regulationCells || {};
+      const seedKey = getCellKey(name, years[0].label, 4);
+
+      const nextCells = { ...cells };
+      if (!nextCells[seedKey]) nextCells[seedKey] = [];
+
+      const nextOrder = Array.from(new Set([...(prev.regOrder || []), name]));
+      return { ...prev, regulationCells: nextCells, regOrder: nextOrder };
+    });
+  }, [years]);
+
+  const handleAddModelToCell = useCallback((rowId: string, year: string, month: number, model: string) => {
+    setCurrentPlan((prev) => {
+      const key = getCellKey(rowId, year, month);
+      const currentVals = prev.regulationCells[key] || [];
+      // Avoid duplicates if desired, or allow. Requirement says "added to that cell". Let's avoid exact dupes.
+      if (currentVals.includes(model)) return prev;
+
+      return {
+        ...prev,
+        regulationCells: {
+          ...prev.regulationCells,
+          [key]: [...currentVals, model],
+        },
+      };
+    });
+  }, []);
+
+  const handleRenameDraft = useCallback(async (id: string, newName: string) => {
+    if (!userEmail) return;
+
+    const draftToUpdate = drafts.find(d => d.id === id);
+    if (!draftToUpdate) return;
+
+    // If renaming current draft, use currentPlan to avoid data loss
+    let dataToSave = draftToUpdate.data;
+    if (currentDraftId === id) {
+      dataToSave = currentPlan;
+    }
+
+    const payload: Draft = {
+      ...draftToUpdate,
+      name: newName,
+      updatedAt: Date.now(),
+      data: dataToSave
+    };
+
+    try {
+      await api.saveDraft(payload, userEmail);
+      setDrafts(prev => prev.map(d => d.id === id ? payload : d));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to rename draft");
+    }
+  }, [drafts, currentDraftId, currentPlan, userEmail]);
+
   // -----------------------
+  // Helper: Check if model is used in plan cells
+  // -----------------------
+  const isModelInUse = useCallback((modelName: string): boolean => {
+    const cells = currentPlan.regulationCells || {};
+    for (const key of Object.keys(cells)) {
+      if ((cells[key] || []).includes(modelName)) return true;
+    }
+    return false;
+  }, [currentPlan]);
+
+  // -----------------------
+  // Helper: Check if regulation is used in plan  
+  // -----------------------
+  const isRegulationInUse = useCallback((regName: string): boolean => {
+    const cells = currentPlan.regulationCells || {};
+    const order = currentPlan.regOrder || [];
+    // Check if it's in regOrder or has cells
+    if (order.includes(regName)) return true;
+    for (const key of Object.keys(cells)) {
+      if (key.startsWith(regName + "|")) return true;
+    }
+    return false;
+  }, [currentPlan]);
+
+  // -----------------------
+  // Rename model everywhere in the plan
+  // -----------------------
+  const renameModelInPlan = useCallback((oldName: string, newName: string) => {
+    if (oldName === newName || !newName.trim()) return;
+
+    setCurrentPlan(prev => {
+      const newCells: Record<string, string[]> = {};
+
+      for (const [key, values] of Object.entries(prev.regulationCells || {})) {
+        newCells[key] = (values || []).map(v => v === oldName ? newName.trim() : v);
+      }
+
+      // Also update customModels list
+      const newCustomModels = (prev.customModels || []).map(m => m === oldName ? newName.trim() : m);
+
+      return {
+        ...prev,
+        regulationCells: newCells,
+        customModels: newCustomModels
+      };
+    });
+  }, []);
+
+  // -----------------------
+  // Rename regulation everywhere in the plan
+  // -----------------------
+  const renameRegulationInPlan = useCallback((oldName: string, newName: string) => {
+    if (oldName === newName || !newName.trim()) return;
+
+    setCurrentPlan(prev => {
+      const newCells: Record<string, string[]> = {};
+
+      // Rename keys in regulationCells
+      for (const [key, values] of Object.entries(prev.regulationCells || {})) {
+        const [reg, ...rest] = key.split("|");
+        if (reg === oldName) {
+          const newKey = [newName.trim(), ...rest].join("|");
+          newCells[newKey] = values;
+        } else {
+          newCells[key] = values;
+        }
+      }
+
+      // Update regOrder
+      const newOrder = (prev.regOrder || []).map(r => r === oldName ? newName.trim() : r);
+
+      // Update customRegulations
+      const newCustomRegs = (prev.customRegulations || []).map(r => r === oldName ? newName.trim() : r);
+
+      return {
+        ...prev,
+        regulationCells: newCells,
+        regOrder: newOrder,
+        customRegulations: newCustomRegs
+      };
+    });
+  }, []);
+
+  // -----------------------
+  // Enhanced custom lists update with rename & delete protection
+  // -----------------------
+  const handleUpdateCustomListsWithRename = useCallback((
+    models: string[],
+    regs: string[],
+    renamedModel?: { oldName: string; newName: string },
+    renamedReg?: { oldName: string; newName: string }
+  ) => {
+    // Handle model rename
+    if (renamedModel) {
+      renameModelInPlan(renamedModel.oldName, renamedModel.newName);
+    }
+
+    // Handle regulation rename
+    if (renamedReg) {
+      renameRegulationInPlan(renamedReg.oldName, renamedReg.newName);
+    }
+
+    // If no rename, just update the lists
+    if (!renamedModel && !renamedReg) {
+      setCurrentPlan(prev => ({
+        ...prev,
+        customModels: models,
+        customRegulations: regs
+      }));
+    }
+  }, [renameModelInPlan, renameRegulationInPlan]);
   // Active plan per tab
   // -----------------------
   const activePlan: PlanData = activeTab === "Draft" ? currentPlan : finalPlan || INITIAL_PLAN_DATA;
@@ -1044,7 +519,56 @@ const App: React.FC = () => {
   // -----------------------
   // Models per tab
   // -----------------------
-  const draftModels = useMemo(() => getUniqueModels(currentPlan), [currentPlan]);
+  // -----------------------
+  // Sidebar Lists (Derived from Active Plan)
+  // -----------------------
+  // -----------------------
+  // Sidebar Lists (Derived from Active Plan)
+  // -----------------------
+  const sidebarModels = useMemo(() => {
+    // For Final, strictly show what is in the table
+    if (activeTab === "Final") {
+      return getUniqueModels(activePlan);
+    }
+    // For Draft, show merge of table + custom lists
+    const tableModels = getUniqueModels(activePlan);
+    const customModels = activePlan.customModels || [];
+    return Array.from(new Set([...tableModels, ...customModels])).sort();
+  }, [activePlan, activeTab]);
+
+  const sidebarRegulations = useMemo(() => {
+    // For Final, strictly show what is in the table
+    if (activeTab === "Final") {
+      return getDraftRegList(activePlan); // This gets regs that have cells or are in order
+    }
+    // For Draft, show merge of table + custom lists
+    const tableRegs = getDraftRegList(activePlan);
+    const customRegs = activePlan.customRegulations || [];
+    return Array.from(new Set([...tableRegs, ...customRegs])).sort();
+    return Array.from(new Set([...tableRegs, ...customRegs])).sort();
+  }, [activePlan, activeTab]);
+
+  const missingRegulations = useMemo(() => {
+    if (activeTab !== 'Draft') return [];
+    // "Missing" means they are in the sidebar list (sidebarRegulations) but NOT used in the table (getDraftRegList).
+    // Warning: sidebarRegulations depends on getDraftRegList.
+    // sidebarRegulations = tableRegs U customRegs.
+    // So missing = (tableRegs U customRegs) - tableRegs = customRegs - tableRegs.
+    const tableRegs = new Set(getDraftRegList(activePlan));
+    // We re-calculate sidebar list or just use customRegulations prop directly? 
+    // sidebarRegulations is memoized.
+    return sidebarRegulations.filter(r => !tableRegs.has(r));
+  }, [activePlan, activeTab, sidebarRegulations]);
+
+  // -----------------------
+  // Models per tab
+  // -----------------------
+  const draftModels = useMemo(() => {
+    const tableModels = getUniqueModels(currentPlan);
+    const customModels = currentPlan.customModels || [];
+    // Merge and unique
+    return Array.from(new Set([...tableModels, ...customModels])).sort();
+  }, [currentPlan]);
   const modelsForUI = activeTab === "Draft" ? draftModels : finalModels;
 
   const modelData = useMemo(() => {
@@ -1068,11 +592,36 @@ const App: React.FC = () => {
 
     const draftId = currentDraftId || crypto.randomUUID();
 
+    // Determine name: 
+    // If name is strict format "Draft <Date/Time>", update the timestamp.
+    // Otherwise keep the custom name (even if it starts with "Draft ").
+    const existingDraft = drafts.find(d => d.id === currentDraftId);
+    let draftName = `Draft ${new Date().toLocaleString()}`;
+
+    if (existingDraft) {
+      const oldName = existingDraft.name;
+      if (!oldName.startsWith("Draft ")) {
+        // Completely custom name -> Keep
+        draftName = oldName;
+      } else {
+        // Starts with "Draft ". Check if the rest is a valid date.
+        // If it is NOT a date (e.g. "Draft Final"), keep it.
+        // If it IS a date (e.g. "Draft 2/5/2026..."), let it update to new timestamp.
+        const datePart = oldName.substring(6); // Remove "Draft "
+        const timestamp = Date.parse(datePart);
+
+        // Valid timestamp AND contains ':' (to distinguish "Draft 1" vs "Draft 2/5/2026 10:00:00")
+        const isTimestamp = !isNaN(timestamp) && datePart.includes(':');
+
+        if (!isTimestamp) {
+          draftName = oldName;
+        }
+      }
+    }
+
     const payload: Draft = {
       id: draftId,
-      name: currentDraftId
-        ? `Draft (updated) ${new Date().toLocaleString()}`
-        : `Draft ${new Date().toLocaleString()}`,
+      name: draftName,
       updatedAt: Date.now(),
       data: { ...currentPlan },
     };
@@ -1127,13 +676,68 @@ const App: React.FC = () => {
     }
   };
 
+  // -----------------------
+  // Navigation Guards
+  // -----------------------
+
+  const handleTabChange = (tab: NavTab) => {
+    if (activeTab === "Draft" && isDraftDirty) {
+      setPendingNavigation(() => () => setActiveTab(tab));
+      setShowUnsavedPrompt(true);
+    } else {
+      setActiveTab(tab);
+    }
+  };
+
+  const handleLoadDraft = (draft: Draft) => {
+    if (activeTab === "Draft" && isDraftDirty) {
+      setPendingNavigation(() => () => loadDraft(draft));
+      setShowUnsavedPrompt(true);
+    } else {
+      loadDraft(draft);
+    }
+  };
+
   const loadDraft = (draft: Draft) => {
     setCurrentPlan(draft.data);
     setCurrentDraftId(draft.id);
-    setLastSavedPlanSnapshot(stableStringify(draft.data));
+    setLastSavedPlanSnapshot(stableStringify(draft.data)); // coercing to string
     setActiveTab("Draft");
     setViewMode("Regulation");
   };
+
+  // Wrap actions to clear prompt
+  const performSaveAsNew = async () => {
+    await saveDraftAsNew();
+    setShowUnsavedPrompt(false);
+    if (pendingNavigation) {
+      pendingNavigation();
+      setPendingNavigation(null);
+    }
+  };
+
+  const performUpdate = async () => {
+    await saveDraft();
+    setShowUnsavedPrompt(false);
+    if (pendingNavigation) {
+      pendingNavigation();
+      setPendingNavigation(null);
+    }
+  };
+
+  const performDiscard = () => {
+    if (lastSavedPlanSnapshot) {
+      setCurrentPlan(JSON.parse(lastSavedPlanSnapshot));
+    } else {
+      setCurrentPlan(INITIAL_PLAN_DATA);
+    }
+    setShowUnsavedPrompt(false);
+    if (pendingNavigation) {
+      pendingNavigation();
+      setPendingNavigation(null);
+    }
+  };
+
 
   const deleteDraft = async (id: string) => {
     if (!userEmail) return;
@@ -1339,10 +943,10 @@ const App: React.FC = () => {
       <Sidebar
         isOpen={leftSidebarOpen}
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleTabChange}
         setSelectedModels={setSelectedModels}
         drafts={drafts}
-        loadDraft={loadDraft}
+        loadDraft={handleLoadDraft}
         deleteDraft={deleteDraft}
         newRegName={newRegName}
         setNewRegName={setNewRegName}
@@ -1352,6 +956,18 @@ const App: React.FC = () => {
           username: userEmail,
         }}
         onLogout={handleLogout}
+        customModels={sidebarModels}
+        customRegulations={sidebarRegulations}
+        onUpdateCustomLists={handleUpdateCustomLists}
+        renameDraft={handleRenameDraft}
+        isModelInUse={isModelInUse}
+        isRegulationInUse={isRegulationInUse}
+        onRenameModel={renameModelInPlan}
+        onRenameRegulation={renameRegulationInPlan}
+        highlightedModel={highlightedModel}
+        highlightedRegulation={highlightedRegulation}
+        setHighlightedModel={setHighlightedModel}
+        setHighlightedRegulation={setHighlightedRegulation}
       />
 
       <main className="flex-grow flex flex-col overflow-hidden relative">
@@ -1373,7 +989,66 @@ const App: React.FC = () => {
           isDraftDirty={activeTab === "Draft" && isDraftDirty}
         />
 
-        <div className="px-6 pt-2 pb-0 flex items-center justify-center">
+        <div className="px-6 pt-2 pb-0 flex items-center justify-between relative">
+
+          {/* Draft Status / Unsaved Prompt Area */}
+          <div className="flex items-center">
+            {activeTab === 'Draft' && (
+              <div className="flex items-center gap-3">
+                <div className="text-sm font-semibold text-blue-900 bg-white px-3 py-1.5 rounded-lg shadow-sm border border-blue-100 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                  {currentDraftId
+                    ? drafts.find(d => d.id === currentDraftId)?.name || 'Untitled Draft'
+                    : 'New Draft'}
+                  {isDraftDirty && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ml-1">Unsaved</span>}
+                </div>
+
+                {/* Unsaved Changes Prompt Modal/Popover */}
+                {/* Unsaved Changes Prompt Modal/Popover - Fixed Overlay */}
+                {showUnsavedPrompt && (
+                  <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
+                    <div className="bg-white rounded-lg shadow-2xl border border-gray-200 p-6 w-80 animate-in fade-in zoom-in-95 duration-200 relative">
+                      <h4 className="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                        Unsaved Changes
+                      </h4>
+                      <p className="text-sm text-gray-600 mb-6">You have unsaved changes in this draft. What would you like to do?</p>
+                      <div className="flex flex-col gap-3">
+                        <button
+                          onClick={performSaveAsNew}
+                          className="w-full text-left px-4 py-3 text-sm font-medium bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors border border-blue-100"
+                        >
+                          Save as New Draft
+                        </button>
+                        {currentDraftId && (
+                          <button
+                            onClick={performUpdate}
+                            className="w-full text-left px-4 py-3 text-sm font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors border border-green-100"
+                          >
+                            Update Current Draft
+                          </button>
+                        )}
+                        <button
+                          onClick={performDiscard}
+                          className="w-full text-left px-4 py-3 text-sm font-medium bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors border border-red-100"
+                        >
+                          Discard Changes
+                        </button>
+                      </div>
+                      {/* Close X */}
+                      <button
+                        onClick={() => { setShowUnsavedPrompt(false); setPendingNavigation(null); }}
+                        className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1 rounded-full transition-colors"
+                      >
+                        <Settings2 className="w-5 h-5 rotate-45" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="flex bg-gray-100 p-1 rounded-lg">
             <button
               onClick={() => setViewResolution("Month")}
@@ -1431,7 +1106,15 @@ const App: React.FC = () => {
                     onRenameRow={
                       activeTab === "Draft" && viewMode === "Regulation" ? handleRenameRow : undefined
                     }
+                    onAddRegulationFromDrag={
+                      activeTab === "Draft" && viewMode === "Regulation" ? handleAddRegulationRow : undefined
+                    }
+                    onAddModelToCell={
+                      activeTab === "Draft" && viewMode === "Regulation" ? handleAddModelToCell : undefined
+                    }
                     viewResolution={viewResolution}
+                    highlightedModel={highlightedModel}
+                    highlightedRegulation={highlightedRegulation}
                   />
                 </div>
               </div>
@@ -1451,6 +1134,7 @@ const App: React.FC = () => {
               validation={validationForSidebar}
               activeTab={activeTab}
               deleteRegulation={activeTab === "Draft" ? deleteRegulationDraftOnly : (() => { })}
+              missingRegulations={missingRegulations}
             />
           </div>
         </div>

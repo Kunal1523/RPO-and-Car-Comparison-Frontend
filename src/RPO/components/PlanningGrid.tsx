@@ -6,9 +6,9 @@ import {
   MONTH_LABELS,
   SPECIAL_VALUES,
 } from "../utils/constants";
-import { getCellKey } from "../utils/utils";
+import { getCellKey, stringToColor } from "../utils/utils";
 import { ViewMode, FinancialYear } from "../utils/types";
-import { X, GripVertical } from "lucide-react";
+import { X, GripVertical, Info } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -48,6 +48,11 @@ interface PlanningGridProps {
   // Granularity
   viewResolution?: "Month" | "Quarter" | "Year";
   visibleLevels?: { years: boolean; quarters: boolean; months: boolean };
+  onAddRegulationFromDrag?: (name: string) => void;
+  onAddModelToCell?: (rowId: string, year: string, month: number, model: string) => void;
+  // NEW: Highlighting
+  highlightedModel?: string | null;
+  highlightedRegulation?: string | null;
 }
 
 const DraggableRow = ({
@@ -77,6 +82,10 @@ const DraggableRow = ({
   firstColWidth,
   viewResolution = "Month",
   onRenameRow,
+  onAddModelToCell,
+  viewMode,
+  highlightedModel,
+  highlightedRegulation,
 }: any) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: rowId, disabled: !isDraggable });
@@ -187,28 +196,55 @@ const DraggableRow = ({
 
       {/* Data Cells */}
       {financialYears.map((fy: FinancialYear) => {
+        // Calculate duplicated models for this row (Regulation View Only)
+        // We do this per-year loop or just compute once? 
+        // Ideally we compute once per ROW, but here we are maping years.
+        // We can pass a pre-computed map, or compute it here?
+        // Since we map years, we shouldn't re-compute for every year if possible.
+        // BUT strict strict React: we should compute this outside the map.
+        // However, I can't reach outside the map easily with replace without context.
+        // Computation is fast. I will compute helper HERE but it checks ALL years.
+        // Warning: This is O(N^2) if done for every year column. 
+        // Better: Compute `rowLevelCounts` once at the top of the `rowIds.map` iteration (which I can't see the start of easily).
+        // Wait, line 192 is inside `rowIds.map`.
+        // I will insert it BEFORE line 192.
+
+        const rowCounts: Record<string, number> = {};
+        if (viewMode === 'Regulation') {
+          financialYears.forEach((f: FinancialYear) => {
+            QUARTERS.forEach(q => q.months.forEach(m => {
+              const k = getCellKey(rowId, f.label, m);
+              (cellData[k] || []).forEach((v: string) => {
+                rowCounts[v] = (rowCounts[v] || 0) + 1;
+              });
+            }));
+          });
+        }
+
         if (viewResolution === "Year") {
           // Year Aggregation
           // Implementation Detail: We need a helper to get values for whole year.
           const allVals = new Set<string>();
           QUARTERS.forEach(q => q.months.forEach(m => {
-            (cellData[getCellKey(rowId, fy.label, m)] || []).forEach(v => allVals.add(v));
+            (cellData[getCellKey(rowId, fy.label, m)] || []).forEach((v: string) => allVals.add(v));
           }));
           const values = Array.from(allVals);
           return (
             <td key={`${fy.label}-year`} className="month-col border-r border-b border-gray-200 p-2 align-top">
               <div className="flex flex-wrap gap-1">
-                {values.map((v, i) => {
+                {values.map((v: string, i) => {
                   const isDeadline = v.toLowerCase().includes('deadline');
+                  const bgColor = isDeadline ? '#FEE2E2' : stringToColor(v);
                   return (
-                    <span 
-                    key={i}
-                    className={`${isDeadline ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'} text-xs px-2 py-1 rounded`}
-                     >
+                    <span
+                      key={i}
+                      className={`${isDeadline ? 'text-red-800' : 'text-gray-900'} text-xs px-2 py-1 rounded shadow-sm`}
+                      style={{ backgroundColor: bgColor }}
+                    >
                       {v}
                     </span>
                   );
-               })}
+                })}
               </div>
             </td>
           );
@@ -221,24 +257,26 @@ const DraggableRow = ({
               {QUARTERS.map(q => {
                 const allVals = new Set<string>();
                 q.months.forEach(m => {
-                  (cellData[getCellKey(rowId, fy.label, m)] || []).forEach(v => allVals.add(v));
+                  (cellData[getCellKey(rowId, fy.label, m)] || []).forEach((v: string) => allVals.add(v));
                 });
                 const values = Array.from(allVals);
                 return (
                   <td key={`${fy.label}-${q.label}`} className="month-col border-r border-b border-gray-200 p-2 align-top">
                     <div className="flex flex-wrap gap-1">
-                      {values.map((v, i) => {
-                  const isDeadline = v.toLowerCase().includes('deadline');
-                  return (
-                    <span 
-                    key={i}
-                    className={`${isDeadline ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'} text-xs px-2 py-1 rounded`}
-                     >
-                      {v}
-                    </span>
-                  );
-               })}
-              </div>
+                      {values.map((v: string, i) => {
+                        const isDeadline = v.toLowerCase().includes('deadline');
+                        const bgColor = isDeadline ? '#FEE2E2' : stringToColor(v);
+                        return (
+                          <span
+                            key={i}
+                            className={`${isDeadline ? 'text-red-800' : 'text-gray-900'} text-xs px-2 py-1 rounded shadow-sm`}
+                            style={{ backgroundColor: bgColor }}
+                          >
+                            {v}
+                          </span>
+                        );
+                      })}
+                    </div>
                   </td>
                 );
               })}
@@ -265,6 +303,19 @@ const DraggableRow = ({
                       key={key}
                       className={[
                         "month-col relative group align-top text-black border-r border-b border-gray-200",
+                        // Highlighting for double-clicked model/regulation (works in both views)
+                        // In Regulation view: highlight if row matches highlightedRegulation OR cell contains highlightedModel
+                        // In Model view: highlight if row matches highlightedModel OR cell contains highlightedRegulation
+                        (viewMode === "Regulation" && highlightedRegulation && rowId === highlightedRegulation) ||
+                          (viewMode === "Model" && highlightedModel && rowId === highlightedModel) ||
+                          (viewMode === "Regulation" && highlightedModel && values.includes(highlightedModel)) ||
+                          (viewMode === "Model" && highlightedRegulation && values.includes(highlightedRegulation))
+                          ? "bg-violet-100"
+                          : "",
+                        // Validation Error Styling (only if not highlighted)
+                        !highlightedModel && !highlightedRegulation && viewMode === "Regulation" && values.some((v: string) => (rowCounts[v] || 0) > 1)
+                          ? "bg-red-100"
+                          : "",
                         isEditable
                           ? ""
                           : onCellClick
@@ -292,7 +343,15 @@ const DraggableRow = ({
                         const raw = e.dataTransfer.getData("application/json");
                         if (!raw) return;
                         try {
-                          const { val, sourceKey } = JSON.parse(raw);
+                          const payload = JSON.parse(raw);
+
+                          if (payload.type === 'model' && payload.name) {
+                            e.stopPropagation(); // Prevent container from catching it
+                            onAddModelToCell?.(rowId, fy.label, m, payload.name);
+                            return;
+                          }
+
+                          const { val, sourceKey } = payload;
                           if (sourceKey && val) moveCellValues(sourceKey, key, val);
                         } catch (err) { }
                       }}
@@ -311,16 +370,36 @@ const DraggableRow = ({
                           placeholder="-"
                         />
                       ) : (
-                        <div className="px-2 py-2 flex flex-wrap items-center gap-1 min-h-[40px] overflow-hidden">
+                        <div className="px-2 py-2 flex flex-wrap items-center gap-1 min-h-[40px] relative">
+                          {/* Duplicate Warning Icon */}
+                          {viewMode === "Regulation" && values.some((v: string) => (rowCounts[v] || 0) > 1) && (
+                            <div className="absolute top-0.5 right-0.5  group/info">
+                              <Info className="w-3 h-3 text-red-500 cursor-help z-[29]" />
+                              <div className="hidden group-hover/info:block absolute bottom-full right-0 mb-1 bg-gray-900 text-white text-xs rounded shadow-xl px-3 py-2 whitespace-nowrap pointer-events-none z-[9999]">
+                                ⚠️ Model is already in this Regulation
+                              </div>
+                            </div>
+                          )}
+
                           {values.map((v: string, i: number) => {
-                            let colorClasses = "bg-gray-200 text-black";
-                            if (SPECIAL_VALUES.includes(v)) colorClasses = "bg-red-500 text-white";
-                            else if (v.length > 0) colorClasses = "bg-blue-600 text-white";
+                            let styles: React.CSSProperties = {};
+                            let classes = "text-black";
+
+                            if (SPECIAL_VALUES.includes(v)) {
+                              classes = "bg-red-500 text-white";
+                            } else if (v.length > 0) {
+                              // Use unique color
+                              styles.backgroundColor = stringToColor(v);
+                              classes = "text-gray-900";
+                            } else {
+                              classes = "bg-gray-200 text-black";
+                            }
 
                             return (
                               <span
                                 key={i}
-                                className={`${colorClasses} px-2 py-1 rounded text-[10px] font-bold shadow-sm whitespace-nowrap cursor-grab active:cursor-grabbing hover:ring-2 ring-offset-1 ring-blue-400`}
+                                className={`${classes} px-2 py-1 rounded text-[10px] font-bold shadow-sm whitespace-nowrap cursor-grab active:cursor-grabbing hover:ring-2 ring-offset-1 ring-blue-400`}
+                                style={styles}
                                 draggable={isEditable}
                                 onDragStart={(e) => {
                                   e.dataTransfer.setData("application/json", JSON.stringify({ val: v, sourceKey: key }));
@@ -342,7 +421,7 @@ const DraggableRow = ({
           </React.Fragment>
         );
       })}
-    </tr>
+    </tr >
   );
 };
 
@@ -362,6 +441,10 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
   onLayoutChange,
   viewResolution = "Month",
   onRenameRow,
+  onAddRegulationFromDrag,
+  onAddModelToCell,
+  highlightedModel,
+  highlightedRegulation,
 }) => {
   const [editingKey, setEditingKey] = React.useState<string | null>(null);
   const [draftValue, setDraftValue] = React.useState("");
@@ -550,7 +633,24 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <div className="excel-container custom-scrollbar shadow-inner h-full overflow-auto">
+      <div
+        className="excel-container custom-scrollbar shadow-inner h-full overflow-auto"
+        onDragOver={(e) => {
+          if (isEditable) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          if (!isEditable) return;
+          e.preventDefault();
+          const raw = e.dataTransfer.getData("application/json");
+          if (!raw) return;
+          try {
+            const payload = JSON.parse(raw);
+            if (payload.type === 'regulation' && payload.name) {
+              onAddRegulationFromDrag?.(payload.name);
+            }
+          } catch (err) { }
+        }}
+      >
         <table className="excel-table text-black">
           <colgroup>
             <col
@@ -573,7 +673,7 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
                   return (
                     <col
                       key={key}
-                      style={{width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
+                      style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
                     />
                   );
                 })
@@ -673,21 +773,21 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
                       <React.Fragment key={`${fy.label}-${q.label}-months`}>
                         {q.months.map((m) => (
                           <th
-    key={`${fy.label}-${m}`}
-    className="sticky-top sticky-top-2 month-col text-[10px] font-medium text-blue-900"
-    // ✅ Remove inline border classes, let CSS handle it
-  >
-    {MONTH_LABELS[m]}
-    <div
-      className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400"
-      style={{ zIndex: 60 }}
-      onMouseDown={(e) => {
-        const key = `${fy.label}-${m}`;
-        const currentW = colWidths[key] || 72; // ✅ Default to 72
-        handleColResizeStart(e, key, currentW);
-      }}
-    />
-  </th>
+                            key={`${fy.label}-${m}`}
+                            className="sticky-top sticky-top-2 month-col text-[10px] font-medium text-blue-900"
+                          // ✅ Remove inline border classes, let CSS handle it
+                          >
+                            {MONTH_LABELS[m]}
+                            <div
+                              className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400"
+                              style={{ zIndex: 60 }}
+                              onMouseDown={(e) => {
+                                const key = `${fy.label}-${m}`;
+                                const currentW = colWidths[key] || 72; // ✅ Default to 72
+                                handleColResizeStart(e, key, currentW);
+                              }}
+                            />
+                          </th>
                         ))}
                       </React.Fragment>
                     ))}
@@ -732,6 +832,10 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
                   firstColWidth={colWidths["first-col"]}
                   viewResolution={viewResolution}
                   onRenameRow={onRenameRow}
+                  onAddModelToCell={onAddModelToCell}
+                  viewMode={viewMode}
+                  highlightedModel={highlightedModel}
+                  highlightedRegulation={highlightedRegulation}
                 />
               ))}
             </SortableContext>

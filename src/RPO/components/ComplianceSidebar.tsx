@@ -1,13 +1,15 @@
 import React from "react";
 import { NavTab } from "../utils/types";
 import { AlertCircle, CheckCircle, X } from "lucide-react";
+import { stringToColor } from "../utils/utils";
 
 interface ComplianceSidebarProps {
   isOpen: boolean;
   regulations: string[];
   validation: Record<string, string[]>;
   activeTab: NavTab;
-  deleteRegulation?: (reg: string) => void; // ✅ optional
+  deleteRegulation?: (reg: string) => void;
+  missingRegulations?: string[]; // Regulations in sidebar list but NOT in table data
 }
 
 const ComplianceSidebar: React.FC<ComplianceSidebarProps> = ({
@@ -16,12 +18,12 @@ const ComplianceSidebar: React.FC<ComplianceSidebarProps> = ({
   validation,
   activeTab,
   deleteRegulation,
+  missingRegulations = [],
 }) => {
   return (
     <div
-      className={`bg-white border border-gray-200 rounded-xl flex flex-col shadow-sm transition-all duration-300 ease-in-out ${
-        isOpen ? "w-80 p-5 opacity-100" : "w-0 p-0 opacity-0 overflow-hidden border-none"
-      }`}
+      className={`bg-white border border-gray-200 rounded-xl flex flex-col shadow-sm transition-all duration-300 ease-in-out ${isOpen ? "w-80 p-5 opacity-100" : "w-0 p-0 opacity-0 overflow-hidden border-none"
+        }`}
     >
       <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2 uppercase tracking-tighter whitespace-nowrap">
         <AlertCircle className="w-4 h-4 text-orange-500" />
@@ -36,9 +38,8 @@ const ComplianceSidebar: React.FC<ComplianceSidebarProps> = ({
           return (
             <div
               key={reg}
-              className={`group relative rounded-lg p-3 border ${
-                isDone ? "bg-green-50 border-green-100" : "bg-gray-50 border-gray-100"
-              }`}
+              className={`group relative rounded-lg p-3 border ${isDone ? "bg-green-50 border-green-100" : "bg-gray-50 border-gray-100"
+                }`}
             >
               {/* ✅ Delete only in FINAL tab */}
               {activeTab === "Final" && deleteRegulation && (
@@ -69,7 +70,8 @@ const ComplianceSidebar: React.FC<ComplianceSidebarProps> = ({
                     {missing.map((m) => (
                       <span
                         key={m}
-                        className="px-1.5 py-0.5 bg-white border border-orange-200 text-orange-700 text-[9px] font-bold rounded shadow-sm"
+                        className="px-1.5 py-0.5 border border-gray-200 text-gray-900 text-[9px] font-bold rounded shadow-sm"
+                        style={{ backgroundColor: stringToColor(m) }}
                       >
                         {m}
                       </span>
@@ -83,21 +85,23 @@ const ComplianceSidebar: React.FC<ComplianceSidebarProps> = ({
       </div>
 
       <div className="mt-4 pt-4 border-t border-gray-100 whitespace-nowrap">
-        <div className="text-[10px] text-gray-400 uppercase font-black mb-2">Guide</div>
-        <ul className="text-[11px] text-gray-500 space-y-2 italic list-none">
-          <li className="flex items-start gap-2">
-            <span className="w-1 h-1 bg-gray-400 rounded-full mt-1.5"></span>
-            <span>Comma-separated models (A, B)</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="w-1 h-1 bg-gray-400 rounded-full mt-1.5"></span>
-            <span>"Deadline NM" for milestones</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="w-1 h-1 bg-gray-400 rounded-full mt-1.5"></span>
-            <span>Sticky headers and column 1</span>
-          </li>
-        </ul>
+        {/* Missing Regulations Box (Draft Only) */}
+        {activeTab === "Draft" && missingRegulations.length > 0 && (
+          <div className="mt-1">
+            <h4 className="text-[10px] text-gray-400 uppercase font-black mb-2 flex items-center gap-1">
+              <AlertCircle className="w-3 h-3 text-red-500" />
+              Missing Regulations
+            </h4>
+            <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-lg p-3 space-y-1">
+              <p className="font-medium mb-1">Not used in plan:</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                {missingRegulations.map(r => (
+                  <li key={r} className="truncate">{r}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

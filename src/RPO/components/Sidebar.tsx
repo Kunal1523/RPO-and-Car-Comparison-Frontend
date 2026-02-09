@@ -1,181 +1,17 @@
-// import React from 'react';
-// import { NavTab, Draft } from '../types';
-// import {
-//     CheckCircle,
-//     FileText,
-//     Plus,
-//     Trash2,
-//     LogOut
-// } from 'lucide-react';
-// import Logo from '../Images/amlgolabslogowhite.png';
-
-// interface SidebarProps {
-//     isOpen: boolean;
-//     activeTab: NavTab;
-//     setActiveTab: (tab: NavTab) => void;
-//     setSelectedModels: (models: string[]) => void;
-//     drafts: Draft[];
-//     loadDraft: (draft: Draft) => void;
-//     deleteDraft: (id: string) => void;
-//     newRegName: string;
-//     setNewRegName: (name: string) => void;
-//     addRegulation: () => void;
-//     user: {
-//         name: string;
-//         username: string;
-//     };
-//     onLogout: () => void;
-// }
-
-// const Sidebar: React.FC<SidebarProps> = ({
-//     isOpen,
-//     activeTab,
-//     setActiveTab,
-//     setSelectedModels,
-//     drafts,
-//     loadDraft,
-//     deleteDraft,
-//     newRegName,
-//     setNewRegName,
-//     addRegulation,
-//     user,
-//     onLogout
-// }) => {
-//     // Utility for initials: "Rohit Gupta" -> "RG"
-//     const getInitials = (name: string) => {
-//         if (!name) return '??';
-//         const parts = name.trim().split(' ');
-//         if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-//         return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-//     };
-
-//     return (
-//         <nav className={`bg-white border-r border-gray-200 flex flex-col shadow-sm transition-all duration-300 ease-in-out ${isOpen ? 'w-80' : 'w-0 opacity-0 overflow-hidden'}`}>
-//             <div className="flex items-center gap-3 mb-4">
-//                 <div className="bg-white px-5 py-3 shadow flex items-center justify-center w-full">
-//                     <div className="h-10 w-full overflow-hidden flex items-center justify-center">
-//                         <img src={Logo} alt="Logo" className="w-full object-contain object-center" />
-//                     </div>
-//                 </div>
-//             </div>
-
-//             <div className="p-4 space-y-2 flex-grow overflow-y-auto custom-scrollbar">
-//                 <button
-//                     onClick={() => setActiveTab('Final')}
-//                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-all whitespace-nowrap ${activeTab === 'Final'
-//                         ? 'bg-blue-600 text-white shadow-md'
-//                         : 'text-gray-600 hover:bg-gray-100'
-//                         }`}
-//                 >
-//                     <CheckCircle className="w-5 h-5 shrink-0" />
-//                     Final Planning
-//                 </button>
-
-//                 <button
-//                     onClick={() => {
-//                         setActiveTab('Draft');
-//                         setSelectedModels([]);
-//                     }}
-//                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-all whitespace-nowrap ${activeTab === 'Draft'
-//                         ? 'bg-blue-600 text-white shadow-md'
-//                         : 'text-gray-600 hover:bg-gray-100'
-//                         }`}
-//                 >
-//                     <FileText className="w-5 h-5 shrink-0" />
-//                     Draft Planning
-//                 </button>
-
-//                 {activeTab === 'Draft' && (
-//                     <div className="pt-4 mt-4 border-t border-gray-100">
-//                         <label className="text-xs font-bold text-gray-400 uppercase px-2 mb-2 block">Regulations</label>
-//                         <div className="flex gap-2 px-2 mb-4">
-//                             <input
-//                                 type="text"
-//                                 value={newRegName}
-//                                 onChange={e => setNewRegName(e.target.value)}
-//                                 onKeyDown={e => {
-//                                     if (e.key === 'Enter') {
-//                                         addRegulation();
-//                                     }
-//                                 }}
-//                                 placeholder="New Reg"
-//                                 className="w-full text-xs p-2 border border-gray-200 rounded focus:ring-1 focus:ring-blue-500 outline-none"
-//                             />
-//                             <button
-//                                 onClick={addRegulation}
-//                                 className="p-2 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
-//                             >
-//                                 <Plus className="w-4 h-4" />
-//                             </button>
-//                         </div>
-//                     </div>
-//                 )}
-
-//                 <div className="pt-4 border-t border-gray-100">
-//                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 px-2">
-//                         Recent Drafts
-//                     </h3>
-//                     <div className="space-y-1">
-//                         {drafts.length === 0 && <p className="text-xs text-gray-400 px-2 italic">No drafts saved</p>}
-//                         {drafts.map(draft => (
-//                             <div key={draft.id} className="group flex items-center justify-between p-2 hover:bg-gray-50 rounded text-sm transition-colors">
-//                                 <button
-//                                     onClick={() => loadDraft(draft)}
-//                                     className="truncate text-gray-700 font-medium hover:text-blue-600 text-left flex-grow mr-2"
-//                                 >
-//                                     {draft.name}
-//                                 </button>
-//                                 <button
-//                                     onClick={() => deleteDraft(draft.id)}
-//                                     className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 p-1 transition-opacity"
-//                                 >
-//                                     <Trash2 className="w-4 h-4" />
-//                                 </button>
-//                             </div>
-//                         ))}
-//                     </div>
-//                 </div>
-//             </div>
-
-//             {/* User Profile Section */}
-//             <div className="border-t border-gray-200 p-4 bg-gray-50/50">
-//                 <div className="flex items-center gap-3 mb-4">
-//                     <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold shadow-md ring-2 ring-white">
-//                         {getInitials(user.name || user.username)}
-//                     </div>
-//                     <div className="flex-grow min-w-0">
-//                         <p className="text-sm font-bold text-gray-900 truncate">
-//                             {user.name || 'User'}
-//                         </p>
-//                         <p className="text-xs text-gray-500 truncate" title={user.username}>
-//                             {user.username}
-//                         </p>
-//                     </div>
-//                 </div>
-//                 <button
-//                     onClick={onLogout}
-//                     className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all shadow-sm"
-//                 >
-//                     <LogOut className="w-4 h-4" />
-//                     Sign Out
-//                 </button>
-//             </div>
-//         </nav>
-//     );
-// };
-
-// export default Sidebar;
-
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NavTab, Draft } from '../utils/types';
+import { stringToColor } from '../utils/utils';
 import {
     CheckCircle,
     FileText,
     Plus,
     Trash2,
     LogOut,
-    ArrowLeft
+    ArrowLeft,
+    Pencil,
+    X,
+    Check
 } from 'lucide-react';
 import Logo from '../Images/amlgolabslogowhite.png';
 
@@ -195,6 +31,21 @@ interface SidebarProps {
         username: string;
     };
     onLogout: () => void;
+    // New props for custom lists and renaming
+    customModels: string[];
+    customRegulations: string[];
+    onUpdateCustomLists: (models: string[], regs: string[]) => void;
+    renameDraft: (id: string, newName: string) => void;
+    // NEW: Deletion prevention and rename cascade
+    isModelInUse: (modelName: string) => boolean;
+    isRegulationInUse: (regName: string) => boolean;
+    onRenameModel: (oldName: string, newName: string) => void;
+    onRenameRegulation: (oldName: string, newName: string) => void;
+    // NEW: Highlighting
+    highlightedModel: string | null;
+    highlightedRegulation: string | null;
+    setHighlightedModel: (model: string | null) => void;
+    setHighlightedRegulation: (reg: string | null) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -209,9 +60,114 @@ const Sidebar: React.FC<SidebarProps> = ({
     setNewRegName,
     addRegulation,
     user,
-    onLogout
+    onLogout,
+    customModels = [],
+    customRegulations = [],
+    onUpdateCustomLists,
+    renameDraft,
+    isModelInUse,
+    isRegulationInUse,
+    onRenameModel,
+    onRenameRegulation,
+    highlightedModel,
+    highlightedRegulation,
+    setHighlightedModel,
+    setHighlightedRegulation
 }) => {
     const navigate = useNavigate();
+    const [editingDraftId, setEditingDraftId] = React.useState<string | null>(null);
+    const [editDraftName, setEditDraftName] = React.useState("");
+
+    const [newCustomModel, setNewCustomModel] = React.useState("");
+    const [newCustomReg, setNewCustomReg] = React.useState("");
+    const [editingListItem, setEditingListItem] = React.useState<{ type: 'model' | 'reg', index: number, value: string } | null>(null);
+
+    const handleUpdateListItem = (type: 'model' | 'reg', index: number, newValue: string) => {
+        if (!newValue.trim()) return;
+        const oldValue = type === 'model' ? customModels[index] : customRegulations[index];
+
+        // Check for duplicates
+        if (type === 'model') {
+            if (customModels.some((m, i) => i !== index && m.toLowerCase() === newValue.trim().toLowerCase())) {
+                alert(`"${newValue.trim()}" already exists in the model list!`);
+                return;
+            }
+            // Cascade rename in plan
+            onRenameModel(oldValue, newValue.trim());
+        } else {
+            if (customRegulations.some((r, i) => i !== index && r.toLowerCase() === newValue.trim().toLowerCase())) {
+                alert(`"${newValue.trim()}" already exists in the regulation list!`);
+                return;
+            }
+            // Cascade rename in plan
+            onRenameRegulation(oldValue, newValue.trim());
+        }
+        setEditingListItem(null);
+    };
+
+    const handleDeleteListItem = (type: 'model' | 'reg', index: number) => {
+        const itemName = type === 'model' ? customModels[index] : customRegulations[index];
+
+        // Check if in use
+        if (type === 'model' && isModelInUse(itemName)) {
+            alert(`Cannot delete "${itemName}" - it is currently used in the draft table. Remove it from all cells first.`);
+            return;
+        }
+        if (type === 'reg' && isRegulationInUse(itemName)) {
+            alert(`Cannot delete "${itemName}" - it is currently used in the draft table. Remove the regulation row first.`);
+            return;
+        }
+
+        if (type === 'model') {
+            const next = customModels.filter((_, i) => i !== index);
+            onUpdateCustomLists(next, customRegulations);
+        } else {
+            const next = customRegulations.filter((_, i) => i !== index);
+            onUpdateCustomLists(customModels, next);
+        }
+    };
+
+    // Handle adding items to custom lists
+    const handleAddCustomModel = () => {
+        if (!newCustomModel.trim()) return;
+        if (customModels.some(m => m.toLowerCase() === newCustomModel.trim().toLowerCase())) {
+            alert(`"${newCustomModel.trim()}" already exists in the model list!`);
+            return;
+        }
+        onUpdateCustomLists([...customModels, newCustomModel.trim()], customRegulations);
+        setNewCustomModel("");
+    };
+
+    const handleAddCustomReg = () => {
+        if (!newCustomReg.trim()) return;
+        if (customRegulations.some(r => r.toLowerCase() === newCustomReg.trim().toLowerCase())) {
+            alert(`"${newCustomReg.trim()}" already exists in the regulation list!`);
+            return;
+        }
+        onUpdateCustomLists(customModels, [...customRegulations, newCustomReg.trim()]);
+        setNewCustomReg("");
+    };
+
+    const startEditing = (draft: Draft, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setEditingDraftId(draft.id);
+        setEditDraftName(draft.name);
+    };
+
+    const saveEditing = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (editingDraftId && editDraftName.trim()) {
+            renameDraft(editingDraftId, editDraftName.trim());
+        }
+        setEditingDraftId(null);
+        setEditDraftName("");
+    };
+
+    const cancelEditing = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setEditingDraftId(null);
+        setEditDraftName("");
+    };
 
     const getInitials = (name: string) => {
         if (!name) return '??';
@@ -223,17 +179,18 @@ const Sidebar: React.FC<SidebarProps> = ({
     return (
         <nav className={`bg-gradient-to-b from-blue-900 to-blue-900 flex flex-col shadow-xl transition-all duration-300 ease-in-out ${isOpen ? 'w-96' : 'w-0 opacity-0 overflow-hidden'}`}>
             {/* Logo Section */}
-            {/* Logo Section */}
             <div
-                className="bg-gray-50/50 px-5 pl-16 py-4 shadow-lg relative cursor-pointer group"
-                onClick={() => navigate('/select')}
-                title="Back to Project Selection"
+                className="bg-gray-50/50 px-5 pl-16 py-4 shadow-lg relative group"
             >
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full hover:bg-white/20 transition-all z-10">
+                <div
+                    className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full hover:bg-white/20 transition-all z-10 cursor-pointer"
+                    onClick={() => navigate('/select')}
+                    title="Back to Project Selection"
+                >
                     <ArrowLeft size={24} className="text-white drop-shadow-md" />
                 </div>
                 <div className="h-8 w-full flex items-center justify-center">
-                    <img src={Logo} alt="Logo" className="w-full object-contain object-center" />
+                    <img src={Logo} alt="Logo" className="w-full object-contain object-center pointer-events-none" />
                 </div>
             </div>
 
@@ -264,38 +221,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                     Draft Planning
                 </button>
 
-                {/* Regulations Section */}
-                {activeTab === 'Draft' && (
-                    <div className="pt-4 mt-4 border-t border-blue-500/30">
-                        <label className="text-xs font-bold text-blue-200 uppercase px-2 mb-2 block tracking-wider">
-                            Add Regulation
-                        </label>
-                        <div className="flex gap-2 px-2 mb-4">
-                            <input
-                                type="text"
-                                value={newRegName}
-                                onChange={e => setNewRegName(e.target.value)}
-                                onKeyDown={e => {
-                                    if (e.key === 'Enter') {
-                                        addRegulation();
-                                    }
-                                }}
-                                placeholder="Enter regulation name"
-                                className="w-full text-sm p-2.5 bg-white/90 border-0 rounded-lg focus:ring-2 focus:ring-white/50 outline-none placeholder-gray-400 text-gray-800 shadow-sm"
-                            />
-                            <button
-                                onClick={addRegulation}
-                                className="p-2.5 bg-white text-blue-600 rounded-lg hover:bg-blue-50 shadow-sm transition-all hover:scale-105"
-                                title="Add Regulation"
-                            >
-                                <Plus className="w-5 h-5" />
-                            </button>
-                        </div>
-                    </div>
-                )}
-
                 {/* Recent Drafts Section */}
-                <div className="pt-4 border-t border-blue-500/30">
+                <div className="pt-4 border-t border-blue-500/30 mt-4">
                     <h3 className="text-xs font-bold text-blue-200 uppercase tracking-wider mb-3 px-2">
                         Recent Drafts
                     </h3>
@@ -310,23 +237,201 @@ const Sidebar: React.FC<SidebarProps> = ({
                                 key={draft.id}
                                 className="group flex items-center justify-between p-2.5 hover:bg-white/10 rounded-lg text-sm transition-all"
                             >
-                                <button
-                                    onClick={() => loadDraft(draft)}
-                                    className="truncate text-white font-medium hover:text-blue-100 text-left flex-grow mr-2 transition-colors"
-                                >
-                                    {draft.name}
-                                </button>
-                                <button
-                                    onClick={() => deleteDraft(draft.id)}
-                                    className="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-100 p-1.5 transition-all hover:bg-red-500/20 rounded"
-                                    title="Delete Draft"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
+                                {editingDraftId === draft.id ? (
+                                    <div className="flex items-center gap-1 flex-grow mr-2">
+                                        <input
+                                            type="text"
+                                            value={editDraftName}
+                                            onChange={(e) => setEditDraftName(e.target.value)}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="w-full text-xs p-1 rounded text-black"
+                                            autoFocus
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') saveEditing(e as any);
+                                                if (e.key === 'Escape') cancelEditing(e as any);
+                                            }}
+                                        />
+                                        <button onClick={saveEditing} className="text-green-400 hover:text-green-300"><Check size={14} /></button>
+                                        <button onClick={cancelEditing} className="text-red-400 hover:text-red-300"><X size={14} /></button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <button
+                                            onClick={() => loadDraft(draft)}
+                                            className="truncate text-white font-medium hover:text-blue-100 text-left flex-grow mr-2 transition-colors"
+                                        >
+                                            {draft.name}
+                                        </button>
+                                        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button
+                                                onClick={(e) => startEditing(draft, e)}
+                                                className="text-blue-200 hover:text-white p-1.5 transition-all hover:bg-blue-500/20 rounded mr-1"
+                                                title="Rename Draft"
+                                            >
+                                                <Pencil className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); deleteDraft(draft.id); }}
+                                                className="text-red-300 hover:text-red-100 p-1.5 transition-all hover:bg-red-500/20 rounded"
+                                                title="Delete Draft"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         ))}
                     </div>
                 </div>
+
+                {/* Custom Lists Section */}
+                {/* Custom Lists Section - Visible in both Draft and Final - using activePlan data if needed, but currently custom lists are passed in. For Final, we might need to derive them or pass them differently if they aren't in 'customModels' prop. Assuming App passes correct customModels for active tab */}
+                {(activeTab === 'Draft' || activeTab === 'Final') && (
+                    <div className="pt-4 border-t border-blue-500/30 mt-2">
+                        <h3 className="text-xs font-bold text-blue-200 uppercase tracking-wider mb-2 px-2">
+                            {activeTab === 'Draft' ? 'Draft Lists' : 'Plan Lists'}
+                        </h3>
+                        {activeTab === 'Draft' && (
+                            <p className="text-[10px] text-blue-300 px-2 mb-2 italic">Drag items to grid</p>
+                        )}
+                        <div className="grid grid-cols-2 gap-2 px-1">
+                            {/* Regulations List */}
+                            <div className="bg-blue-800/30 rounded p-2 flex flex-col gap-2">
+                                <label className="text-[10px] text-blue-200 uppercase font-bold text-center block border-b border-blue-500/20 pb-1">Reg Names</label>
+                                {activeTab === 'Draft' && (
+                                    <input
+                                        className="w-full text-xs p-1.5 rounded bg-white/90 text-black outline-none"
+                                        placeholder="Add..."
+                                        value={newCustomReg}
+                                        onChange={e => setNewCustomReg(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleAddCustomReg()}
+                                    />
+                                )}
+                                <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
+                                    {customRegulations.map((item, i) => (
+                                        <div
+                                            key={i}
+                                            className={`group flex items-center justify-between text-xs text-black p-1 rounded shadow-sm hover:brightness-110 cursor-alias my-0.5 ${highlightedRegulation === item ? 'ring-2 ring-violet-500 ring-offset-1' : ''}`}
+                                            style={{ backgroundColor: stringToColor(item) }}
+                                            draggable={activeTab === 'Draft'}
+                                            onDragStart={(e) => {
+                                                if (activeTab !== 'Draft') { e.preventDefault(); return; }
+                                                e.dataTransfer.setData("application/json", JSON.stringify({ type: 'regulation', name: item }));
+                                            }}
+                                            onClick={() => {
+                                                // Single click clears highlighting
+                                                if (highlightedRegulation === item) {
+                                                    setHighlightedRegulation(null);
+                                                }
+                                            }}
+                                            onDoubleClick={() => {
+                                                // Double click toggles highlighting
+                                                setHighlightedRegulation(highlightedRegulation === item ? null : item);
+                                                setHighlightedModel(null); // Clear model highlight
+                                            }}
+                                        >
+                                            {editingListItem?.type === 'reg' && editingListItem.index === i ? (
+                                                <div className="flex items-center gap-1 w-full relative z-20">
+                                                    <input
+                                                        autoFocus
+                                                        className="w-full bg-white text-black rounded px-1 outline-none border border-blue-400"
+                                                        value={editingListItem.value}
+                                                        onChange={e => setEditingListItem({ ...editingListItem, value: e.target.value })}
+                                                        onClick={e => e.stopPropagation()}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter') handleUpdateListItem('reg', i, editingListItem.value);
+                                                            if (e.key === 'Escape') setEditingListItem(null);
+                                                            e.stopPropagation();
+                                                        }}
+                                                    />
+                                                    <button onClick={(e) => { e.stopPropagation(); handleUpdateListItem('reg', i, editingListItem.value) }} className="text-green-600 hover:text-green-800"><Check size={12} /></button>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <span className="truncate flex-grow mr-1 font-medium">{item}</span>
+                                                    {activeTab === 'Draft' && (
+                                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                                                            <button onClick={(e) => { e.stopPropagation(); setEditingListItem({ type: 'reg', index: i, value: item }) }} className="text-black/50 hover:text-black"><Pencil size={12} /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteListItem('reg', i) }} className="text-red-500/50 hover:text-red-600"><X size={12} /></button>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Models List */}
+                            <div className="bg-blue-800/30 rounded p-2 flex flex-col gap-2">
+                                <label className="text-[10px] text-blue-200 uppercase font-bold text-center block border-b border-blue-500/20 pb-1">Model Names</label>
+                                {activeTab === 'Draft' && (
+                                    <input
+                                        className="w-full text-xs p-1.5 rounded bg-white/90 text-black outline-none"
+                                        placeholder="Add..."
+                                        value={newCustomModel}
+                                        onChange={e => setNewCustomModel(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleAddCustomModel()}
+                                    />
+                                )}
+                                <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
+                                    {customModels.map((item, i) => (
+                                        <div
+                                            key={i}
+                                            className={`group flex items-center justify-between text-xs text-black p-1 rounded shadow-sm hover:brightness-110 cursor-alias my-0.5 ${highlightedModel === item ? 'ring-2 ring-violet-500 ring-offset-1' : ''}`}
+                                            style={{ backgroundColor: stringToColor(item) }}
+                                            draggable={activeTab === 'Draft'}
+                                            onDragStart={(e) => {
+                                                if (activeTab !== 'Draft') { e.preventDefault(); return; }
+                                                e.dataTransfer.setData("application/json", JSON.stringify({ type: 'model', name: item }));
+                                            }}
+                                            onClick={() => {
+                                                // Single click clears highlighting
+                                                if (highlightedModel === item) {
+                                                    setHighlightedModel(null);
+                                                }
+                                            }}
+                                            onDoubleClick={() => {
+                                                // Double click toggles highlighting
+                                                setHighlightedModel(highlightedModel === item ? null : item);
+                                                setHighlightedRegulation(null); // Clear reg highlight
+                                            }}
+                                        >
+                                            {editingListItem?.type === 'model' && editingListItem.index === i ? (
+                                                <div className="flex items-center gap-1 w-full relative z-20">
+                                                    <input
+                                                        autoFocus
+                                                        className="w-full bg-white text-black rounded px-1 outline-none border border-blue-400"
+                                                        value={editingListItem.value}
+                                                        onChange={e => setEditingListItem({ ...editingListItem, value: e.target.value })}
+                                                        onClick={e => e.stopPropagation()}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter') handleUpdateListItem('model', i, editingListItem.value);
+                                                            if (e.key === 'Escape') setEditingListItem(null);
+                                                            e.stopPropagation();
+                                                        }}
+                                                    />
+                                                    <button onClick={(e) => { e.stopPropagation(); handleUpdateListItem('model', i, editingListItem.value) }} className="text-green-600 hover:text-green-800"><Check size={12} /></button>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <span className="truncate flex-grow mr-1 font-medium">{item}</span>
+                                                    {activeTab === 'Draft' && (
+                                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                                                            <button onClick={(e) => { e.stopPropagation(); setEditingListItem({ type: 'model', index: i, value: item }) }} className="text-black/50 hover:text-black"><Pencil size={12} /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteListItem('model', i) }} className="text-red-500/50 hover:text-red-600"><X size={12} /></button>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* User Profile Section */}
