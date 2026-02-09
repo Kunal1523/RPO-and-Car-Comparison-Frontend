@@ -13,6 +13,30 @@ export const parseCellKey = (key: string) => {
 export const isModel = (val: string) => val && val.trim().length > 0 && !SPECIAL_VALUES.includes(val);
 
 /**
+ * Generates a unique color for a given string (Model/Regulation).
+ * Uses a hash to pick from a set of visually distinct colors.
+ */
+export const stringToColor = (str: string): string => {
+  if (!str) return "#E5E7EB"; // gray-200
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  // Use HSL for better uniqueness:
+  // Hue: 0-360 based on hash
+  // Saturation: 70-90% (vibrant)
+  // Lightness: 80-90% (pastel/light for readability with dark text)
+
+  const h = Math.abs(hash) % 360;
+  const s = 70 + (Math.abs(hash >> 8) % 20);
+  const l = 80 + (Math.abs(hash >> 16) % 10);
+
+  return `hsl(${h}, ${s}%, ${l}%)`;
+};
+
+
+/**
  * Derives the Model-centric table data from the Regulation-centric table data
  * ✅ Only includes models that exist in the backend model list (allowedModels)
  */
