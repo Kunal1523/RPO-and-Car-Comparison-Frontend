@@ -1419,7 +1419,7 @@ const PriceComparisonPage = () => {
                           <ChevronDown size={12} className="text-slate-400" />
                         </summary>
                         {carVariants.length > 0 && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
                             <div className="p-2 space-y-1">
                               <button
                                 onClick={(e) => {
@@ -1504,7 +1504,7 @@ const PriceComparisonPage = () => {
                             <ChevronDown size={12} className="text-slate-400" />
                           </div>
                         </summary>
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
                           <div className="p-2 space-y-1">
                             <button
                               onClick={(e) => {
@@ -1549,7 +1549,7 @@ const PriceComparisonPage = () => {
                             <ChevronDown size={12} className="text-slate-400" />
                           </div>
                         </summary>
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
                           <div className="p-2 space-y-1">
                             <button
                               onClick={(e) => {
@@ -1594,7 +1594,7 @@ const PriceComparisonPage = () => {
                             <ChevronDown size={12} className="text-slate-400" />
                           </div>
                         </summary>
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
                           <div className="p-2 space-y-1">
                             <button
                               onClick={(e) => {
@@ -1641,7 +1641,7 @@ const PriceComparisonPage = () => {
                             <ChevronDown size={12} className="text-slate-400" />
                           </div>
                         </summary>
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
                           <div className="p-2 space-y-1">
                             <button
                               onClick={(e) => {
