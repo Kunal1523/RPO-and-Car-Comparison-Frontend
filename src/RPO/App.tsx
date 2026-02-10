@@ -27,7 +27,8 @@ const INITIAL_PLAN_DATA: PlanData = {
   regulationCells: {},
   regOrder: [],
   customModels: [],
-  customRegulations: []
+  customRegulations: [],
+  itemColors: {}
 };
 
 type FinalPlanResponse = {
@@ -53,6 +54,12 @@ const stableStringify = (obj: any) => {
             acc[key] = v[key];
             return acc;
           }, {});
+      }
+      if (Array.isArray(v)) {
+        // Sort arrays of primitives to ensure stable comparison for lists
+        if (v.every(item => typeof item === 'string' || typeof item === 'number')) {
+          return [...v].sort();
+        }
       }
       return v;
     };
@@ -108,6 +115,39 @@ const App: React.FC = () => {
   );
 
   const [newRegName, setNewRegName] = useState("");
+
+  // Global Master List & Colors (Persistent across draft switches/clearing)
+  const [masterModels, setMasterModels] = useState<string[]>([]);
+  const [masterRegs, setMasterRegs] = useState<string[]>([]);
+  const [masterColors, setMasterColors] = useState<Record<string, string>>({});
+
+  // Point 3: Global Library uses Master State + currentPlan
+  const globalLibrary = useMemo(() => {
+    const modelsSet = new Set([...masterModels, ...(currentPlan.customModels || [])]);
+    const regsSet = new Set([...masterRegs, ...(currentPlan.customRegulations || [])]);
+
+    const colorsMap: Record<string, string> = {};
+    const normalizeKey = (s: string) => (s || "").replace(/\s+/g, ' ').trim().toLowerCase();
+
+    const applyToMap = (source: Record<string, string>) => {
+      Object.entries(source).forEach(([name, color]) => {
+        if (!color) return;
+        const norm = normalizeKey(name);
+        colorsMap[name] = color; // exact match
+        colorsMap[name.toLowerCase()] = color; // lowercase
+        colorsMap[norm] = color; // normalized spaces + lowercase
+      });
+    };
+
+    applyToMap(masterColors);
+    applyToMap(currentPlan.itemColors || {});
+
+    return {
+      models: Array.from(modelsSet).sort(),
+      regs: Array.from(regsSet).sort(),
+      colors: colorsMap
+    };
+  }, [masterModels, masterRegs, masterColors, currentPlan]);
 
   // Final drilldown modal
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
@@ -182,6 +222,27 @@ const App: React.FC = () => {
   }, [activeTab, currentPlan, lastSavedPlanSnapshot]);
 
   // -----------------------
+  // Unsaved Changes Prompt (BeforeUnload)
+  // -----------------------
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Check if there are unsaved changes (isDraftDirty is true)
+      if (isDraftDirty) {
+        // Prevent default behavior (some browsers require this)
+        e.preventDefault();
+        // Set returnValue to trigger the prompt (text is usually ignored by modern browsers)
+        e.returnValue = '';
+      }
+    };
+
+    // Add event listener when component mounts or isDraftDirty changes
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // Clean up event listener when component unmounts or isDraftDirty changes
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDraftDirty]);
+
+  // -----------------------
   // Helpers
   // -----------------------
   const removeRegFromPlan = useCallback((plan: PlanData, reg: string): PlanData => {
@@ -248,6 +309,52 @@ const App: React.FC = () => {
         setFinalPlan(null);
         setFinalCompliance({});
       }
+
+      // Initialize Master Lists from all drafts AND final plan
+      const mModelsCanon = new Map<string, string>(); // lowercase -> original
+      const mRegsCanon = new Map<string, string>();   // lowercase -> original
+      const mColors: Record<string, string> = {};
+
+      const normalize = (s: string) => (s || "").replace(/\s+/g, ' ').trim();
+
+      const processContent = (content: PlanData | null | undefined) => {
+        if (!content) return;
+        (content.customModels || []).forEach(m => {
+          const norm = normalize(m);
+          const low = norm.toLowerCase();
+          if (low && !mModelsCanon.has(low)) mModelsCanon.set(low, norm);
+        });
+        (content.customRegulations || []).forEach(r => {
+          const norm = normalize(r);
+          const low = norm.toLowerCase();
+          if (low && !mRegsCanon.has(low)) mRegsCanon.set(low, norm);
+        });
+        if (content.itemColors) {
+          Object.entries(content.itemColors).forEach(([name, color]) => {
+            const low = normalize(name).toLowerCase();
+            if (low && color) mColors[low] = color;
+          });
+        }
+      };
+
+      // 1. Process drafts
+      d.forEach((dr: Draft) => {
+        try {
+          const content: PlanData = typeof dr.data === 'string' ? JSON.parse(dr.data as any) : dr.data;
+          processContent(content);
+        } catch (e) { console.error("Error parsing draft data", e); }
+      });
+
+      // 2. Process final plan
+      if (f && f.data) {
+        processContent(f.data);
+      }
+
+      // Populate master lists with original casing (first found)
+      setMasterModels(Array.from(mModelsCanon.values()));
+      setMasterRegs(Array.from(mRegsCanon.values()));
+
+      setMasterColors(mColors);
     };
 
     loadAll();
@@ -260,10 +367,15 @@ const App: React.FC = () => {
     (rowId: string, year: string, month: number, value: string) => {
       setCurrentPlan((prev) => {
         const key = getCellKey(rowId, year, month);
-        const newValues = value
+        let newValues = value
           .split(",")
-          .map((v) => v.trim())
+          .map((v) => v.replace(/\s+/g, ' ').trim()) // normalize internal spaces
           .filter(Boolean);
+
+        if (newValues.length > 5) {
+          alert("Maximum of 5 models allowed per cell.");
+          newValues = newValues.slice(0, 5);
+        }
 
         return {
           ...prev,
@@ -320,6 +432,27 @@ const App: React.FC = () => {
     });
   }, []);
 
+  const handleSetItemColor = useCallback((name: string, color: string) => {
+    const norm = (name || "").replace(/\s+/g, ' ').trim().toLowerCase();
+
+    setMasterColors(prev => ({
+      ...prev,
+      [name]: color,
+      [name.toLowerCase()]: color,
+      [norm]: color
+    }));
+
+    setCurrentPlan(prev => ({
+      ...prev,
+      itemColors: {
+        ...(prev.itemColors || {}),
+        [name]: color,
+        [name.toLowerCase()]: color,
+        [norm]: color
+      }
+    }));
+  }, []);
+
   const handleLayoutChange = useCallback(
     (colWidths: Record<string, number>, rowHeights: Record<string, number>) => {
       setCurrentPlan((prev) => ({
@@ -331,6 +464,9 @@ const App: React.FC = () => {
   );
 
   const handleUpdateCustomLists = useCallback((models: string[], regs: string[]) => {
+    setMasterModels(models);
+    setMasterRegs(regs);
+
     setCurrentPlan(prev => ({
       ...prev,
       customModels: models,
@@ -359,6 +495,12 @@ const App: React.FC = () => {
     setCurrentPlan((prev) => {
       const key = getCellKey(rowId, year, month);
       const currentVals = prev.regulationCells[key] || [];
+
+      if (currentVals.length >= 5) {
+        alert("Maximum of 5 models allowed per cell.");
+        return prev;
+      }
+
       // Avoid duplicates if desired, or allow. Requirement says "added to that cell". Let's avoid exact dupes.
       if (currentVals.includes(model)) return prev;
 
@@ -392,8 +534,13 @@ const App: React.FC = () => {
     };
 
     try {
-      await api.saveDraft(payload, userEmail);
-      setDrafts(prev => prev.map(d => d.id === id ? payload : d));
+      const saved = await api.saveDraft(payload, userEmail);
+      setDrafts(prev => prev.map(d => d.id === id ? saved : d));
+
+      if (currentDraftId === id) {
+        setCurrentPlan(saved.data as PlanData);
+        setLastSavedPlanSnapshot(stableStringify(saved.data));
+      }
     } catch (e) {
       console.error(e);
       alert("Failed to rename draft");
@@ -623,12 +770,18 @@ const App: React.FC = () => {
       id: draftId,
       name: draftName,
       updatedAt: Date.now(),
-      data: { ...currentPlan },
+      data: {
+        ...currentPlan,
+        customModels: masterModels,
+        customRegulations: masterRegs,
+        itemColors: masterColors
+      },
     };
 
     try {
       const saved = await api.saveDraft(payload, userEmail);
 
+      setCurrentPlan(saved.data as PlanData);
       setCurrentDraftId(saved.id);
       setLastSavedPlanSnapshot(stableStringify(saved.data));
 
@@ -656,12 +809,18 @@ const App: React.FC = () => {
       id: draftId,
       name: `Draft ${new Date().toLocaleString()}`,
       updatedAt: Date.now(),
-      data: { ...currentPlan },
+      data: {
+        ...currentPlan,
+        customModels: masterModels,
+        customRegulations: masterRegs,
+        itemColors: masterColors
+      },
     };
 
     try {
       const saved = await api.saveDraft(payload, userEmail);
 
+      setCurrentPlan(saved.data as PlanData);
       setCurrentDraftId(saved.id);
       setLastSavedPlanSnapshot(stableStringify(saved.data));
 
@@ -699,9 +858,16 @@ const App: React.FC = () => {
   };
 
   const loadDraft = (draft: Draft) => {
-    setCurrentPlan(draft.data);
+    const data = typeof draft.data === 'string' ? JSON.parse(draft.data as any) : draft.data;
+    const mergedPlan = {
+      ...data,
+      customModels: Array.from(new Set([...masterModels, ...(data.customModels || [])])),
+      customRegulations: Array.from(new Set([...masterRegs, ...(data.customRegulations || [])])),
+      itemColors: { ...masterColors, ...(data.itemColors || {}) }
+    };
+    setCurrentPlan(mergedPlan);
     setCurrentDraftId(draft.id);
-    setLastSavedPlanSnapshot(stableStringify(draft.data)); // coercing to string
+    setLastSavedPlanSnapshot(stableStringify(mergedPlan));
     setActiveTab("Draft");
     setViewMode("Regulation");
   };
@@ -756,16 +922,43 @@ const App: React.FC = () => {
     }
   };
 
+  const handleNewDraft = useCallback(() => {
+    const freshPlan: PlanData = {
+      ...INITIAL_PLAN_DATA,
+      customModels: [...masterModels],
+      customRegulations: [...masterRegs],
+      itemColors: { ...masterColors },
+      regOrder: [], // user freedom to add self
+    };
+    setCurrentPlan(freshPlan);
+    setCurrentDraftId(null);
+    setLastSavedPlanSnapshot(stableStringify(freshPlan));
+    setActiveTab("Draft");
+    setViewMode("Regulation");
+  }, [masterModels, masterRegs, masterColors]);
+
+  const handleNewDraftClick = useCallback(() => {
+    if (activeTab === "Draft" && isDraftDirty) {
+      setPendingNavigation(() => () => handleNewDraft());
+      setShowUnsavedPrompt(true);
+    } else {
+      handleNewDraft();
+    }
+  }, [activeTab, isDraftDirty, handleNewDraft]);
+
   const clearDraft = () => {
     if (!window.confirm("Are you sure you want to clear all data in the cells? Rows and layout will be preserved.")) return;
 
     const clearedPlan: PlanData = {
       ...currentPlan,
       regulationCells: {},
+      customModels: [...masterModels],
+      customRegulations: [...masterRegs],
+      itemColors: { ...masterColors }
     };
 
     setCurrentPlan(clearedPlan);
-    setCurrentDraftId(null);
+    // keep currentDraftId as requested: "clear draft option is now only for current draft"
     setLastSavedPlanSnapshot(stableStringify(clearedPlan));
   };
 
@@ -956,8 +1149,8 @@ const App: React.FC = () => {
           username: userEmail,
         }}
         onLogout={handleLogout}
-        customModels={sidebarModels}
-        customRegulations={sidebarRegulations}
+        customModels={globalLibrary.models}
+        customRegulations={globalLibrary.regs}
         onUpdateCustomLists={handleUpdateCustomLists}
         renameDraft={handleRenameDraft}
         isModelInUse={isModelInUse}
@@ -968,6 +1161,11 @@ const App: React.FC = () => {
         highlightedRegulation={highlightedRegulation}
         setHighlightedModel={setHighlightedModel}
         setHighlightedRegulation={setHighlightedRegulation}
+        // NEW: Colors
+        itemColors={globalLibrary.colors}
+        onSetItemColor={handleSetItemColor}
+        currentDraftId={currentDraftId}
+        onNewDraft={handleNewDraftClick}
       />
 
       <main className="flex-grow flex flex-col overflow-hidden relative">
@@ -1115,6 +1313,7 @@ const App: React.FC = () => {
                     viewResolution={viewResolution}
                     highlightedModel={highlightedModel}
                     highlightedRegulation={highlightedRegulation}
+                    itemColors={globalLibrary.colors}
                   />
                 </div>
               </div>

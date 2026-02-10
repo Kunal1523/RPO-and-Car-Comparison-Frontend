@@ -154,7 +154,7 @@ export const getDraftRegList = (plan: PlanData): string[] => {
     if (reg) regsFromCells.add(reg);
   });
 
-  const order = (plan.regOrder || []).filter((r) => regsFromCells.has(r));
+  const order = plan.regOrder || []; // include all ordered regs
   const missing = Array.from(regsFromCells).filter((r) => !order.includes(r)).sort();
 
   return [...order, ...missing];

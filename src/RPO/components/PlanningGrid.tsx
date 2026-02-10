@@ -6,7 +6,7 @@ import {
   MONTH_LABELS,
   SPECIAL_VALUES,
 } from "../utils/constants";
-import { getCellKey, stringToColor } from "../utils/utils";
+import { getCellKey, stringToColor, isModel } from "../utils/utils";
 import { ViewMode, FinancialYear } from "../utils/types";
 import { X, GripVertical, Info } from "lucide-react";
 import {
@@ -53,6 +53,8 @@ interface PlanningGridProps {
   // NEW: Highlighting
   highlightedModel?: string | null;
   highlightedRegulation?: string | null;
+  // NEW: Colors
+  itemColors: Record<string, string>;
 }
 
 const DraggableRow = ({
@@ -86,6 +88,7 @@ const DraggableRow = ({
   viewMode,
   highlightedModel,
   highlightedRegulation,
+  itemColors,
 }: any) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: rowId, disabled: !isDraggable });
@@ -111,6 +114,37 @@ const DraggableRow = ({
     zIndex: isDragging ? 20 : "auto",
     position: isDragging ? ("relative" as const) : undefined,
     height: height ? `${height}px` : undefined, // Apply dynamic height
+  };
+
+  // Analytics for the whole row (computed once)
+  const rowCounts: Record<string, number> = {};
+  let firstDeadlineGlobalIdx: number | null = null;
+
+  // Map months to global index (0-35)
+  const allMonths: { fy: string, m: number, q: string }[] = [];
+  financialYears.forEach((f: FinancialYear) => {
+    QUARTERS.forEach(q => q.months.forEach(m => {
+      allMonths.push({ fy: f.label, m, q: q.label });
+    }));
+  });
+
+  allMonths.forEach((item, idx) => {
+    const k = getCellKey(rowId, item.fy, item.m);
+    const vals = cellData[k] || [];
+    vals.forEach((v: string) => {
+      if (viewMode === 'Regulation') {
+        rowCounts[v] = (rowCounts[v] || 0) + 1;
+      }
+      if (v.toLowerCase().includes('deadline') && firstDeadlineGlobalIdx === null) {
+        firstDeadlineGlobalIdx = idx;
+      }
+    });
+  });
+
+  const getShortYear = (fyLabel: string, month: number) => {
+    // FY 25-26 -> [25, 26]
+    const parts = fyLabel.replace('FY ', '').split('-');
+    return month >= 4 ? parts[0] : parts[1];
   };
 
   return (
@@ -195,53 +229,31 @@ const DraggableRow = ({
       </td>
 
       {/* Data Cells */}
-      {financialYears.map((fy: FinancialYear) => {
-        // Calculate duplicated models for this row (Regulation View Only)
-        // We do this per-year loop or just compute once? 
-        // Ideally we compute once per ROW, but here we are maping years.
-        // We can pass a pre-computed map, or compute it here?
-        // Since we map years, we shouldn't re-compute for every year if possible.
-        // BUT strict strict React: we should compute this outside the map.
-        // However, I can't reach outside the map easily with replace without context.
-        // Computation is fast. I will compute helper HERE but it checks ALL years.
-        // Warning: This is O(N^2) if done for every year column. 
-        // Better: Compute `rowLevelCounts` once at the top of the `rowIds.map` iteration (which I can't see the start of easily).
-        // Wait, line 192 is inside `rowIds.map`.
-        // I will insert it BEFORE line 192.
-
-        const rowCounts: Record<string, number> = {};
-        if (viewMode === 'Regulation') {
-          financialYears.forEach((f: FinancialYear) => {
-            QUARTERS.forEach(q => q.months.forEach(m => {
-              const k = getCellKey(rowId, f.label, m);
-              (cellData[k] || []).forEach((v: string) => {
-                rowCounts[v] = (rowCounts[v] || 0) + 1;
-              });
-            }));
-          });
-        }
+      {financialYears.map((fy: FinancialYear, yearIdx: number) => {
 
         if (viewResolution === "Year") {
           // Year Aggregation
-          // Implementation Detail: We need a helper to get values for whole year.
-          const allVals = new Set<string>();
+          const aggregated: { val: string, dateTag: string }[] = [];
           QUARTERS.forEach(q => q.months.forEach(m => {
-            (cellData[getCellKey(rowId, fy.label, m)] || []).forEach((v: string) => allVals.add(v));
+            (cellData[getCellKey(rowId, fy.label, m)] || []).forEach((v: string) => {
+              const tag = isModel(v) ? ` (${q.label}, ${m}/${getShortYear(fy.label, m)})` : "";
+              aggregated.push({ val: v, dateTag: tag });
+            });
           }));
-          const values = Array.from(allVals);
+
           return (
             <td key={`${fy.label}-year`} className="month-col border-r border-b border-gray-200 p-2 align-top">
               <div className="flex flex-wrap gap-1">
-                {values.map((v: string, i) => {
-                  const isDeadline = v.toLowerCase().includes('deadline');
-                  const bgColor = isDeadline ? '#FEE2E2' : stringToColor(v);
+                {aggregated.map((item, i) => {
+                  const isDeadline = item.val.toLowerCase().includes('deadline');
+                  const bgColor = isDeadline ? '#FEE2E2' : (itemColors[item.val] || stringToColor(item.val));
                   return (
                     <span
                       key={i}
-                      className={`${isDeadline ? 'text-red-800' : 'text-gray-900'} text-xs px-2 py-1 rounded shadow-sm`}
+                      className={`${isDeadline ? 'text-red-800' : 'text-gray-900'} text-[10px] px-2 py-1 rounded shadow-sm font-bold`}
                       style={{ backgroundColor: bgColor }}
                     >
-                      {v}
+                      {item.val}{item.dateTag}
                     </span>
                   );
                 })}
@@ -255,24 +267,27 @@ const DraggableRow = ({
           return (
             <React.Fragment key={`${fy.label}-quarters`}>
               {QUARTERS.map(q => {
-                const allVals = new Set<string>();
+                const aggregated: { val: string, dateTag: string }[] = [];
                 q.months.forEach(m => {
-                  (cellData[getCellKey(rowId, fy.label, m)] || []).forEach((v: string) => allVals.add(v));
+                  (cellData[getCellKey(rowId, fy.label, m)] || []).forEach((v: string) => {
+                    const tag = isModel(v) ? ` (${m}/${getShortYear(fy.label, m)})` : "";
+                    aggregated.push({ val: v, dateTag: tag });
+                  });
                 });
-                const values = Array.from(allVals);
+
                 return (
                   <td key={`${fy.label}-${q.label}`} className="month-col border-r border-b border-gray-200 p-2 align-top">
                     <div className="flex flex-wrap gap-1">
-                      {values.map((v: string, i) => {
-                        const isDeadline = v.toLowerCase().includes('deadline');
-                        const bgColor = isDeadline ? '#FEE2E2' : stringToColor(v);
+                      {aggregated.map((item, i) => {
+                        const isDeadline = item.val.toLowerCase().includes('deadline');
+                        const bgColor = isDeadline ? '#FEE2E2' : (itemColors[item.val] || stringToColor(item.val));
                         return (
                           <span
                             key={i}
-                            className={`${isDeadline ? 'text-red-800' : 'text-gray-900'} text-xs px-2 py-1 rounded shadow-sm`}
+                            className={`${isDeadline ? 'text-red-800' : 'text-gray-900'} text-[10px] px-2 py-1 rounded shadow-sm font-bold`}
                             style={{ backgroundColor: bgColor }}
                           >
-                            {v}
+                            {item.val}{item.dateTag}
                           </span>
                         );
                       })}
@@ -381,6 +396,28 @@ const DraggableRow = ({
                             </div>
                           )}
 
+                          {/* Deadline Violation Warning */}
+                          {viewMode === "Regulation" && firstDeadlineGlobalIdx !== null && (
+                            () => {
+                              // Find current global index
+                              const qIdx = QUARTERS.findIndex(qi => qi.label === q.label);
+                              const mIdxInQ = q.months.indexOf(m);
+                              const currentGlobalIdx = yearIdx * 12 + qIdx * 3 + mIdxInQ;
+
+                              if (currentGlobalIdx > firstDeadlineGlobalIdx && values.some((v: string) => isModel(v))) {
+                                return (
+                                  <div className="absolute top-0.5 left-0.5 group/deadline">
+                                    <Info className="w-3 h-3 text-orange-500 cursor-help z-[29]" />
+                                    <div className="hidden group-hover/deadline:block absolute bottom-full left-0 mb-1 bg-gray-900 text-white text-xs rounded shadow-xl px-3 py-2 whitespace-nowrap pointer-events-none z-[9999]">
+                                      ⚠️ Model cannot come after the first deadline
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }
+                          )()}
+
                           {values.map((v: string, i: number) => {
                             let styles: React.CSSProperties = {};
                             let classes = "text-black";
@@ -388,8 +425,8 @@ const DraggableRow = ({
                             if (SPECIAL_VALUES.includes(v)) {
                               classes = "bg-red-500 text-white";
                             } else if (v.length > 0) {
-                              // Use unique color
-                              styles.backgroundColor = stringToColor(v);
+                              // Use custom color if set
+                              styles.backgroundColor = itemColors[v] || stringToColor(v);
                               classes = "text-gray-900";
                             } else {
                               classes = "bg-gray-200 text-black";
@@ -445,6 +482,7 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
   onAddModelToCell,
   highlightedModel,
   highlightedRegulation,
+  itemColors,
 }) => {
   const [editingKey, setEditingKey] = React.useState<string | null>(null);
   const [draftValue, setDraftValue] = React.useState("");
@@ -484,18 +522,18 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
       }
       else if (type === "year" && subKeys) {
         const diff = e.clientX - startPos;
-        const newTotalWidth = Math.max(200, startSize + diff);
-        const newMonthWidth = newTotalWidth / 12;
+        const newTotalWidth = Math.max(subKeys.length * 30, startSize + diff);
+        const newPartWidth = newTotalWidth / subKeys.length;
         const updates: Record<string, number> = {};
-        subKeys.forEach(k => updates[k] = newMonthWidth);
+        subKeys.forEach(k => updates[k] = newPartWidth);
         setColWidths(prev => ({ ...prev, ...updates }));
       }
       else if (type === "quarter" && subKeys) {
         const diff = e.clientX - startPos;
-        const newTotalWidth = Math.max(100, startSize + diff);
-        const newMonthWidth = newTotalWidth / 3;
+        const newTotalWidth = Math.max(subKeys.length * 30, startSize + diff);
+        const newPartWidth = newTotalWidth / subKeys.length;
         const updates: Record<string, number> = {};
-        subKeys.forEach(k => updates[k] = newMonthWidth);
+        subKeys.forEach(k => updates[k] = newPartWidth);
         setColWidths(prev => ({ ...prev, ...updates }));
       }
       else {
@@ -530,7 +568,13 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    const currentTotal = subKeys.reduce((acc, k) => acc + (colWidths[k] || 72), 0);
+
+    // Fix: Determine default width based on the current view resolution
+    let defaultWidth = 72; // Month view default
+    if (viewResolution === "Quarter") defaultWidth = 120;
+    else if (viewResolution === "Year") defaultWidth = 200;
+
+    const currentTotal = subKeys.reduce((acc, k) => acc + (colWidths[k] || defaultWidth), 0);
     resizing.current = {
       type,
       id,
@@ -661,10 +705,33 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
             />
             {financialYears.map((fy) => {
               if (viewResolution === "Year") {
-                return <col key={fy.label} style={{ width: "200px" }} />;
+                const width = colWidths[fy.label] || 200;
+                return (
+                  <col
+                    key={fy.label}
+                    style={{
+                      width: `${width}px`,
+                      minWidth: `${width}px`,
+                      maxWidth: `${width}px`
+                    }}
+                  />
+                );
               }
               if (viewResolution === "Quarter") {
-                return QUARTERS.map(q => <col key={`${fy.label}-${q.label}`} style={{ width: "100px" }} />);
+                return QUARTERS.map(q => {
+                  const key = `${fy.label}-${q.label}`;
+                  const width = colWidths[key] || 120;
+                  return (
+                    <col
+                      key={key}
+                      style={{
+                        width: `${width}px`,
+                        minWidth: `${width}px`,
+                        maxWidth: `${width}px`
+                      }}
+                    />
+                  );
+                });
               }
               return QUARTERS.map((q) =>
                 q.months.map((m) => {
@@ -709,20 +776,20 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
                 <th
                   key={fy.label}
                   colSpan={viewResolution === "Year" ? 1 : viewResolution === "Quarter" ? 4 : 12} // 12 months, or 4 quarters, or 1 year
-                  className="sticky-top sticky-top-0 border-r-2 border-gray-300 font-bold px-2 text-blue-900 group"
+                  className="sticky-top sticky-top-0 border-r-2 border-gray-300 font-bold text-blue-900 group relative"
                 >
-                  <div className="flex items-center justify-between w-full relative h-full">
+                  <div className="flex items-center justify-between w-full h-full px-2">
                     <span className="flex-grow text-center">{fy.label}</span>
-                    {/* Only show resize handle in Month view for now to avoid complexity, or update handle group logic */}
-                    {viewResolution === "Month" && (
-                      <div
-                        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-50"
-                        onMouseDown={(e) => {
-                          const subKeys = QUARTERS.flatMap(q => q.months.map(m => `${fy.label}-${m}`));
-                          handleGroupResizeStart(e, "year", fy.label, subKeys);
-                        }}
-                      />
-                    )}
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 z-50 transition-colors"
+                      onMouseDown={(e) => {
+                        let subKeys: string[] = [];
+                        if (viewResolution === "Year") subKeys = [fy.label];
+                        else if (viewResolution === "Quarter") subKeys = QUARTERS.map(q => `${fy.label}-${q.label}`);
+                        else subKeys = QUARTERS.flatMap(q => q.months.map(m => `${fy.label}-${m}`));
+                        handleGroupResizeStart(e, "year", fy.label, subKeys);
+                      }}
+                    />
                     {isEditable && onDeleteYear && (
                       <button
                         onClick={() => onDeleteYear(fy.label)}
@@ -746,18 +813,20 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
                       <th
                         key={`${fy.label}-${q.label}`}
                         colSpan={viewResolution === "Quarter" ? 1 : 3}
-                        className="sticky-top sticky-top-1 border-r border-gray-300 font-bold text-blue-900"
+                        className="sticky-top sticky-top-1 border-r border-gray-300 font-bold text-blue-900 relative"
                       >
-                        {q.label}
-                        {viewResolution === "Month" && (
-                          <div
-                            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-50"
-                            onMouseDown={(e) => {
-                              const subKeys = q.months.map(m => `${fy.label}-${m}`);
-                              handleGroupResizeStart(e, "quarter", `${fy.label}-${q.label}`, subKeys);
-                            }}
-                          />
-                        )}
+                        <div className="flex items-center justify-center w-full h-full px-1">
+                          {q.label}
+                        </div>
+                        <div
+                          className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 z-50 transition-colors"
+                          onMouseDown={(e) => {
+                            let subKeys: string[] = [];
+                            if (viewResolution === "Quarter") subKeys = [`${fy.label}-${q.label}`];
+                            else subKeys = q.months.map(m => `${fy.label}-${m}`);
+                            handleGroupResizeStart(e, "quarter", `${fy.label}-${q.label}`, subKeys);
+                          }}
+                        />
                       </th>
                     ))}
                   </React.Fragment>
@@ -774,13 +843,13 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
                         {q.months.map((m) => (
                           <th
                             key={`${fy.label}-${m}`}
-                            className="sticky-top sticky-top-2 month-col text-[10px] font-medium text-blue-900"
-                          // ✅ Remove inline border classes, let CSS handle it
+                            className="sticky-top sticky-top-2 month-col text-[10px] font-medium text-blue-900 relative"
                           >
-                            {MONTH_LABELS[m]}
+                            <div className="flex items-center justify-center w-full h-full">
+                              {MONTH_LABELS[m]}
+                            </div>
                             <div
-                              className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400"
-                              style={{ zIndex: 60 }}
+                              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 z-50 transition-colors"
                               onMouseDown={(e) => {
                                 const key = `${fy.label}-${m}`;
                                 const currentW = colWidths[key] || 72; // ✅ Default to 72
@@ -836,6 +905,7 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
                   viewMode={viewMode}
                   highlightedModel={highlightedModel}
                   highlightedRegulation={highlightedRegulation}
+                  itemColors={itemColors}
                 />
               ))}
             </SortableContext>

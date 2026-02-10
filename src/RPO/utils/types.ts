@@ -24,6 +24,7 @@ export interface PlanData {
     colWidths: Record<string, number>;
     rowHeights: Record<string, number>;
   };
+  itemColors?: Record<string, string>;
 }
 
 export interface Draft {

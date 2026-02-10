@@ -46,6 +46,12 @@ interface SidebarProps {
     highlightedRegulation: string | null;
     setHighlightedModel: (model: string | null) => void;
     setHighlightedRegulation: (reg: string | null) => void;
+    // NEW: Colors
+    itemColors: Record<string, string>;
+    onSetItemColor: (name: string, color: string) => void;
+    // NEW: Active draft highlighting
+    currentDraftId: string | null;
+    onNewDraft: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -72,7 +78,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     highlightedModel,
     highlightedRegulation,
     setHighlightedModel,
-    setHighlightedRegulation
+    setHighlightedRegulation,
+    itemColors,
+    onSetItemColor,
+    currentDraftId,
+    onNewDraft
 }) => {
     const navigate = useNavigate();
     const [editingDraftId, setEditingDraftId] = React.useState<string | null>(null);
@@ -129,24 +139,47 @@ const Sidebar: React.FC<SidebarProps> = ({
 
     // Handle adding items to custom lists
     const handleAddCustomModel = () => {
-        if (!newCustomModel.trim()) return;
-        if (customModels.some(m => m.toLowerCase() === newCustomModel.trim().toLowerCase())) {
-            alert(`"${newCustomModel.trim()}" already exists in the model list!`);
+        // Normalize: trim + collapse internal spaces
+        const name = newCustomModel.replace(/\s+/g, ' ').trim();
+        if (!name) return;
+
+        const normalizedInput = name.toLowerCase();
+        const exists = customModels.some(m =>
+            m.replace(/\s+/g, ' ').trim().toLowerCase() === normalizedInput
+        );
+
+        if (exists) {
+            alert(`"${name}" already exists in the model list!`);
             return;
         }
-        onUpdateCustomLists([...customModels, newCustomModel.trim()], customRegulations);
+
+        // Add immediately with default stringToColor
+        onUpdateCustomLists([...customModels, name], customRegulations);
+        onSetItemColor(name, stringToColor(name));
         setNewCustomModel("");
     };
 
     const handleAddCustomReg = () => {
-        if (!newCustomReg.trim()) return;
-        if (customRegulations.some(r => r.toLowerCase() === newCustomReg.trim().toLowerCase())) {
-            alert(`"${newCustomReg.trim()}" already exists in the regulation list!`);
+        // Normalize: trim + collapse internal spaces
+        const name = newCustomReg.replace(/\s+/g, ' ').trim();
+        if (!name) return;
+
+        const normalizedInput = name.toLowerCase();
+        const exists = customRegulations.some(r =>
+            r.replace(/\s+/g, ' ').trim().toLowerCase() === normalizedInput
+        );
+
+        if (exists) {
+            alert(`"${name}" already exists in the regulation list!`);
             return;
         }
-        onUpdateCustomLists(customModels, [...customRegulations, newCustomReg.trim()]);
+
+        // Add immediately with default stringToColor
+        onUpdateCustomLists(customModels, [...customRegulations, name]);
+        onSetItemColor(name, stringToColor(name));
         setNewCustomReg("");
     };
+
 
     const startEditing = (draft: Draft, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -177,10 +210,10 @@ const Sidebar: React.FC<SidebarProps> = ({
     };
 
     return (
-        <nav className={`bg-gradient-to-b from-blue-900 to-blue-900 flex flex-col shadow-xl transition-all duration-300 ease-in-out ${isOpen ? 'w-96' : 'w-0 opacity-0 overflow-hidden'}`}>
+        <nav className={`bg-gradient-to-b from-blue-900 to-blue-900 flex flex-col shadow-xl transition-all duration-300 ease-in-out shrink-0 ${isOpen ? 'w-[400px]' : 'w-0 opacity-0 overflow-hidden'}`}>
             {/* Logo Section */}
             <div
-                className="bg-gray-50/50 px-5 pl-16 py-4 shadow-lg relative group"
+                className="bg-gray-50/50 px-5 pl-16 py-3 shadow-lg relative group"
             >
                 <div
                     className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full hover:bg-white/20 transition-all z-10 cursor-pointer"
@@ -195,15 +228,15 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {/* Main Navigation */}
-            <div className="p-4 space-y-2 flex-grow overflow-y-auto custom-scrollbar">
+            <div className="p-3 space-y-1.5 flex-grow overflow-hidden">
                 <button
                     onClick={() => setActiveTab('Final')}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition-all whitespace-nowrap ${activeTab === 'Final'
-                        ? 'bg-white text-blue-700 shadow-lg scale-105'
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${activeTab === 'Final'
+                        ? 'bg-white text-blue-700 shadow-md scale-102'
                         : 'text-blue-100 hover:bg-blue-500/30 hover:text-white'
                         }`}
                 >
-                    <CheckCircle className="w-5 h-5 shrink-0" />
+                    <CheckCircle className="w-4 h-4 shrink-0" />
                     Final Planning
                 </button>
 
@@ -212,30 +245,39 @@ const Sidebar: React.FC<SidebarProps> = ({
                         setActiveTab('Draft');
                         setSelectedModels([]);
                     }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition-all whitespace-nowrap ${activeTab === 'Draft'
-                        ? 'bg-white text-blue-700 shadow-lg scale-105'
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${activeTab === 'Draft'
+                        ? 'bg-white text-blue-700 shadow-md scale-102'
                         : 'text-blue-100 hover:bg-blue-500/30 hover:text-white'
                         }`}
                 >
-                    <FileText className="w-5 h-5 shrink-0" />
+                    <FileText className="w-4 h-4 shrink-0" />
                     Draft Planning
                 </button>
 
                 {/* Recent Drafts Section */}
-                <div className="pt-4 border-t border-blue-500/30 mt-4">
-                    <h3 className="text-xs font-bold text-blue-200 uppercase tracking-wider mb-3 px-2">
-                        Recent Drafts
-                    </h3>
-                    <div className="space-y-1.5">
+                <div className="pt-2 border-t border-blue-500/30 mt-2">
+                    <div className="flex items-center justify-between mb-1 px-1">
+                        <h3 className="text-[14px] font-bold text-blue-200 uppercase tracking-wider">
+                            Recent Drafts
+                        </h3>
+                        <button
+                            onClick={onNewDraft}
+                            className="p-1 hover:bg-white/10 rounded-md transition-colors text-blue-200 hover:text-white"
+                            title="New Draft"
+                        >
+                            <Plus size={16} />
+                        </button>
+                    </div>
+                    <div className="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar pr-1">
                         {drafts.length === 0 && (
-                            <p className="text-sm text-blue-200/60 px-2 italic py-2">
+                            <p className="text-xs text-blue-200/60 px-1 italic py-1">
                                 No drafts saved yet
                             </p>
                         )}
                         {drafts.map(draft => (
                             <div
                                 key={draft.id}
-                                className="group flex items-center justify-between p-2.5 hover:bg-white/10 rounded-lg text-sm transition-all"
+                                className={`group flex items-center justify-between p-1.5 hover:bg-white/10 rounded-md text-xs transition-all ${draft.id === currentDraftId ? 'bg-white/10 border-l-2 border-blue-400' : ''}`}
                             >
                                 {editingDraftId === draft.id ? (
                                     <div className="flex items-center gap-1 flex-grow mr-2">
@@ -288,17 +330,17 @@ const Sidebar: React.FC<SidebarProps> = ({
                 {/* Custom Lists Section */}
                 {/* Custom Lists Section - Visible in both Draft and Final - using activePlan data if needed, but currently custom lists are passed in. For Final, we might need to derive them or pass them differently if they aren't in 'customModels' prop. Assuming App passes correct customModels for active tab */}
                 {(activeTab === 'Draft' || activeTab === 'Final') && (
-                    <div className="pt-4 border-t border-blue-500/30 mt-2">
-                        <h3 className="text-xs font-bold text-blue-200 uppercase tracking-wider mb-2 px-2">
+                    <div className="pt-2 border-t border-blue-500/30 mt-1">
+                        <h3 className="text-[14px] font-bold text-blue-200 uppercase tracking-wider mb-1 px-1">
                             {activeTab === 'Draft' ? 'Draft Lists' : 'Plan Lists'}
                         </h3>
                         {activeTab === 'Draft' && (
-                            <p className="text-[10px] text-blue-300 px-2 mb-2 italic">Drag items to grid</p>
+                            <p className="text-[12px] text-blue-300 px-1 mb-1 italic">Drag items to grid</p>
                         )}
-                        <div className="grid grid-cols-2 gap-2 px-1">
+                        <div className="grid grid-cols-2 gap-1.5 px-0.5">
                             {/* Regulations List */}
-                            <div className="bg-blue-800/30 rounded p-2 flex flex-col gap-2">
-                                <label className="text-[10px] text-blue-200 uppercase font-bold text-center block border-b border-blue-500/20 pb-1">Reg Names</label>
+                            <div className="bg-blue-800/30 rounded p-1.5 flex flex-col gap-1.5">
+                                <label className="text-[12px] text-blue-200 uppercase font-bold text-center block border-b border-blue-500/20 pb-0.5">REGULATIONS</label>
                                 {activeTab === 'Draft' && (
                                     <input
                                         className="w-full text-xs p-1.5 rounded bg-white/90 text-black outline-none"
@@ -308,7 +350,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                                         onKeyDown={e => e.key === 'Enter' && handleAddCustomReg()}
                                     />
                                 )}
-                                <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
+                                <div className="max-h-[120px] overflow-y-auto space-y-0.5 custom-scrollbar">
                                     {customRegulations.map((item, i) => (
                                         <div
                                             key={i}
@@ -320,15 +362,13 @@ const Sidebar: React.FC<SidebarProps> = ({
                                                 e.dataTransfer.setData("application/json", JSON.stringify({ type: 'regulation', name: item }));
                                             }}
                                             onClick={() => {
-                                                // Single click clears highlighting
                                                 if (highlightedRegulation === item) {
                                                     setHighlightedRegulation(null);
                                                 }
                                             }}
                                             onDoubleClick={() => {
-                                                // Double click toggles highlighting
                                                 setHighlightedRegulation(highlightedRegulation === item ? null : item);
-                                                setHighlightedModel(null); // Clear model highlight
+                                                setHighlightedModel(null);
                                             }}
                                         >
                                             {editingListItem?.type === 'reg' && editingListItem.index === i ? (
@@ -348,15 +388,15 @@ const Sidebar: React.FC<SidebarProps> = ({
                                                     <button onClick={(e) => { e.stopPropagation(); handleUpdateListItem('reg', i, editingListItem.value) }} className="text-green-600 hover:text-green-800"><Check size={12} /></button>
                                                 </div>
                                             ) : (
-                                                <>
+                                                <div className="flex items-center gap-1 w-full relative group/item">
                                                     <span className="truncate flex-grow mr-1 font-medium">{item}</span>
                                                     {activeTab === 'Draft' && (
-                                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                                                            <button onClick={(e) => { e.stopPropagation(); setEditingListItem({ type: 'reg', index: i, value: item }) }} className="text-black/50 hover:text-black"><Pencil size={12} /></button>
-                                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteListItem('reg', i) }} className="text-red-500/50 hover:text-red-600"><X size={12} /></button>
+                                                        <div className="flex gap-1 opacity-0 group-hover/item:opacity-100">
+                                                            <button onClick={(e) => { e.stopPropagation(); setEditingListItem({ type: 'reg', index: i, value: item }) }} className="text-black/50 hover:text-black hover:bg-white/20 p-0.5 rounded transition-colors"><Pencil size={12} /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteListItem('reg', i) }} className="text-red-500 hover:text-red-600 hover:bg-white/20 p-0.5 rounded transition-colors"><X size={12} /></button>
                                                         </div>
                                                     )}
-                                                </>
+                                                </div>
                                             )}
                                         </div>
                                     ))}
@@ -364,8 +404,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                             </div>
 
                             {/* Models List */}
-                            <div className="bg-blue-800/30 rounded p-2 flex flex-col gap-2">
-                                <label className="text-[10px] text-blue-200 uppercase font-bold text-center block border-b border-blue-500/20 pb-1">Model Names</label>
+                            <div className="bg-blue-800/30 rounded p-1.5 flex flex-col gap-1.5">
+                                <label className="text-[12px] text-blue-200 uppercase font-bold text-center block border-b border-blue-500/20 pb-0.5">MODELS</label>
                                 {activeTab === 'Draft' && (
                                     <input
                                         className="w-full text-xs p-1.5 rounded bg-white/90 text-black outline-none"
@@ -375,7 +415,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                                         onKeyDown={e => e.key === 'Enter' && handleAddCustomModel()}
                                     />
                                 )}
-                                <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
+                                <div className="max-h-[120px] overflow-y-auto space-y-0.5 custom-scrollbar">
                                     {customModels.map((item, i) => (
                                         <div
                                             key={i}
@@ -387,15 +427,13 @@ const Sidebar: React.FC<SidebarProps> = ({
                                                 e.dataTransfer.setData("application/json", JSON.stringify({ type: 'model', name: item }));
                                             }}
                                             onClick={() => {
-                                                // Single click clears highlighting
                                                 if (highlightedModel === item) {
                                                     setHighlightedModel(null);
                                                 }
                                             }}
                                             onDoubleClick={() => {
-                                                // Double click toggles highlighting
                                                 setHighlightedModel(highlightedModel === item ? null : item);
-                                                setHighlightedRegulation(null); // Clear reg highlight
+                                                setHighlightedRegulation(null);
                                             }}
                                         >
                                             {editingListItem?.type === 'model' && editingListItem.index === i ? (
@@ -415,15 +453,15 @@ const Sidebar: React.FC<SidebarProps> = ({
                                                     <button onClick={(e) => { e.stopPropagation(); handleUpdateListItem('model', i, editingListItem.value) }} className="text-green-600 hover:text-green-800"><Check size={12} /></button>
                                                 </div>
                                             ) : (
-                                                <>
+                                                <div className="flex items-center gap-1 w-full relative group/item">
                                                     <span className="truncate flex-grow mr-1 font-medium">{item}</span>
                                                     {activeTab === 'Draft' && (
-                                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                                                            <button onClick={(e) => { e.stopPropagation(); setEditingListItem({ type: 'model', index: i, value: item }) }} className="text-black/50 hover:text-black"><Pencil size={12} /></button>
-                                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteListItem('model', i) }} className="text-red-500/50 hover:text-red-600"><X size={12} /></button>
+                                                        <div className="flex gap-1 opacity-0 group-hover/item:opacity-100">
+                                                            <button onClick={(e) => { e.stopPropagation(); setEditingListItem({ type: 'model', index: i, value: item }) }} className="text-black/50 hover:text-black hover:bg-white/20 p-0.5 rounded transition-colors"><Pencil size={12} /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteListItem('model', i) }} className="text-red-500 hover:text-red-600 hover:bg-white/20 p-0.5 rounded transition-colors"><X size={12} /></button>
                                                         </div>
                                                     )}
-                                                </>
+                                                </div>
                                             )}
                                         </div>
                                     ))}
