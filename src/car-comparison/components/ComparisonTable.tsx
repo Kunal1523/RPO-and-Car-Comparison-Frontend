@@ -827,6 +827,24 @@ interface ComparisonTableProps {
   data: ComparisonResponse | null;
 }
 
+const HighlightText = ({ text, highlight }: { text: string; highlight: string }) => {
+  if (!highlight || !highlight.trim()) {
+    return <>{text}</>;
+  }
+  // Escape special regex characters
+  const escapedHighlight = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escapedHighlight})`, 'gi');
+
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) =>
+        regex.test(part) ? <span key={i} className="bg-yellow-300 text-slate-900 font-bold rounded-sm px-0.5">{part}</span> : part
+      )}
+    </>
+  );
+};
+
 const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [showDiffOnly, setShowDiffOnly] = useState(false);
@@ -1289,7 +1307,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                       else if (isVar) rowBg = 'bg-violet-50 hover:bg-violet-100/80';
                       else if (isDate) rowBg = 'bg-emerald-50 hover:bg-emerald-100/80';
                       else if (isPriceRow) rowBg = 'bg-slate-50';
-                      else if (isDifferent) rowBg = 'bg-amber-50 hover:bg-amber-100/80';
+                      else if (isDifferent) rowBg = 'bg-amber-100 hover:bg-amber-300/80'; // Increased strength and removed diff tag logic below
 
                       return (
                         <div
@@ -1303,13 +1321,8 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                               {groupIdx + 1}.{idx + 1}
                             </span>
                             <span className={`flex-1 break-words ${isBrand || isCar || isVar || isDate ? 'uppercase tracking-tight text-[9px]' : ''}`}>
-                              {item.featureName}
+                              <HighlightText text={item.featureName} highlight={searchTerm} />
                             </span>
-                            {isDifferent && !isPriceRow && !isBrand && !isCar && !isVar && !isDate && (
-                              <span className="text-[8px] px-1 py-0.5 rounded-full bg-amber-200 text-amber-800 border border-amber-300">
-                                DIFF
-                              </span>
-                            )}
                           </div>
 
                           {variants.map((v, vIdx) => {
@@ -1349,17 +1362,17 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                                         return (
                                           <div key={pIdx} className="flex flex-col xl:flex-row xl:items-center xl:justify-between border-b border-slate-200 pb-1 last:border-0 last:pb-0 gap-0.5">
                                             <span className="text-[9px] text-slate-600 font-medium uppercase tracking-wide break-words">
-                                              {label}
+                                              <HighlightText text={label} highlight={searchTerm} />
                                             </span>
                                             <span className="text-xs font-bold text-green-700 whitespace-nowrap">
-                                              {formattedPrice}
+                                              <HighlightText text={formattedPrice} highlight={searchTerm} />
                                             </span>
                                           </div>
                                         );
                                       })}
                                   </div>
                                 ) : (
-                                  item.values[v]
+                                  <HighlightText text={String(item.values[v])} highlight={searchTerm} />
                                 )}
                               </div>
                             );

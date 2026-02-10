@@ -222,6 +222,27 @@ const App: React.FC = () => {
   }, [activeTab, currentPlan, lastSavedPlanSnapshot]);
 
   // -----------------------
+  // Unsaved Changes Prompt (BeforeUnload)
+  // -----------------------
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Check if there are unsaved changes (isDraftDirty is true)
+      if (isDraftDirty) {
+        // Prevent default behavior (some browsers require this)
+        e.preventDefault();
+        // Set returnValue to trigger the prompt (text is usually ignored by modern browsers)
+        e.returnValue = '';
+      }
+    };
+
+    // Add event listener when component mounts or isDraftDirty changes
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // Clean up event listener when component unmounts or isDraftDirty changes
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDraftDirty]);
+
+  // -----------------------
   // Helpers
   // -----------------------
   const removeRegFromPlan = useCallback((plan: PlanData, reg: string): PlanData => {

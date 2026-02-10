@@ -568,7 +568,13 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    const currentTotal = subKeys.reduce((acc, k) => acc + (colWidths[k] || 72), 0);
+
+    // Fix: Determine default width based on the current view resolution
+    let defaultWidth = 72; // Month view default
+    if (viewResolution === "Quarter") defaultWidth = 120;
+    else if (viewResolution === "Year") defaultWidth = 200;
+
+    const currentTotal = subKeys.reduce((acc, k) => acc + (colWidths[k] || defaultWidth), 0);
     resizing.current = {
       type,
       id,
@@ -700,13 +706,31 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
             {financialYears.map((fy) => {
               if (viewResolution === "Year") {
                 const width = colWidths[fy.label] || 200;
-                return <col key={fy.label} style={{ width: `${width}px` }} />;
+                return (
+                  <col
+                    key={fy.label}
+                    style={{
+                      width: `${width}px`,
+                      minWidth: `${width}px`,
+                      maxWidth: `${width}px`
+                    }}
+                  />
+                );
               }
               if (viewResolution === "Quarter") {
                 return QUARTERS.map(q => {
                   const key = `${fy.label}-${q.label}`;
                   const width = colWidths[key] || 120;
-                  return <col key={key} style={{ width: `${width}px` }} />;
+                  return (
+                    <col
+                      key={key}
+                      style={{
+                        width: `${width}px`,
+                        minWidth: `${width}px`,
+                        maxWidth: `${width}px`
+                      }}
+                    />
+                  );
                 });
               }
               return QUARTERS.map((q) =>

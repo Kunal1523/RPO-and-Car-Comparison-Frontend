@@ -340,7 +340,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                         <div className="grid grid-cols-2 gap-1.5 px-0.5">
                             {/* Regulations List */}
                             <div className="bg-blue-800/30 rounded p-1.5 flex flex-col gap-1.5">
-                                <label className="text-[9px] text-blue-200 uppercase font-bold text-center block border-b border-blue-500/20 pb-0.5">Reg Names</label>
+                                <label className="text-[12px] text-blue-200 uppercase font-bold text-center block border-b border-blue-500/20 pb-0.5">REGULATIONS</label>
                                 {activeTab === 'Draft' && (
                                     <input
                                         className="w-full text-xs p-1.5 rounded bg-white/90 text-black outline-none"
@@ -405,7 +405,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
                             {/* Models List */}
                             <div className="bg-blue-800/30 rounded p-1.5 flex flex-col gap-1.5">
-                                <label className="text-[9px] text-blue-200 uppercase font-bold text-center block border-b border-blue-500/20 pb-0.5">Model Names</label>
+                                <label className="text-[12px] text-blue-200 uppercase font-bold text-center block border-b border-blue-500/20 pb-0.5">MODELS</label>
                                 {activeTab === 'Draft' && (
                                     <input
                                         className="w-full text-xs p-1.5 rounded bg-white/90 text-black outline-none"
