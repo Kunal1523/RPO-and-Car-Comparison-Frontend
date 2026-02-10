@@ -578,6 +578,9 @@ const App: React.FC = () => {
   const renameModelInPlan = useCallback((oldName: string, newName: string) => {
     if (oldName === newName || !newName.trim()) return;
 
+    // Update masterModels state
+    setMasterModels(prev => prev.map(m => m === oldName ? newName.trim() : m));
+
     setCurrentPlan(prev => {
       const newCells: Record<string, string[]> = {};
 
@@ -601,6 +604,9 @@ const App: React.FC = () => {
   // -----------------------
   const renameRegulationInPlan = useCallback((oldName: string, newName: string) => {
     if (oldName === newName || !newName.trim()) return;
+
+    // Update masterRegs state
+    setMasterRegs(prev => prev.map(r => r === oldName ? newName.trim() : r));
 
     setCurrentPlan(prev => {
       const newCells: Record<string, string[]> = {};

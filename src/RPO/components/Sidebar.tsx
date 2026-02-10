@@ -93,24 +93,38 @@ const Sidebar: React.FC<SidebarProps> = ({
     const [editingListItem, setEditingListItem] = React.useState<{ type: 'model' | 'reg', index: number, value: string } | null>(null);
 
     const handleUpdateListItem = (type: 'model' | 'reg', index: number, newValue: string) => {
-        if (!newValue.trim()) return;
+        // Normalize the new value: trim + collapse spaces
+        const normalizedNewValue = newValue.replace(/\s+/g, ' ').trim();
+        if (!normalizedNewValue) return;
+
         const oldValue = type === 'model' ? customModels[index] : customRegulations[index];
 
-        // Check for duplicates
+        // Check for duplicates using the same logic as add functions
+        // Remove ALL spaces and compare in lowercase
         if (type === 'model') {
-            if (customModels.some((m, i) => i !== index && m.toLowerCase() === newValue.trim().toLowerCase())) {
-                alert(`"${newValue.trim()}" already exists in the model list!`);
+            const normalizedInput = normalizedNewValue.replace(/\s+/g, '').toLowerCase();
+            const exists = customModels.some((m, i) =>
+                i !== index && m.replace(/\s+/g, '').toLowerCase() === normalizedInput
+            );
+
+            if (exists) {
+                alert(`"${normalizedNewValue}" already exists in the model list!`);
                 return;
             }
             // Cascade rename in plan
-            onRenameModel(oldValue, newValue.trim());
+            onRenameModel(oldValue, normalizedNewValue);
         } else {
-            if (customRegulations.some((r, i) => i !== index && r.toLowerCase() === newValue.trim().toLowerCase())) {
-                alert(`"${newValue.trim()}" already exists in the regulation list!`);
+            const normalizedInput = normalizedNewValue.replace(/\s+/g, '').toLowerCase();
+            const exists = customRegulations.some((r, i) =>
+                i !== index && r.replace(/\s+/g, '').toLowerCase() === normalizedInput
+            );
+
+            if (exists) {
+                alert(`"${normalizedNewValue}" already exists in the regulation list!`);
                 return;
             }
             // Cascade rename in plan
-            onRenameRegulation(oldValue, newValue.trim());
+            onRenameRegulation(oldValue, normalizedNewValue);
         }
         setEditingListItem(null);
     };
@@ -143,9 +157,11 @@ const Sidebar: React.FC<SidebarProps> = ({
         const name = newCustomModel.replace(/\s+/g, ' ').trim();
         if (!name) return;
 
-        const normalizedInput = name.toLowerCase();
+        // Normalize for comparison: remove ALL spaces and convert to lowercase
+        // This treats "Model A", "ModelA", "model a", "MODEL  A" as duplicates
+        const normalizedInput = name.replace(/\s+/g, '').toLowerCase();
         const exists = customModels.some(m =>
-            m.replace(/\s+/g, ' ').trim().toLowerCase() === normalizedInput
+            m.replace(/\s+/g, '').toLowerCase() === normalizedInput
         );
 
         if (exists) {
@@ -164,9 +180,11 @@ const Sidebar: React.FC<SidebarProps> = ({
         const name = newCustomReg.replace(/\s+/g, ' ').trim();
         if (!name) return;
 
-        const normalizedInput = name.toLowerCase();
+        // Normalize for comparison: remove ALL spaces and convert to lowercase
+        // This treats "Regulation A", "RegulationA", "regulation a" as duplicates
+        const normalizedInput = name.replace(/\s+/g, '').toLowerCase();
         const exists = customRegulations.some(r =>
-            r.replace(/\s+/g, ' ').trim().toLowerCase() === normalizedInput
+            r.replace(/\s+/g, '').toLowerCase() === normalizedInput
         );
 
         if (exists) {
