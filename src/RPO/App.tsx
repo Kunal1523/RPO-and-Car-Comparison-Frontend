@@ -19,6 +19,7 @@ import ComplianceSidebar from "./components/ComplianceSidebar";
 import DrillDownModal from "./components/DrillDownModal";
 import LoginPage from "./components/LoginPage";
 import ShareModal from "./components/ShareModal";
+import SaveDraftModal from "./components/SaveDraftModal";
 import { getAllowedEmails, BACKEND_BASE_URL } from "./authConfig";
 import { Settings2 } from "lucide-react";
 import { api } from "./apiService/api";
@@ -106,6 +107,7 @@ const App: React.FC = () => {
 
   // Regulation list used by UI depends on tab
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [showUnsavedPrompt, setShowUnsavedPrompt] = useState(false);
 
   // Regulation list used by UI depends on tab
@@ -807,13 +809,13 @@ const App: React.FC = () => {
     }
   };
 
-  const saveDraftAsNew = async () => {
+  const handleSaveDraftConfirmed = async (name: string) => {
     if (!userEmail) return;
 
     const draftId = crypto.randomUUID();
     const payload: Draft = {
       id: draftId,
-      name: `Draft ${new Date().toLocaleString()}`,
+      name: name,
       updatedAt: Date.now(),
       data: {
         ...currentPlan,
@@ -835,10 +837,22 @@ const App: React.FC = () => {
         next.sort((a, b) => b.updatedAt - a.updatedAt);
         return next;
       });
+
+      setIsSaveModalOpen(false);
+
+      // Handle pending navigation if any
+      if (pendingNavigation) {
+        pendingNavigation();
+        setPendingNavigation(null);
+      }
     } catch (e) {
       console.error(e);
       alert("Failed to save draft");
     }
+  };
+
+  const saveDraftAsNew = () => {
+    setIsSaveModalOpen(true);
   };
 
   // -----------------------
@@ -880,12 +894,8 @@ const App: React.FC = () => {
 
   // Wrap actions to clear prompt
   const performSaveAsNew = async () => {
-    await saveDraftAsNew();
     setShowUnsavedPrompt(false);
-    if (pendingNavigation) {
-      pendingNavigation();
-      setPendingNavigation(null);
-    }
+    setIsSaveModalOpen(true);
   };
 
   const performUpdate = async () => {
@@ -1280,6 +1290,13 @@ const App: React.FC = () => {
           onClose={() => setShareModalOpen(false)}
           userEmail={userEmail}
           accessToken={accessToken}
+        />
+
+        <SaveDraftModal
+          isOpen={isSaveModalOpen}
+          onClose={() => setIsSaveModalOpen(false)}
+          onSave={handleSaveDraftConfirmed}
+          initialName={`Draft ${new Date().toLocaleString()}`}
         />
 
         <div className="flex-grow p-1 overflow-hidden flex flex-col gap-6">

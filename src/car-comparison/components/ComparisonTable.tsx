@@ -850,6 +850,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
   const [showDiffOnly, setShowDiffOnly] = useState(false);
   const [expandAll, setExpandAll] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [hiddenVehicles, setHiddenVehicles] = useState<Set<number>>(new Set());
 
   const NO_INFO = 'No information Available';
 
@@ -966,37 +967,57 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
     return result;
   }, [data]);
 
-  // Filter groups based on search term and re-calculate hasDifferences
+  // Add original indices to groups and items for numbering retention
+  const groupsWithIndices = useMemo(() => {
+    return groups.map((group, groupIdx) => ({
+      ...group,
+      originalGroupIndex: groupIdx,
+      items: group.items.map((item, itemIdx) => ({
+        ...item,
+        originalItemIndex: itemIdx
+      }))
+    }));
+  }, [groups]);
+
+  // Filter groups based on search term and hidden vehicles
   const filteredGroups = useMemo(() => {
     if (!data) return [];
     const variants = data.columns.slice(1);
 
-    if (!searchTerm.trim()) return groups;
+    // If no search and no hidden vehicles, return original groups
+    if (!searchTerm.trim() && hiddenVehicles.size === 0) return groupsWithIndices;
+
     const lowerTerm = searchTerm.toLowerCase();
 
-    return groups.map(group => {
-      // If group name matches, keep all items (and original hasDifferences)
-      const groupMatches = group.groupName.toLowerCase().includes(lowerTerm);
-      if (groupMatches) return group;
+    return groupsWithIndices.map(group => {
+      let filteredItems = group.items;
 
-      // Otherwise filter items
-      const filteredItems = group.items.filter(item =>
-        item.featureName.toLowerCase().includes(lowerTerm)
-      );
+      // 1. Search Filter
+      if (searchTerm.trim()) {
+        const groupMatches = group.groupName.toLowerCase().includes(lowerTerm);
+        if (!groupMatches) {
+          filteredItems = group.items.filter(item =>
+            item.featureName.toLowerCase().includes(lowerTerm)
+          );
+        }
+      }
 
       if (filteredItems.length === 0) return null;
 
-      // Re-calculate hasDifferences for the subset of items
+      // 2. Recalculate hasDifferences for the subset of items AND visible columns
       const hasDifferences = filteredItems.some(item => {
-        const variantValues = variants.map(v => item.values[v]);
+        const variantValues = variants
+          .filter((_, idx) => !hiddenVehicles.has(idx))
+          .map(v => item.values[v]);
+
         const nonNoInfoValues = variantValues.filter(v => v !== NO_INFO);
         const uniqueVals = new Set(nonNoInfoValues);
         return uniqueVals.size > 1;
       });
 
       return { ...group, items: filteredItems, hasDifferences };
-    }).filter(Boolean) as FeatureGroup[];
-  }, [groups, searchTerm, data]);
+    }).filter(Boolean) as any[];
+  }, [groupsWithIndices, searchTerm, data, hiddenVehicles]);
 
   // Apply "Differs Only" filter to groups
   const displayGroups = useMemo(() => {
@@ -1025,29 +1046,56 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
     if (!data) return;
 
     const variants = data.columns.slice(1);
+
+    // Filter variants to export
+    const exportVariants = variants.filter((_, idx) => !hiddenVehicles.has(idx));
+
     const excelData: any[] = [];
 
-    excelData.push(['Feature', ...variants]);
+    // Header with visible variants
+    excelData.push(['Feature', ...exportVariants]);
+
+    // Use displayGroups if you want to respect the search/filter, or groupsWithIndices if you want all groups but just visible columns. 
+    // Usually Excel export is expected to match "what I see". 
+    // If showDiffOnly is checked, we already respect that.
+    // Let's iterate over groups (all groups) but apply showDiffOnly logic and HIDDEN column logic.
+    // NOTE: If we use 'groups', we get all data. If we use 'displayGroups' we get filtered data.
+    // The previous implementation used 'groups' but checked 'showDiffOnly' inside. 
+    // We'll stick to that logic but add column filtering.
 
     groups.forEach(group => {
-      // Skip groups with no differences if showDiffOnly is enabled
-      if (showDiffOnly && !group.hasDifferences) return;
+      // Skip groups with no differences if showDiffOnly is enabled.
+      // BUT WAIT: 'hasDifferences' in 'group' object assumes ALL columns. 
+      // If we hide a column, 'hasDifferences' might change!
+      // However, calculating difference on the fly for export is safer.
 
-      excelData.push([`${group.groupName}`, '', '', '']);
-
-      group.items.forEach(item => {
+      const itemsToExport = group.items.filter(item => {
         const isPriceRow = item.featureName.toLowerCase().trim() === 'price value';
 
-        const variantValues = variants.map(v => item.values[v]);
-        const nonNoInfoValues = variantValues.filter(v => v !== NO_INFO);
+        // Check differences ONLY on visible columns
+        const visibleValues = variants
+          .map((v, i) => !hiddenVehicles.has(i) ? item.values[v] : null)
+          .filter(v => v !== null) as string[];
+
+        const nonNoInfoValues = visibleValues.filter(v => v !== NO_INFO);
         const uniqueVals = Array.from(new Set(nonNoInfoValues));
         const isDifferent = uniqueVals.length > 1;
 
-        // Skip rows that don't differ if showDiffOnly is enabled
-        if (showDiffOnly && !isDifferent && !isPriceRow) return;
+        if (showDiffOnly && !isDifferent && !isPriceRow) return false;
+        return true;
+      });
 
+      if (itemsToExport.length === 0 && showDiffOnly) return;
+
+      excelData.push([`${group.groupName}`, '', '', '']);
+
+      itemsToExport.forEach(item => {
+        const isPriceRow = item.featureName.toLowerCase().trim() === 'price value';
         const row = [item.featureName];
-        variants.forEach(v => {
+
+        variants.forEach((v, idx) => {
+          if (hiddenVehicles.has(idx)) return; // Skip hidden columns
+
           // Handle price cells specially
           const value = item.values[v];
           const isPriceCell = isPriceRow && value && typeof value === 'object' && value !== null && 'pricing' in (value as object);
@@ -1092,7 +1140,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
     const colWidths = [
       { wch: 40 },
-      ...variants.map(() => ({ wch: 30 }))
+      ...exportVariants.map(() => ({ wch: 30 }))
     ];
     ws['!cols'] = colWidths;
 
@@ -1133,13 +1181,34 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
   const variants = data.columns.slice(1);
 
+  // Filter out hidden vehicles
+  const visibleVariants = variants.filter((_, idx) => !hiddenVehicles.has(idx));
+
+  const toggleVehicleVisibility = (index: number) => {
+    setHiddenVehicles(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        // Don't allow hiding all vehicles
+        if (newSet.size < variants.length - 1) {
+          newSet.add(index);
+        } else {
+          alert('At least one vehicle must remain visible');
+        }
+      }
+      return newSet;
+    });
+  };
+
   const getGridColumns = () => {
-    if (variants.length <= 3) {
-      return `minmax(160px, 1fr) repeat(${variants.length}, minmax(160px, 1fr))`;
-    } else if (variants.length === 4) {
-      return `minmax(140px, 0.9fr) repeat(${variants.length}, minmax(140px, 1fr))`;
+    const visibleCount = visibleVariants.length;
+    if (visibleCount <= 3) {
+      return `minmax(160px, 1fr) repeat(${visibleCount}, minmax(160px, 1fr))`;
+    } else if (visibleCount === 4) {
+      return `minmax(140px, 0.9fr) repeat(${visibleCount}, minmax(140px, 1fr))`;
     } else {
-      return `minmax(110px, 0.8fr) repeat(${variants.length}, minmax(110px, 1fr))`;
+      return `minmax(110px, 0.8fr) repeat(${visibleCount}, minmax(110px, 1fr))`;
     }
   };
 
@@ -1159,14 +1228,16 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
   };
 
   const getFontSize = () => {
-    if (variants.length <= 3) return 'text-sm';
-    if (variants.length === 4) return 'text-xs';
+    const visibleCount = visibleVariants.length;
+    if (visibleCount <= 3) return 'text-sm';
+    if (visibleCount === 4) return 'text-xs';
     return 'text-[11px]';
   };
 
   const getHeaderFontSize = () => {
-    if (variants.length <= 3) return 'text-sm md:text-base';
-    if (variants.length === 4) return 'text-xs md:text-sm';
+    const visibleCount = visibleVariants.length;
+    if (visibleCount <= 3) return 'text-sm md:text-base';
+    if (visibleCount === 4) return 'text-xs md:text-sm';
     return 'text-[11px] md:text-xs';
   };
 
@@ -1208,6 +1279,42 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
             />
             <span className="text-sm font-medium text-slate-500 whitespace-nowrap">Unofficial</span>
           </div>
+
+          {/* Hidden Vehicles Dropdown */}
+          {hiddenVehicles.size > 0 && (
+            <div className="relative group">
+              <button className="flex items-center gap-2 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg border border-amber-300 text-xs font-semibold transition-colors">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+                <span>{hiddenVehicles.size} Hidden</span>
+              </button>
+
+              <div className="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 min-w-[200px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30">
+                <div className="text-xs font-bold text-slate-600 mb-2 px-2">Hidden Vehicles</div>
+                <div className="space-y-1">
+                  {variants.map((v, idx) => {
+                    if (!hiddenVehicles.has(idx)) return null;
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => toggleVehicleVisibility(idx)}
+                        className="w-full text-left px-2 py-1.5 text-xs hover:bg-slate-50 rounded flex items-center justify-between group/item"
+                      >
+                        <span className="truncate flex-1">Veh {idx + 1}: {v}</span>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-0 group-hover/item:opacity-100 transition-opacity flex-shrink-0 ml-2">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <button
@@ -1228,16 +1335,32 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
             Feature
           </div>
 
-          {variants.map((v, idx) => (
-            <div
-              key={idx}
-              className={`p-2 font-semibold text-[10px] md:text-xs border-l border-white flex flex-col items-start justify-center ${variantBg(idx)}`}
-              title={v}
-            >
-              <div className="text-[9px] opacity-80 uppercase tracking-tighter">Veh {idx + 1}</div>
-              <span className="truncate w-full">{v}</span>
-            </div>
-          ))}
+          {variants.map((v, idx) => {
+            const isHidden = hiddenVehicles.has(idx);
+            if (isHidden) return null;
+
+            return (
+              <div
+                key={idx}
+                className={`p-2 font-semibold text-[10px] md:text-xs border-l border-white flex flex-col items-start justify-center relative group ${variantBg(idx)}`}
+                title={v}
+              >
+                <button
+                  onClick={() => toggleVehicleVisibility(idx)}
+                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/20 hover:bg-white/30 rounded p-0.5"
+                  title="Hide this vehicle"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
+                </button>
+                <div className="text-[9px] opacity-80 uppercase tracking-tighter">Veh {idx + 1}</div>
+                <span className="truncate w-full">{v}</span>
+              </div>
+            );
+          })}
         </div>
 
         <div className="divide-y divide-slate-200">
@@ -1269,8 +1392,8 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                       {isOpen && !(showDiffOnly && !group.hasDifferences) ? <Minus size={12} /> : <Plus size={12} />}
                     </span>
 
-                    {/* Numbering 1, 2, 3... */}
-                    <span>{groupIdx + 1}. {group.groupName}</span>
+                    {/* Numbering 1, 2, 3... - Use original index */}
+                    <span>{(group as any).originalGroupIndex + 1}. {group.groupName}</span>
 
                     {showDiffOnly && !group.hasDifferences && (
                       <span className="ml-2 text-[9px] font-medium bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full uppercase tracking-wider">
@@ -1284,7 +1407,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
                 {isOpen && (
                   <div className="divide-y divide-slate-100 max-h-[50vh] overflow-y-auto custom-scrollbar">
-                    {group.items.map((item, idx) => {
+                    {group.items.map((item: any, idx: number) => {
 
                       const ftLower = item.featureName.toLowerCase().trim();
                       const isBrand = ftLower === 'brand';
@@ -1293,7 +1416,10 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                       const isDate = ftLower === 'variant launched';
                       const isPriceRow = ftLower === 'price value';
 
-                      const variantValues = variants.map(v => item.values[v]);
+                      const variantValues = variants
+                        .filter((_, vIdx) => !hiddenVehicles.has(vIdx))
+                        .map(v => item.values[v]);
+
                       const nonNoInfoValues = variantValues.filter(v => v !== NO_INFO);
                       const uniqueVals = Array.from(new Set(nonNoInfoValues));
                       const isDifferent = uniqueVals.length > 1;
@@ -1318,7 +1444,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
                           <div className={`p-1 pl-6 pr-2 text-[10px] font-medium border-r border-slate-200 flex items-start justify-start text-left gap-1.5 ${isBrand || isCar || isVar || isDate ? 'text-blue-900 font-bold' : 'text-slate-700'}`}>
                             <span className="text-slate-500 inline-block min-w-[30px] text-right">
-                              {groupIdx + 1}.{idx + 1}
+                              {(group as any).originalGroupIndex + 1}.{(item as any).originalItemIndex + 1}
                             </span>
                             <span className={`flex-1 break-words ${isBrand || isCar || isVar || isDate ? 'uppercase tracking-tight text-[9px]' : ''}`}>
                               <HighlightText text={item.featureName} highlight={searchTerm} />
@@ -1326,6 +1452,9 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                           </div>
 
                           {variants.map((v, vIdx) => {
+                            // Skip hidden vehicles
+                            if (hiddenVehicles.has(vIdx)) return null;
+
                             const value = item.values[v];
                             const isPriceCell = isPriceRow && value && typeof value === 'object' && value !== null && 'pricing' in (value as object);
 
