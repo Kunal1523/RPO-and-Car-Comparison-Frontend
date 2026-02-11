@@ -11,7 +11,9 @@ import {
     ArrowLeft,
     Pencil,
     X,
-    Check
+    Check,
+    Archive,
+    RotateCcw
 } from 'lucide-react';
 import Logo from '../Images/amlgolabslogowhite.png';
 
@@ -52,6 +54,13 @@ interface SidebarProps {
     // NEW: Active draft highlighting
     currentDraftId: string | null;
     onNewDraft: () => void;
+    // NEW: Archiving
+    archivedModels: string[];
+    archivedRegulations: string[];
+    onArchiveModel: (name: string) => void;
+    onArchiveRegulation: (name: string) => void;
+    onRestoreModel: (name: string) => void;
+    onRestoreRegulation: (name: string) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -82,7 +91,13 @@ const Sidebar: React.FC<SidebarProps> = ({
     itemColors,
     onSetItemColor,
     currentDraftId,
-    onNewDraft
+    onNewDraft,
+    archivedModels = [],
+    archivedRegulations = [],
+    onArchiveModel,
+    onArchiveRegulation,
+    onRestoreModel,
+    onRestoreRegulation
 }) => {
     const navigate = useNavigate();
     const [editingDraftId, setEditingDraftId] = React.useState<string | null>(null);
@@ -91,6 +106,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     const [newCustomModel, setNewCustomModel] = React.useState("");
     const [newCustomReg, setNewCustomReg] = React.useState("");
     const [editingListItem, setEditingListItem] = React.useState<{ type: 'model' | 'reg', index: number, value: string } | null>(null);
+    const [showArchived, setShowArchived] = React.useState(false);
 
     const handleUpdateListItem = (type: 'model' | 'reg', index: number, newValue: string) => {
         // Normalize the new value: trim + collapse spaces
@@ -349,9 +365,19 @@ const Sidebar: React.FC<SidebarProps> = ({
                 {/* Custom Lists Section - Visible in both Draft and Final - using activePlan data if needed, but currently custom lists are passed in. For Final, we might need to derive them or pass them differently if they aren't in 'customModels' prop. Assuming App passes correct customModels for active tab */}
                 {(activeTab === 'Draft' || activeTab === 'Final') && (
                     <div className="pt-2 border-t border-blue-500/30 mt-1">
-                        <h3 className="text-[14px] font-bold text-blue-200 uppercase tracking-wider mb-1 px-1">
-                            {activeTab === 'Draft' ? 'Draft Lists' : 'Plan Lists'}
-                        </h3>
+                        <div className="flex items-center justify-between mb-1 px-1">
+                            <h3 className="text-[14px] font-bold text-blue-200 uppercase tracking-wider">
+                                {activeTab === 'Draft' ? 'Draft Lists' : 'Plan Lists'}
+                            </h3>
+                            <button
+                                onClick={() => setShowArchived(!showArchived)}
+                                className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded transition-all ${showArchived ? 'bg-amber-500 text-white' : 'bg-blue-700/50 text-blue-200 hover:text-white'}`}
+                                title={showArchived ? "View Active List" : "View Archived List"}
+                            >
+                                <Archive size={10} />
+                                {showArchived ? 'Active' : 'Archive'}
+                            </button>
+                        </div>
                         {activeTab === 'Draft' && (
                             <p className="text-[12px] text-blue-300 px-1 mb-1 italic">Drag items to grid</p>
                         )}
@@ -369,14 +395,14 @@ const Sidebar: React.FC<SidebarProps> = ({
                                     />
                                 )}
                                 <div className="max-h-[120px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                                    {customRegulations.map((item, i) => (
+                                    {(showArchived ? archivedRegulations : customRegulations).map((item, i) => (
                                         <div
                                             key={i}
                                             className={`group flex items-center justify-between text-xs text-black p-1 rounded shadow-sm hover:brightness-110 cursor-alias my-0.5 ${highlightedRegulation === item ? 'ring-2 ring-violet-500 ring-offset-1' : ''}`}
-                                            style={{ backgroundColor: stringToColor(item) }}
-                                            draggable={activeTab === 'Draft'}
+                                            style={{ backgroundColor: stringToColor(item), opacity: showArchived ? 0.7 : 1 }}
+                                            draggable={activeTab === 'Draft' && !showArchived}
                                             onDragStart={(e) => {
-                                                if (activeTab !== 'Draft') { e.preventDefault(); return; }
+                                                if (activeTab !== 'Draft' || showArchived) { e.preventDefault(); return; }
                                                 e.dataTransfer.setData("application/json", JSON.stringify({ type: 'regulation', name: item }));
                                             }}
                                             onClick={() => {
@@ -385,6 +411,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                                                 }
                                             }}
                                             onDoubleClick={() => {
+                                                if (showArchived) return;
                                                 setHighlightedRegulation(highlightedRegulation === item ? null : item);
                                                 setHighlightedModel(null);
                                             }}
@@ -407,11 +434,34 @@ const Sidebar: React.FC<SidebarProps> = ({
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center gap-1 w-full relative group/item">
-                                                    <span className="truncate flex-grow mr-1 font-medium">{item}</span>
+                                                    <span className="truncate flex-grow mr-1 font-medium">{item} {showArchived && <span className="text-[8px] opacity-60">(Archived)</span>}</span>
                                                     {activeTab === 'Draft' && (
                                                         <div className="flex gap-1 opacity-0 group-hover/item:opacity-100">
-                                                            <button onClick={(e) => { e.stopPropagation(); setEditingListItem({ type: 'reg', index: i, value: item }) }} className="text-black/50 hover:text-black hover:bg-white/20 p-0.5 rounded transition-colors"><Pencil size={12} /></button>
-                                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteListItem('reg', i) }} className="text-red-500 hover:text-red-600 hover:bg-white/20 p-0.5 rounded transition-colors"><X size={12} /></button>
+                                                            {!showArchived ? (
+                                                                <>
+                                                                    <button onClick={(e) => { e.stopPropagation(); setEditingListItem({ type: 'reg', index: i, value: item }) }} className="text-black/50 hover:text-black hover:bg-white/20 p-0.5 rounded transition-colors"><Pencil size={12} /></button>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (confirm(`Archive "${item}"? It will remain in old drafts but hidden from fresh list.`)) {
+                                                                                onArchiveRegulation(item);
+                                                                            }
+                                                                        }}
+                                                                        className="text-amber-600 hover:text-amber-700 hover:bg-white/20 p-0.5 rounded transition-colors"
+                                                                        title="Archive"
+                                                                    >
+                                                                        <Archive size={12} />
+                                                                    </button>
+                                                                </>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); onRestoreRegulation(item); }}
+                                                                    className="text-green-600 hover:text-green-700 hover:bg-white/20 p-0.5 rounded transition-colors"
+                                                                    title="Restore"
+                                                                >
+                                                                    <RotateCcw size={12} />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
@@ -424,7 +474,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                             {/* Models List */}
                             <div className="bg-blue-800/30 rounded p-1.5 flex flex-col gap-1.5">
                                 <label className="text-[12px] text-blue-200 uppercase font-bold text-center block border-b border-blue-500/20 pb-0.5">MODELS</label>
-                                {activeTab === 'Draft' && (
+                                {activeTab === 'Draft' && !showArchived && (
                                     <input
                                         className="w-full text-xs p-1.5 rounded bg-white/90 text-black outline-none"
                                         placeholder="Add..."
@@ -434,14 +484,14 @@ const Sidebar: React.FC<SidebarProps> = ({
                                     />
                                 )}
                                 <div className="max-h-[120px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                                    {customModels.map((item, i) => (
+                                    {(showArchived ? archivedModels : customModels).map((item, i) => (
                                         <div
                                             key={i}
                                             className={`group flex items-center justify-between text-xs text-black p-1 rounded shadow-sm hover:brightness-110 cursor-alias my-0.5 ${highlightedModel === item ? 'ring-2 ring-violet-500 ring-offset-1' : ''}`}
-                                            style={{ backgroundColor: stringToColor(item) }}
-                                            draggable={activeTab === 'Draft'}
+                                            style={{ backgroundColor: stringToColor(item), opacity: showArchived ? 0.7 : 1 }}
+                                            draggable={activeTab === 'Draft' && !showArchived}
                                             onDragStart={(e) => {
-                                                if (activeTab !== 'Draft') { e.preventDefault(); return; }
+                                                if (activeTab !== 'Draft' || showArchived) { e.preventDefault(); return; }
                                                 e.dataTransfer.setData("application/json", JSON.stringify({ type: 'model', name: item }));
                                             }}
                                             onClick={() => {
@@ -450,6 +500,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                                                 }
                                             }}
                                             onDoubleClick={() => {
+                                                if (showArchived) return;
                                                 setHighlightedModel(highlightedModel === item ? null : item);
                                                 setHighlightedRegulation(null);
                                             }}
@@ -472,11 +523,34 @@ const Sidebar: React.FC<SidebarProps> = ({
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center gap-1 w-full relative group/item">
-                                                    <span className="truncate flex-grow mr-1 font-medium">{item}</span>
+                                                    <span className="truncate flex-grow mr-1 font-medium">{item} {showArchived && <span className="text-[8px] opacity-60">(Archived)</span>}</span>
                                                     {activeTab === 'Draft' && (
                                                         <div className="flex gap-1 opacity-0 group-hover/item:opacity-100">
-                                                            <button onClick={(e) => { e.stopPropagation(); setEditingListItem({ type: 'model', index: i, value: item }) }} className="text-black/50 hover:text-black hover:bg-white/20 p-0.5 rounded transition-colors"><Pencil size={12} /></button>
-                                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteListItem('model', i) }} className="text-red-500 hover:text-red-600 hover:bg-white/20 p-0.5 rounded transition-colors"><X size={12} /></button>
+                                                            {!showArchived ? (
+                                                                <>
+                                                                    <button onClick={(e) => { e.stopPropagation(); setEditingListItem({ type: 'model', index: i, value: item }) }} className="text-black/50 hover:text-black hover:bg-white/20 p-0.5 rounded transition-colors"><Pencil size={12} /></button>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (confirm(`Archive "${item}"? It will remain in old drafts but hidden from fresh list.`)) {
+                                                                                onArchiveModel(item);
+                                                                            }
+                                                                        }}
+                                                                        className="text-amber-600 hover:text-amber-700 hover:bg-white/20 p-0.5 rounded transition-colors"
+                                                                        title="Archive"
+                                                                    >
+                                                                        <Archive size={12} />
+                                                                    </button>
+                                                                </>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); onRestoreModel(item); }}
+                                                                    className="text-green-600 hover:text-green-700 hover:bg-white/20 p-0.5 rounded transition-colors"
+                                                                    title="Restore"
+                                                                >
+                                                                    <RotateCcw size={12} />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>

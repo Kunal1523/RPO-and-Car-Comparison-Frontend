@@ -121,6 +121,8 @@ const App: React.FC = () => {
   // Global Master List & Colors (Persistent across draft switches/clearing)
   const [masterModels, setMasterModels] = useState<string[]>([]);
   const [masterRegs, setMasterRegs] = useState<string[]>([]);
+  const [archivedModels, setArchivedModels] = useState<string[]>([]);
+  const [archivedRegs, setArchivedRegs] = useState<string[]>([]);
   const [masterColors, setMasterColors] = useState<Record<string, string>>({});
 
   // Point 3: Global Library uses Master State + currentPlan
@@ -293,16 +295,20 @@ const App: React.FC = () => {
     if (!userEmail) return;
 
     const loadAll = async () => {
-      const [d, f, r, m] = await Promise.all([
+      const [d, f, r, m, ar, am] = await Promise.all([
         api.fetchDrafts(userEmail).catch(() => []),
         api.fetchFinalPlan(userEmail).catch(() => null as FinalPlanResponse | null),
         api.fetchRegulations(userEmail).catch(() => []),
         api.fetchModels(userEmail).catch(() => []),
+        api.fetchArchivedRegulations(userEmail).catch(() => []),
+        api.fetchArchivedModels(userEmail).catch(() => []),
       ]);
 
       setDrafts(d);
       setFinalRegulations(Array.isArray(r) ? r : []);
       setFinalModels(Array.isArray(m) ? m : []);
+      setArchivedRegs(Array.isArray(ar) ? ar : []);
+      setArchivedModels(Array.isArray(am) ? am : []);
 
       if (f) {
         setFinalPlan(f.data);
@@ -640,6 +646,68 @@ const App: React.FC = () => {
   }, []);
 
   // -----------------------
+  // Archive/Restore Logic
+  // -----------------------
+  const handleArchiveModel = useCallback(async (name: string) => {
+    if (!userEmail) return;
+    try {
+      await api.archiveModel(name, userEmail);
+      setMasterModels(prev => prev.filter(m => m !== name));
+      setArchivedModels(prev => [...prev, name]);
+      // Update current plan if it's in custom list
+      setCurrentPlan(prev => ({
+        ...prev,
+        customModels: (prev.customModels || []).filter(m => m !== name)
+      }));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to archive model");
+    }
+  }, [userEmail]);
+
+  const handleArchiveRegulation = useCallback(async (name: string) => {
+    if (!userEmail) return;
+    try {
+      await api.archiveRegulation(name, userEmail);
+      setMasterRegs(prev => prev.filter(r => r !== name));
+      setArchivedRegs(prev => [...prev, name]);
+      // Update current plan if it's in custom list
+      setCurrentPlan(prev => ({
+        ...prev,
+        customRegulations: (prev.customRegulations || []).filter(r => r !== name)
+      }));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to archive regulation");
+    }
+  }, [userEmail]);
+
+  const handleRestoreModel = useCallback(async (name: string) => {
+    if (!userEmail) return;
+    try {
+      await api.restoreModel(name, userEmail);
+      setArchivedModels(prev => prev.filter(m => m !== name));
+      setMasterModels(prev => [...prev, name]);
+      // We don't automatically add it back to customModels of currentPlan unless user re-adds it
+    } catch (e) {
+      console.error(e);
+      alert("Failed to restore model");
+    }
+  }, [userEmail]);
+
+  const handleRestoreRegulation = useCallback(async (name: string) => {
+    if (!userEmail) return;
+    try {
+      await api.restoreRegulation(name, userEmail);
+      setArchivedRegs(prev => prev.filter(r => r !== name));
+      setMasterRegs(prev => [...prev, name]);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to restore regulation");
+    }
+  }, [userEmail]);
+
+  // -----------------------
   // Enhanced custom lists update with rename & delete protection
   // -----------------------
   const handleUpdateCustomListsWithRename = useCallback((
@@ -688,8 +756,9 @@ const App: React.FC = () => {
     // For Draft, show merge of table + custom lists
     const tableModels = getUniqueModels(activePlan);
     const customModels = activePlan.customModels || [];
-    return Array.from(new Set([...tableModels, ...customModels])).sort();
-  }, [activePlan, activeTab]);
+    const all = Array.from(new Set([...tableModels, ...customModels]));
+    return all.filter(m => !archivedModels.includes(m)).sort();
+  }, [activePlan, activeTab, archivedModels]);
 
   const sidebarRegulations = useMemo(() => {
     // For Final, strictly show what is in the table
@@ -699,9 +768,9 @@ const App: React.FC = () => {
     // For Draft, show merge of table + custom lists
     const tableRegs = getDraftRegList(activePlan);
     const customRegs = activePlan.customRegulations || [];
-    return Array.from(new Set([...tableRegs, ...customRegs])).sort();
-    return Array.from(new Set([...tableRegs, ...customRegs])).sort();
-  }, [activePlan, activeTab]);
+    const all = Array.from(new Set([...tableRegs, ...customRegs]));
+    return all.filter(r => !archivedRegs.includes(r)).sort();
+  }, [activePlan, activeTab, archivedRegs]);
 
   const missingRegulations = useMemo(() => {
     if (activeTab !== 'Draft') return [];
@@ -1182,6 +1251,12 @@ const App: React.FC = () => {
         onSetItemColor={handleSetItemColor}
         currentDraftId={currentDraftId}
         onNewDraft={handleNewDraftClick}
+        archivedModels={archivedModels}
+        archivedRegulations={archivedRegs}
+        onArchiveModel={handleArchiveModel}
+        onArchiveRegulation={handleArchiveRegulation}
+        onRestoreModel={handleRestoreModel}
+        onRestoreRegulation={handleRestoreRegulation}
       />
 
       <main className="flex-grow flex flex-col overflow-hidden relative">

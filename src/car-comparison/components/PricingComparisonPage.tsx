@@ -1075,6 +1075,9 @@ const PriceComparisonPage = () => {
   const paintDetailsRef = React.useRef<HTMLDetailsElement>(null);
   const editionDetailsRef = React.useRef<HTMLDetailsElement>(null);
 
+  // Ref for capturing chart
+  const chartContainerRef = React.useRef<HTMLDivElement>(null);
+
   // Timer ref for delayed closing
   const closeTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
@@ -1350,6 +1353,7 @@ const PriceComparisonPage = () => {
                 data: getFilteredPricingForCar(c.id)
               }))
             }
+            chartRef={chartContainerRef}
           />
           <button
             onClick={() => alert("Coming Soon")}
@@ -1416,11 +1420,11 @@ const PriceComparisonPage = () => {
                             <div className="p-2 space-y-1">
                               {/* Search Input */}
                               <div className="relative mb-2">
-                                <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
                                 <input
                                   type="text"
                                   placeholder="Search variants..."
-                                  className="w-full text-xs border border-slate-300 rounded p-1.5 pl-7 outline-none focus:ring-1 focus:ring-blue-500"
+                                  className="w-full text-[10px] border border-slate-300 rounded p-1 pl-6 outline-none focus:ring-1 focus:ring-blue-500"
                                   value={filterSearch[`variant_${c.id}`] || ''}
                                   onChange={(e) => setFilterSearch(prev => ({ ...prev, [`variant_${c.id}`]: e.target.value }))}
                                   onClick={(e) => e.stopPropagation()}
@@ -1447,14 +1451,14 @@ const PriceComparisonPage = () => {
                                           return { ...prev, selectedVariants: newSet };
                                         });
                                       }}
-                                      className="w-full text-left px-2 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                      className="w-full text-left px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                     >
                                       {filteredVariants.length > 0 && filteredVariants.every(v => commonFilters.selectedVariants.has(v.id)) ? 'Deselect All' : 'Select All'}
                                     </button>
                                     <div className="border-t pt-1">
-                                      {filteredVariants.length === 0 ? <div className="text-xs text-slate-400 p-2 text-center">No results</div> :
+                                      {filteredVariants.length === 0 ? <div className="text-[10px] text-slate-400 p-2 text-center">No results</div> :
                                         filteredVariants.map(v => (
-                                          <label key={v.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors">
+                                          <label key={v.id} className="flex items-center gap-2 text-[10px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded transition-colors">
                                             <input
                                               type="checkbox"
                                               checked={commonFilters.selectedVariants.has(v.id)}
@@ -1524,11 +1528,11 @@ const PriceComparisonPage = () => {
                           <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
                             <div className="p-2 space-y-1">
                               <div className="relative mb-2">
-                                <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
                                 <input
                                   type="text"
                                   placeholder="Search..."
-                                  className="w-full text-xs border border-slate-300 rounded p-1.5 pl-7 outline-none focus:ring-1 focus:ring-blue-500"
+                                  className="w-full text-[10px] border border-slate-300 rounded p-1 pl-6 outline-none focus:ring-1 focus:ring-blue-500"
                                   value={filterSearch['fuel'] || ''}
                                   onChange={(e) => setFilterSearch(prev => ({ ...prev, fuel: e.target.value }))}
                                   onClick={(e) => e.stopPropagation()}
@@ -1548,16 +1552,16 @@ const PriceComparisonPage = () => {
                                     return { ...prev, selectedFuelTypes: newSet };
                                   });
                                 }}
-                                className="w-full text-left px-2 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                className="w-full text-left px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
                               >
                                 {filteredFuel.length > 0 && filteredFuel.every(f => commonFilters.selectedFuelTypes.has(f)) ? 'Deselect All' : 'Select All'}
                               </button>
                               <div className="border-t pt-1">
-                                {filteredFuel.length === 0 ? <div className="text-xs text-slate-400 p-2 text-center">No results</div> :
+                                {filteredFuel.length === 0 ? <div className="text-[10px] text-slate-400 p-2 text-center">No results</div> :
                                   filteredFuel.map((fuel) => (
                                     <label
                                       key={fuel}
-                                      className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors"
+                                      className="flex items-center gap-2 text-[10px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded transition-colors"
                                     >
                                       <input
                                         type="checkbox"
@@ -1594,11 +1598,11 @@ const PriceComparisonPage = () => {
                           <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
                             <div className="p-2 space-y-1">
                               <div className="relative mb-2">
-                                <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
                                 <input
                                   type="text"
                                   placeholder="Search..."
-                                  className="w-full text-xs border border-slate-300 rounded p-1.5 pl-7 outline-none focus:ring-1 focus:ring-blue-500"
+                                  className="w-full text-[10px] border border-slate-300 rounded p-1 pl-6 outline-none focus:ring-1 focus:ring-blue-500"
                                   value={filterSearch['trans'] || ''}
                                   onChange={(e) => setFilterSearch(prev => ({ ...prev, trans: e.target.value }))}
                                   onClick={(e) => e.stopPropagation()}
@@ -1618,16 +1622,16 @@ const PriceComparisonPage = () => {
                                     return { ...prev, selectedTransmissions: newSet };
                                   });
                                 }}
-                                className="w-full text-left px-2 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                className="w-full text-left px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
                               >
                                 {filteredTrans.length > 0 && filteredTrans.every(t => commonFilters.selectedTransmissions.has(t)) ? 'Deselect All' : 'Select All'}
                               </button>
                               <div className="border-t pt-1">
-                                {filteredTrans.length === 0 ? <div className="text-xs text-slate-400 p-2 text-center">No results</div> :
+                                {filteredTrans.length === 0 ? <div className="text-[10px] text-slate-400 p-2 text-center">No results</div> :
                                   filteredTrans.map((transmission) => (
                                     <label
                                       key={transmission}
-                                      className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors"
+                                      className="flex items-center gap-2 text-[10px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded transition-colors"
                                     >
                                       <input
                                         type="checkbox"
@@ -1664,11 +1668,11 @@ const PriceComparisonPage = () => {
                           <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
                             <div className="p-2 space-y-1">
                               <div className="relative mb-2">
-                                <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
                                 <input
                                   type="text"
                                   placeholder="Search..."
-                                  className="w-full text-xs border border-slate-300 rounded p-1.5 pl-7 outline-none focus:ring-1 focus:ring-blue-500"
+                                  className="w-full text-[10px] border border-slate-300 rounded p-1 pl-6 outline-none focus:ring-1 focus:ring-blue-500"
                                   value={filterSearch['paint'] || ''}
                                   onChange={(e) => setFilterSearch(prev => ({ ...prev, paint: e.target.value }))}
                                   onClick={(e) => e.stopPropagation()}
@@ -1688,16 +1692,16 @@ const PriceComparisonPage = () => {
                                     return { ...prev, selectedPaintTypes: newSet };
                                   });
                                 }}
-                                className="w-full text-left px-2 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                className="w-full text-left px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
                               >
                                 {filteredPaint.length > 0 && filteredPaint.every(p => commonFilters.selectedPaintTypes.has(p)) ? 'Deselect All' : 'Select All'}
                               </button>
                               <div className="border-t pt-1">
-                                {filteredPaint.length === 0 ? <div className="text-xs text-slate-400 p-2 text-center">No results</div> :
+                                {filteredPaint.length === 0 ? <div className="text-[10px] text-slate-400 p-2 text-center">No results</div> :
                                   filteredPaint.map((paint) => (
                                     <label
                                       key={paint}
-                                      className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors"
+                                      className="flex items-center gap-2 text-[10px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded transition-colors"
                                     >
                                       <input
                                         type="checkbox"
@@ -1736,11 +1740,11 @@ const PriceComparisonPage = () => {
                           <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
                             <div className="p-2 space-y-1">
                               <div className="relative mb-2">
-                                <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
                                 <input
                                   type="text"
                                   placeholder="Search..."
-                                  className="w-full text-xs border border-slate-300 rounded p-1.5 pl-7 outline-none focus:ring-1 focus:ring-blue-500"
+                                  className="w-full text-[10px] border border-slate-300 rounded p-1 pl-6 outline-none focus:ring-1 focus:ring-blue-500"
                                   value={filterSearch['edition'] || ''}
                                   onChange={(e) => setFilterSearch(prev => ({ ...prev, edition: e.target.value }))}
                                   onClick={(e) => e.stopPropagation()}
@@ -1760,16 +1764,16 @@ const PriceComparisonPage = () => {
                                     return { ...prev, selectedEditions: newSet };
                                   });
                                 }}
-                                className="w-full text-left px-2 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                className="w-full text-left px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
                               >
                                 {filteredEdition.length > 0 && filteredEdition.every(e => commonFilters.selectedEditions.has(e)) ? 'Deselect All' : 'Select All'}
                               </button>
                               <div className="border-t pt-1">
-                                {filteredEdition.length === 0 ? <div className="text-xs text-slate-400 p-2 text-center">No results</div> :
+                                {filteredEdition.length === 0 ? <div className="text-[10px] text-slate-400 p-2 text-center">No results</div> :
                                   filteredEdition.map((edition) => (
                                     <label
                                       key={edition}
-                                      className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors"
+                                      className="flex items-center gap-2 text-[10px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded transition-colors"
                                     >
                                       <input
                                         type="checkbox"
@@ -1796,7 +1800,7 @@ const PriceComparisonPage = () => {
         </div>
 
         {carsWithPricing.length === 2 && globalViewMode === 'chart' ? (
-          <div className="flex-1 bg-white overflow-hidden flex flex-col">
+          <div ref={chartContainerRef} className="flex-1 bg-white overflow-hidden flex flex-col">
             <div className="flex-1 p-1">
               <ChartView
                 rawPricing={getFilteredPricingForCar('1')}
@@ -1824,7 +1828,7 @@ const PriceComparisonPage = () => {
             </div>
           </div>
         ) : (
-          <div className={`flex-1 grid ${carsWithPricing.length === 1 ? 'grid-cols-1' : 'grid-cols-2'} gap-px bg-slate-200 overflow-hidden`}>
+          <div ref={chartContainerRef} className={`flex-1 grid ${carsWithPricing.length === 1 ? 'grid-cols-1' : 'grid-cols-2'} gap-px bg-slate-200 overflow-hidden`}>
             {cars.map(car => {
               const filteredPricing = getFilteredPricingForCar(car.id);
               const chartColor = car.id === '1' ? '#2563eb' : '#dc2626';

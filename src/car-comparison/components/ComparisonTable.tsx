@@ -817,8 +817,9 @@
 
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp, AlertCircle, Download, Plus, Minus } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { ChevronDown, ChevronUp, AlertCircle, Download, Plus, Minus, Loader2, Edit2 } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 import TableSearch from './TableSearch';
 
 import { ComparisonResponse, FeatureGroup, GroupedFeature, VariantPriceData, PriceDetail } from '../types';
@@ -851,6 +852,14 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
   const [expandAll, setExpandAll] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [hiddenVehicles, setHiddenVehicles] = useState<Set<number>>(new Set());
+  const [isEditingEnabled, setIsEditingEnabled] = useState(true);
+
+  // Mock Edit Handler
+  const handleEditClick = (featureName: string, variant: string, currentValue: string) => {
+    // TODO: Replace with actual API call
+    console.log(`[MOCK API] Edit requested for Feature: "${featureName}", Variant: "${variant}", Current Value: "${currentValue}"`);
+    alert(`Edit Feature: ${featureName}\nVariant: ${variant}\nCurrent Value: ${currentValue}\n\n(Backend functionality under construction)`);
+  };
 
   const NO_INFO = 'No information Available';
 
@@ -1042,127 +1051,157 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
   const toggleGroup = (groupName: string) =>
     setOpenGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
 
-  const exportToExcel = () => {
+  const [isExporting, setIsExporting] = useState(false);
+
+  const exportToExcel = async () => {
     if (!data) return;
 
-    const variants = data.columns.slice(1);
+    setIsExporting(true);
 
-    // Filter variants to export
-    const exportVariants = variants.filter((_, idx) => !hiddenVehicles.has(idx));
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Comparison');
+      const variants = data.columns.slice(1);
+      const exportVariants = variants.filter((_, idx) => !hiddenVehicles.has(idx));
 
-    const excelData: any[] = [];
+      // --- Setup Columns ---
+      // Feature column + 1 column per visible variant
+      const columns = [
+        { header: 'Feature', key: 'feature', width: 40 },
+        ...exportVariants.map(v => ({ header: v, key: v, width: 30 }))
+      ];
+      ws.columns = columns;
 
-    // Header with visible variants
-    excelData.push(['Feature', ...exportVariants]);
-
-    // Use displayGroups if you want to respect the search/filter, or groupsWithIndices if you want all groups but just visible columns. 
-    // Usually Excel export is expected to match "what I see". 
-    // If showDiffOnly is checked, we already respect that.
-    // Let's iterate over groups (all groups) but apply showDiffOnly logic and HIDDEN column logic.
-    // NOTE: If we use 'groups', we get all data. If we use 'displayGroups' we get filtered data.
-    // The previous implementation used 'groups' but checked 'showDiffOnly' inside. 
-    // We'll stick to that logic but add column filtering.
-
-    groups.forEach(group => {
-      // Skip groups with no differences if showDiffOnly is enabled.
-      // BUT WAIT: 'hasDifferences' in 'group' object assumes ALL columns. 
-      // If we hide a column, 'hasDifferences' might change!
-      // However, calculating difference on the fly for export is safer.
-
-      const itemsToExport = group.items.filter(item => {
-        const isPriceRow = item.featureName.toLowerCase().trim() === 'price value';
-
-        // Check differences ONLY on visible columns
-        const visibleValues = variants
-          .map((v, i) => !hiddenVehicles.has(i) ? item.values[v] : null)
-          .filter(v => v !== null) as string[];
-
-        const nonNoInfoValues = visibleValues.filter(v => v !== NO_INFO);
-        const uniqueVals = Array.from(new Set(nonNoInfoValues));
-        const isDifferent = uniqueVals.length > 1;
-
-        if (showDiffOnly && !isDifferent && !isPriceRow) return false;
-        return true;
+      // --- Style Header Row ---
+      const headerRow = ws.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
+      headerRow.eachCell((cell) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
       });
 
-      if (itemsToExport.length === 0 && showDiffOnly) return;
+      // --- Add Data ---
+      // Navigate through groups (use original 'groups' but apply filters)
 
-      excelData.push([`${group.groupName}`, '', '', '']);
+      const categoryOrder = [
+        'Price & Basic Info', 'Brake', 'Dimension', 'Engine', 'Fuel', 'Transmission',
+        'Suspension', 'Tyre', 'Exterior', 'Interior', 'Safety', 'Infotainment',
+        'Comfort', 'Audio', 'Connected'
+      ]; // Simplified logic for sorting if needed, but 'groups' is already sorted?
+      // Actually 'groups' variable is sorted in useMemo. We use 'groupsWithIndices' to get original indices.
 
-      itemsToExport.forEach(item => {
-        const isPriceRow = item.featureName.toLowerCase().trim() === 'price value';
-        const row = [item.featureName];
+      let currentRowIndex = 2; // Start after header
 
-        variants.forEach((v, idx) => {
-          if (hiddenVehicles.has(idx)) return; // Skip hidden columns
+      groupsWithIndices.forEach((group: any) => {
+        // Filter logic identical to UI
+        const itemsToExport = group.items.filter((item: any) => {
+          const isPriceRow = item.featureName.toLowerCase().trim() === 'price value';
+          // Check diff on VISIBLE columns
+          const visibleValues = variants
+            .map((v, i) => !hiddenVehicles.has(i) ? item.values[v] : null)
+            .filter(v => v !== null) as string[];
+          const nonNoInfoValues = visibleValues.filter(v => v !== NO_INFO);
+          const uniqueVals = new Set(nonNoInfoValues);
+          const isDifferent = uniqueVals.size > 1;
 
-          // Handle price cells specially
-          const value = item.values[v];
-          const isPriceCell = isPriceRow && value && typeof value === 'object' && value !== null && 'pricing' in (value as object);
+          if (showDiffOnly && !isDifferent && !isPriceRow) return false;
 
-          if (isPriceCell) {
-            // Format all prices for Excel
-            const valueObj = item.values[v] as any;
-            const pricesText = valueObj?.pricing?.prices
-              ?.map((price: any) => {
-                const parts = [
-                  price.fuel_type,
-                  price.engine_type,
-                  price.transmission_type,
-                  price.paint_type,
-                  price.edition
-                ].filter(Boolean);
-
-                const label = parts.join(' ') || 'Standard';
-                const formattedPrice = new Intl.NumberFormat('en-IN', {
-                  style: 'currency',
-                  currency: price.currency || 'INR',
-                  maximumFractionDigits: 0
-                }).format(price.ex_showroom_price);
-
-                return `${label}: ${formattedPrice}`;
-              })
-              .sort()
-              .join('\n') || '';
-
-            row.push(pricesText);
-          } else {
-            row.push(item.values[v] || NO_INFO);
+          // Search filter
+          if (searchTerm.trim()) {
+            const lowerTerm = searchTerm.toLowerCase();
+            const groupMatches = group.groupName.toLowerCase().includes(lowerTerm);
+            if (!groupMatches && !item.featureName.toLowerCase().includes(lowerTerm)) {
+              return false;
+            }
           }
+
+          return true;
         });
-        excelData.push(row);
+
+        if (itemsToExport.length === 0 && (showDiffOnly || searchTerm.trim())) return;
+
+        // Group Header Row
+        const groupHeaderRow = ws.addRow([
+          `${group.originalGroupIndex + 1}. ${group.groupName}`,
+          ...Array(exportVariants.length).fill('')
+        ]);
+        groupHeaderRow.font = { bold: true };
+        groupHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F9FF' } }; // Sky-50
+        groupHeaderRow.getCell(1).alignment = { horizontal: 'left' };
+
+        // Merge group header cells
+        ws.mergeCells(currentRowIndex, 1, currentRowIndex, exportVariants.length + 1);
+        currentRowIndex++;
+
+        itemsToExport.forEach((item: any) => {
+          const isPriceRow = item.featureName.toLowerCase().trim() === 'price value';
+
+          // Check diff (for coloring)
+          const visibleValues = variants
+            .map((v, i) => !hiddenVehicles.has(i) ? item.values[v] : null)
+            .filter(v => v !== null) as string[];
+
+          const nonNoInfoValues = visibleValues.filter(v => v !== NO_INFO);
+          const isDifferent = new Set(nonNoInfoValues).size > 1;
+
+          const rowData = [
+            `${group.originalGroupIndex + 1}.${item.originalItemIndex + 1}  ${item.featureName}`
+          ];
+
+          exportVariants.forEach(v => {
+            const val = item.values[v];
+            // Handle complex object
+            if (typeof val === 'object' && val !== null && 'pricing' in val) {
+              const prices = (val.pricing.prices || []).map((p: any) => {
+                const label = [p.fuel_type, p.transmission_type].filter(Boolean).join(' ');
+                return `${label ? label + ': ' : ''}₹${p.ex_showroom_price}`;
+              }).join('\n');
+              rowData.push(prices || '₹' + val.pricing.avg_price?.value);
+            } else {
+              rowData.push(val || NO_INFO);
+            }
+          });
+
+          const dataRow = ws.addRow(rowData);
+
+          // Row styling
+          if (isDifferent && !isPriceRow) {
+            // Amber-100
+            dataRow.eachCell({ includeEmpty: true }, (cell) => {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+            });
+          }
+          if (isPriceRow) {
+            dataRow.font = { bold: true, color: { argb: 'FF15803D' } }; // Green text 
+            dataRow.eachCell((cell) => cell.alignment = { wrapText: true, vertical: 'top' });
+          }
+
+          // Borders
+          dataRow.eachCell({ includeEmpty: true }, (cell) => {
+            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+            if (!isPriceRow) cell.alignment = { wrapText: true, vertical: 'top' };
+          });
+
+          currentRowIndex++;
+        });
+
+        // Add spacer row?
+        // currentRowIndex++;
       });
 
-      excelData.push([]);
-    });
+      // Generate Filename
+      const variantNames = exportVariants.map(v => v.split(' - ').pop()).join('_vs_');
+      const filename = `Comparison_${variantNames}_${new Date().toISOString().split('T')[0]}.xlsx`;
 
-    const ws = XLSX.utils.aoa_to_sheet(excelData);
-
-    const colWidths = [
-      { wch: 40 },
-      ...exportVariants.map(() => ({ wch: 30 }))
-    ];
-    ws['!cols'] = colWidths;
-
-    const headerRange = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-    for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
-      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
-      if (!ws[cellAddress]) continue;
-      ws[cellAddress].s = {
-        font: { bold: true, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "1E293B" } },
-        alignment: { horizontal: "center", vertical: "center" }
-      };
+      const buffer = await wb.xlsx.writeBuffer();
+      saveAs(new Blob([buffer]), filename);
+    } catch (e) {
+      console.error(e);
+      alert("Export failed");
+    } finally {
+      setIsExporting(false);
     }
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Comparison');
-
-    const variantNames = variants.map(v => v.split(' - ').pop()).join('_vs_');
-    const diffSuffix = showDiffOnly ? '_differs_only' : '';
-    const filename = `Comparison_${variantNames}${diffSuffix}_${new Date().toISOString().split('T')[0]}.xlsx`;
-
-    XLSX.writeFile(wb, filename);
   };
 
   if (!data) {
@@ -1280,6 +1319,17 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
             <span className="text-sm font-medium text-slate-500 whitespace-nowrap">Unofficial</span>
           </div>
 
+          {/* Enable Editing Toggle */}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={isEditingEnabled}
+              onChange={() => setIsEditingEnabled(prev => !prev)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-sm font-medium text-slate-700 whitespace-nowrap">Enable Editing</span>
+          </div>
+
           {/* Hidden Vehicles Dropdown */}
           {hiddenVehicles.size > 0 && (
             <div className="relative group">
@@ -1319,10 +1369,11 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
         <button
           onClick={exportToExcel}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
+          className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={isExporting}
         >
-          <Download size={18} />
-          <span className="text-sm">Download Excel</span>
+          {isExporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+          <span className="text-sm">{isExporting ? 'Exporting...' : 'Download Excel'}</span>
         </button>
       </div>
 
@@ -1501,7 +1552,23 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                                       })}
                                   </div>
                                 ) : (
-                                  <HighlightText text={String(item.values[v])} highlight={searchTerm} />
+                                  <div className="flex items-center justify-between gap-1 group/edit min-h-[20px]">
+                                    <span className="flex-1">
+                                      <HighlightText text={String(item.values[v])} highlight={searchTerm} />
+                                    </span>
+                                    {isEditingEnabled && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleEditClick(item.featureName, v, String(item.values[v]));
+                                        }}
+                                        className="p-1 text-slate-400 hover:text-blue-600 rounded-full hover:bg-slate-100 transition-colors opacity-0 group-hover/edit:opacity-100 focus:opacity-100 flex-shrink-0"
+                                        title="Edit Value"
+                                      >
+                                        <Edit2 size={12} />
+                                      </button>
+                                    )}
+                                  </div>
                                 )}
                               </div>
                             );
