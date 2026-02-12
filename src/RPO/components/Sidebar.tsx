@@ -61,6 +61,8 @@ interface SidebarProps {
     onArchiveRegulation: (name: string) => void;
     onRestoreModel: (name: string) => void;
     onRestoreRegulation: (name: string) => void;
+    onPermanentDeleteModel: (name: string) => void;
+    onPermanentDeleteRegulation: (name: string) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -97,7 +99,9 @@ const Sidebar: React.FC<SidebarProps> = ({
     onArchiveModel,
     onArchiveRegulation,
     onRestoreModel,
-    onRestoreRegulation
+    onRestoreRegulation,
+    onPermanentDeleteModel,
+    onPermanentDeleteRegulation
 }) => {
     const navigate = useNavigate();
     const [editingDraftId, setEditingDraftId] = React.useState<string | null>(null);
@@ -185,6 +189,20 @@ const Sidebar: React.FC<SidebarProps> = ({
             return;
         }
 
+        // Check if exists in archived list
+        const archivedExists = archivedModels.some(m =>
+            m.replace(/\s+/g, '').toLowerCase() === normalizedInput
+        );
+
+        if (archivedExists) {
+            const originalName = archivedModels.find(m => m.replace(/\s+/g, '').toLowerCase() === normalizedInput) || name;
+            if (confirm(`"${originalName}" is in the archive. Restore it?`)) {
+                onRestoreModel(originalName);
+                setNewCustomModel("");
+            }
+            return;
+        }
+
         // Add immediately with default stringToColor
         onUpdateCustomLists([...customModels, name], customRegulations);
         onSetItemColor(name, stringToColor(name));
@@ -205,6 +223,20 @@ const Sidebar: React.FC<SidebarProps> = ({
 
         if (exists) {
             alert(`"${name}" already exists in the regulation list!`);
+            return;
+        }
+
+        // Check if exists in archived list
+        const archivedExists = archivedRegulations.some(r =>
+            r.replace(/\s+/g, '').toLowerCase() === normalizedInput
+        );
+
+        if (archivedExists) {
+            const originalName = archivedRegulations.find(r => r.replace(/\s+/g, '').toLowerCase() === normalizedInput) || name;
+            if (confirm(`"${originalName}" is in the archive. Restore it?`)) {
+                onRestoreRegulation(originalName);
+                setNewCustomReg("");
+            }
             return;
         }
 
@@ -369,14 +401,27 @@ const Sidebar: React.FC<SidebarProps> = ({
                             <h3 className="text-[14px] font-bold text-blue-200 uppercase tracking-wider">
                                 {activeTab === 'Draft' ? 'Draft Lists' : 'Plan Lists'}
                             </h3>
-                            <button
-                                onClick={() => setShowArchived(!showArchived)}
-                                className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded transition-all ${showArchived ? 'bg-amber-500 text-white' : 'bg-blue-700/50 text-blue-200 hover:text-white'}`}
-                                title={showArchived ? "View Active List" : "View Archived List"}
-                            >
-                                <Archive size={10} />
-                                {showArchived ? 'Active' : 'Archive'}
-                            </button>
+                            <div className="flex items-center gap-1 bg-blue-800/50 p-0.5 rounded-lg border border-blue-500/20">
+                                <button
+                                    onClick={() => setShowArchived(false)}
+                                    className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all ${!showArchived
+                                            ? 'bg-blue-500 text-white shadow-sm'
+                                            : 'text-blue-200 hover:text-white hover:bg-white/5'
+                                        }`}
+                                >
+                                    Active
+                                </button>
+                                <button
+                                    onClick={() => setShowArchived(true)}
+                                    className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all ${showArchived
+                                            ? 'bg-amber-500 text-white shadow-sm'
+                                            : 'text-blue-200 hover:text-white hover:bg-white/5'
+                                        }`}
+                                >
+                                    <Archive size={10} />
+                                    Archived
+                                </button>
+                            </div>
                         </div>
                         {activeTab === 'Draft' && (
                             <p className="text-[12px] text-blue-300 px-1 mb-1 italic">Drag items to grid</p>
@@ -385,7 +430,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                             {/* Regulations List */}
                             <div className="bg-blue-800/30 rounded p-1.5 flex flex-col gap-1.5">
                                 <label className="text-[12px] text-blue-200 uppercase font-bold text-center block border-b border-blue-500/20 pb-0.5">REGULATIONS</label>
-                                {activeTab === 'Draft' && (
+                                {activeTab === 'Draft' && !showArchived && (
                                     <input
                                         className="w-full text-xs p-1.5 rounded bg-white/90 text-black outline-none"
                                         placeholder="Add..."
@@ -454,13 +499,27 @@ const Sidebar: React.FC<SidebarProps> = ({
                                                                     </button>
                                                                 </>
                                                             ) : (
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); onRestoreRegulation(item); }}
-                                                                    className="text-green-600 hover:text-green-700 hover:bg-white/20 p-0.5 rounded transition-colors"
-                                                                    title="Restore"
-                                                                >
-                                                                    <RotateCcw size={12} />
-                                                                </button>
+                                                                <div className="flex gap-1">
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); onRestoreRegulation(item); }}
+                                                                        className="text-green-600 hover:text-green-700 hover:bg-white/20 p-0.5 rounded transition-colors"
+                                                                        title="Restore"
+                                                                    >
+                                                                        <RotateCcw size={12} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (confirm(`Permanently delete "${item}"? This action cannot be undone.`)) {
+                                                                                onPermanentDeleteRegulation(item);
+                                                                            }
+                                                                        }}
+                                                                        className="text-red-600 hover:text-red-700 hover:bg-white/20 p-0.5 rounded transition-colors"
+                                                                        title="Delete Permanently"
+                                                                    >
+                                                                        <Trash2 size={12} />
+                                                                    </button>
+                                                                </div>
                                                             )}
                                                         </div>
                                                     )}
@@ -543,13 +602,27 @@ const Sidebar: React.FC<SidebarProps> = ({
                                                                     </button>
                                                                 </>
                                                             ) : (
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); onRestoreModel(item); }}
-                                                                    className="text-green-600 hover:text-green-700 hover:bg-white/20 p-0.5 rounded transition-colors"
-                                                                    title="Restore"
-                                                                >
-                                                                    <RotateCcw size={12} />
-                                                                </button>
+                                                                <div className="flex gap-1">
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); onRestoreModel(item); }}
+                                                                        className="text-green-600 hover:text-green-700 hover:bg-white/20 p-0.5 rounded transition-colors"
+                                                                        title="Restore"
+                                                                    >
+                                                                        <RotateCcw size={12} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (confirm(`Permanently delete "${item}"? This action cannot be undone.`)) {
+                                                                                onPermanentDeleteModel(item);
+                                                                            }
+                                                                        }}
+                                                                        className="text-red-600 hover:text-red-700 hover:bg-white/20 p-0.5 rounded transition-colors"
+                                                                        title="Delete Permanently"
+                                                                    >
+                                                                        <Trash2 size={12} />
+                                                                    </button>
+                                                                </div>
                                                             )}
                                                         </div>
                                                     )}

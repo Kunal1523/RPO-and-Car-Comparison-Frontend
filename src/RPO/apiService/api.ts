@@ -155,6 +155,14 @@ export const api = {
     if (!response.ok) throw new Error("Failed to restore model");
   },
 
+  permanentlyDeleteModel: async (name: string, userEmail: string): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/models/permanent?name=${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      headers: getHeaders(userEmail),
+    });
+    if (!response.ok) throw new Error("Failed to permanently delete model");
+  },
+
   // --- REGULATIONS ---
   fetchRegulations: async (userEmail: string): Promise<string[]> => {
     const response = await fetch(`${API_BASE_URL}/regulations`, {
@@ -206,6 +214,14 @@ export const api = {
       headers: getHeaders(userEmail),
     });
     if (!response.ok) throw new Error("Failed to restore regulation");
+  },
+
+  permanentlyDeleteRegulation: async (name: string, userEmail: string): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/regulations/permanent?name=${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      headers: getHeaders(userEmail),
+    });
+    if (!response.ok) throw new Error("Failed to permanently delete regulation");
   },
 
   // --- SYNC ---
