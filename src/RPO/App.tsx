@@ -360,9 +360,14 @@ const App: React.FC = () => {
         processContent(f.data);
       }
 
-      // Populate master lists with original casing (first found)
-      setMasterModels(Array.from(mModelsCanon.values()));
-      setMasterRegs(Array.from(mRegsCanon.values()));
+      // Populate master lists with original casing (first found), EXCLUDING archived items
+      const modelsList = Array.from(mModelsCanon.values());
+      const archivedModelsSet = new Set((Array.isArray(am) ? am : []).map(m => normalize(m))); // Use passed-in 'am'
+      setMasterModels(modelsList.filter(m => !archivedModelsSet.has(normalize(m))));
+
+      const regsList = Array.from(mRegsCanon.values());
+      const archivedRegsSet = new Set((Array.isArray(ar) ? ar : []).map(r => normalize(r))); // Use passed-in 'ar'
+      setMasterRegs(regsList.filter(r => !archivedRegsSet.has(normalize(r))));
 
       setMasterColors(mColors);
     };
@@ -750,7 +755,7 @@ const App: React.FC = () => {
     try {
       await api.archiveModel(name, userEmail);
       setMasterModels(prev => prev.filter(m => m !== name));
-      setArchivedModels(prev => [...prev, name]);
+      setArchivedModels(prev => prev.includes(name) ? prev : [...prev, name]);
       // Update current plan if it's in custom list or order
       setCurrentPlan(prev => ({
         ...prev,
@@ -768,7 +773,7 @@ const App: React.FC = () => {
     try {
       await api.archiveRegulation(name, userEmail);
       setMasterRegs(prev => prev.filter(r => r !== name));
-      setArchivedRegs(prev => [...prev, name]);
+      setArchivedRegs(prev => prev.includes(name) ? prev : [...prev, name]);
       // Update current plan if it's in custom list
       setCurrentPlan(prev => ({
         ...prev,
