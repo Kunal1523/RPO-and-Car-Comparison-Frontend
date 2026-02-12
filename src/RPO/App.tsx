@@ -10,6 +10,7 @@ import {
   getCurrentFinancialYears,
   getUniqueModels,
   getDraftRegList,
+  getDraftModelList,
 } from "./utils/utils";
 
 import PlanningGrid from "./components/PlanningGrid";
@@ -19,6 +20,7 @@ import ComplianceSidebar from "./components/ComplianceSidebar";
 import DrillDownModal from "./components/DrillDownModal";
 import LoginPage from "./components/LoginPage";
 import ShareModal from "./components/ShareModal";
+import SaveDraftModal from "./components/SaveDraftModal";
 import { getAllowedEmails, BACKEND_BASE_URL } from "./authConfig";
 import { Settings2 } from "lucide-react";
 import { api } from "./apiService/api";
@@ -26,6 +28,7 @@ import { api } from "./apiService/api";
 const INITIAL_PLAN_DATA: PlanData = {
   regulationCells: {},
   regOrder: [],
+  modelOrder: [],
   customModels: [],
   customRegulations: [],
   itemColors: {}
@@ -106,6 +109,7 @@ const App: React.FC = () => {
 
   // Regulation list used by UI depends on tab
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [showUnsavedPrompt, setShowUnsavedPrompt] = useState(false);
 
   // Regulation list used by UI depends on tab
@@ -119,6 +123,8 @@ const App: React.FC = () => {
   // Global Master List & Colors (Persistent across draft switches/clearing)
   const [masterModels, setMasterModels] = useState<string[]>([]);
   const [masterRegs, setMasterRegs] = useState<string[]>([]);
+  const [archivedModels, setArchivedModels] = useState<string[]>([]);
+  const [archivedRegs, setArchivedRegs] = useState<string[]>([]);
   const [masterColors, setMasterColors] = useState<Record<string, string>>({});
 
   // Point 3: Global Library uses Master State + currentPlan
@@ -291,16 +297,20 @@ const App: React.FC = () => {
     if (!userEmail) return;
 
     const loadAll = async () => {
-      const [d, f, r, m] = await Promise.all([
+      const [d, f, r, m, ar, am] = await Promise.all([
         api.fetchDrafts(userEmail).catch(() => []),
         api.fetchFinalPlan(userEmail).catch(() => null as FinalPlanResponse | null),
         api.fetchRegulations(userEmail).catch(() => []),
         api.fetchModels(userEmail).catch(() => []),
+        api.fetchArchivedRegulations(userEmail).catch(() => []),
+        api.fetchArchivedModels(userEmail).catch(() => []),
       ]);
 
       setDrafts(d);
       setFinalRegulations(Array.isArray(r) ? r : []);
       setFinalModels(Array.isArray(m) ? m : []);
+      setArchivedRegs(Array.isArray(ar) ? ar : []);
+      setArchivedModels(Array.isArray(am) ? am : []);
 
       if (f) {
         setFinalPlan(f.data);
@@ -366,7 +376,6 @@ const App: React.FC = () => {
   const handleCellChange = useCallback(
     (rowId: string, year: string, month: number, value: string) => {
       setCurrentPlan((prev) => {
-        const key = getCellKey(rowId, year, month);
         let newValues = value
           .split(",")
           .map((v) => v.replace(/\s+/g, ' ').trim()) // normalize internal spaces
@@ -377,60 +386,127 @@ const App: React.FC = () => {
           newValues = newValues.slice(0, 5);
         }
 
-        return {
-          ...prev,
-          regulationCells: {
-            ...prev.regulationCells,
-            [key]: newValues,
-          },
-        };
+        if (viewMode === "Regulation") {
+          const key = getCellKey(rowId, year, month);
+          return {
+            ...prev,
+            regulationCells: {
+              ...prev.regulationCells,
+              [key]: newValues,
+            },
+          };
+        } else {
+          // Model centric editing
+          // rowId is ModelID, value is list of RegulationIDs
+          const nextCells = { ...(prev.regulationCells || {}) };
+
+          // 1. Identify what regulations this model was previously in for this slot
+          const modelId = rowId;
+          const oldRegs: string[] = [];
+          Object.entries(nextCells).forEach(([cellKey, models]) => {
+            const [reg, y, m] = cellKey.split('|');
+            if (y === year && Number(m) === month && models.includes(modelId)) {
+              oldRegs.push(reg);
+            }
+          });
+
+          // 2. Remove model from old regulations in this slot
+          oldRegs.forEach(regId => {
+            const k = getCellKey(regId, year, month);
+            if (nextCells[k]) {
+              nextCells[k] = nextCells[k].filter(m => m !== modelId);
+            }
+          });
+
+          // 3. Add model to new regulations in this slot
+          newValues.forEach(regId => {
+            const k = getCellKey(regId, year, month);
+            if (!nextCells[k]) nextCells[k] = [];
+            if (!nextCells[k].includes(modelId)) {
+              nextCells[k] = [...nextCells[k], modelId];
+            }
+          });
+
+          return { ...prev, regulationCells: nextCells };
+        }
       });
     },
-    []
+    [viewMode]
   );
+
+  const handleDraftModelReorder = useCallback((newOrder: string[]) => {
+    setCurrentPlan((prev) => ({ ...prev, modelOrder: newOrder }));
+  }, []);
 
   const handleRenameRow = useCallback((oldName: string, newName: string) => {
     setCurrentPlan((prev) => {
-      const existing = prev.regOrder || [];
-      if (existing.includes(newName)) {
-        alert(`Regulation "${newName}" already exists.`);
-        return prev;
-      }
-
-      const newOrder = existing.map(r => r === oldName ? newName : r);
-
-      const newCells: Record<string, string[]> = {};
-      const oldPrefix = `${oldName}|`;
-      const newPrefix = `${newName}|`;
-
-      const cells: Record<string, string[]> = prev.regulationCells || {};
-      for (const [k, v] of Object.entries(cells)) {
-        if (k.startsWith(oldPrefix)) {
-          const suffix = k.substring(oldPrefix.length);
-          newCells[newPrefix + suffix] = v;
-        } else {
-          newCells[k] = v;
+      if (viewMode === "Regulation") {
+        const existing = prev.regOrder || [];
+        if (existing.includes(newName)) {
+          alert(`Regulation "${newName}" already exists.`);
+          return prev;
         }
-      }
 
-      const newRowHeights: Record<string, number> = { ...(prev.layout?.rowHeights || {}) };
-      if (newRowHeights[oldName]) {
-        newRowHeights[newName] = newRowHeights[oldName];
-        delete newRowHeights[oldName];
-      }
+        const newOrder = existing.map(r => r === oldName ? newName : r);
 
-      return {
-        ...prev,
-        regOrder: newOrder,
-        regulationCells: newCells,
-        layout: {
-          ...prev.layout,
-          rowHeights: newRowHeights,
-          colWidths: prev.layout?.colWidths || {}
+        const newCells: Record<string, string[]> = {};
+        const oldPrefix = `${oldName}|`;
+        const newPrefix = `${newName}|`;
+
+        const cells: Record<string, string[]> = prev.regulationCells || {};
+        for (const [k, v] of Object.entries(cells)) {
+          if (k.startsWith(oldPrefix)) {
+            const suffix = k.substring(oldPrefix.length);
+            newCells[newPrefix + suffix] = v;
+          } else {
+            newCells[k] = v;
+          }
         }
-      };
+
+        const newRowHeights: Record<string, number> = { ...(prev.layout?.rowHeights || {}) };
+        if (newRowHeights[oldName]) {
+          newRowHeights[newName] = newRowHeights[oldName];
+          delete newRowHeights[oldName];
+        }
+
+        return {
+          ...prev,
+          regOrder: newOrder,
+          regulationCells: newCells,
+          layout: {
+            ...prev.layout,
+            rowHeights: newRowHeights,
+            colWidths: prev.layout?.colWidths || {}
+          }
+        };
+      } else {
+        // Model rename
+        const existing = prev.modelOrder || [];
+        if (existing.includes(newName)) {
+          alert(`Model "${newName}" already exists.`);
+          return prev;
+        }
+
+        const newOrder = existing.map(m => m === oldName ? newName : m);
+
+        const newCells: Record<string, string[]> = {};
+        const cells: Record<string, string[]> = prev.regulationCells || {};
+        for (const [k, v] of Object.entries(cells)) {
+          newCells[k] = (v || []).map(val => val === oldName ? newName : val);
+        }
+
+        // update customModels
+        const newCustom = (prev.customModels || []).map(m => m === oldName ? newName : m);
+
+        return {
+          ...prev,
+          modelOrder: newOrder,
+          regulationCells: newCells,
+          customModels: newCustom
+        };
+      }
     });
-  }, []);
+  }, [viewMode]);
 
   const handleSetItemColor = useCallback((name: string, color: string) => {
     const norm = (name || "").replace(/\s+/g, ' ').trim().toLowerCase();
@@ -491,6 +567,19 @@ const App: React.FC = () => {
     });
   }, [years]);
 
+  const handleAddRegulationToCell = useCallback((modelId: string, year: string, month: number, reg: string) => {
+    handleCellChange(modelId, year, month, reg); // Using the model-centric update logic in handleCellChange
+  }, [handleCellChange]);
+
+  const handleAddModelRow = useCallback((name: string) => {
+    if (!name.trim()) return;
+    setCurrentPlan((prev) => {
+      if ((prev.modelOrder || []).includes(name)) return prev;
+      const nextOrder = Array.from(new Set([...(prev.modelOrder || []), name]));
+      return { ...prev, modelOrder: nextOrder };
+    });
+  }, []);
+
   const handleAddModelToCell = useCallback((rowId: string, year: string, month: number, model: string) => {
     setCurrentPlan((prev) => {
       const key = getCellKey(rowId, year, month);
@@ -511,6 +600,18 @@ const App: React.FC = () => {
           [key]: [...currentVals, model],
         },
       };
+    });
+  }, []);
+
+  const deleteModelDraftOnly = useCallback((model: string) => {
+    setCurrentPlan((prev) => {
+      const nextCells: Record<string, string[]> = {};
+      for (const [k, v] of Object.entries(prev.regulationCells || {})) {
+        nextCells[k] = (v || []).filter(m => m !== model);
+      }
+      const nextOrder = (prev.modelOrder || []).filter(m => m !== model);
+      const nextCustom = (prev.customModels || []).filter(m => m !== model);
+      return { ...prev, regulationCells: nextCells, modelOrder: nextOrder, customModels: nextCustom };
     });
   }, []);
 
@@ -591,10 +692,14 @@ const App: React.FC = () => {
       // Also update customModels list
       const newCustomModels = (prev.customModels || []).map(m => m === oldName ? newName.trim() : m);
 
+      // Update modelOrder
+      const newModelOrder = (prev.modelOrder || []).map(m => m === oldName ? newName.trim() : m);
+
       return {
         ...prev,
         regulationCells: newCells,
-        customModels: newCustomModels
+        customModels: newCustomModels,
+        modelOrder: newModelOrder
       };
     });
   }, []);
@@ -636,6 +741,95 @@ const App: React.FC = () => {
       };
     });
   }, []);
+
+  // -----------------------
+  // Archive/Restore Logic
+  // -----------------------
+  const handleArchiveModel = useCallback(async (name: string) => {
+    if (!userEmail) return;
+    try {
+      await api.archiveModel(name, userEmail);
+      setMasterModels(prev => prev.filter(m => m !== name));
+      setArchivedModels(prev => [...prev, name]);
+      // Update current plan if it's in custom list or order
+      setCurrentPlan(prev => ({
+        ...prev,
+        customModels: (prev.customModels || []).filter(m => m !== name),
+        modelOrder: (prev.modelOrder || []).filter(m => m !== name)
+      }));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to archive model");
+    }
+  }, [userEmail]);
+
+  const handleArchiveRegulation = useCallback(async (name: string) => {
+    if (!userEmail) return;
+    try {
+      await api.archiveRegulation(name, userEmail);
+      setMasterRegs(prev => prev.filter(r => r !== name));
+      setArchivedRegs(prev => [...prev, name]);
+      // Update current plan if it's in custom list
+      setCurrentPlan(prev => ({
+        ...prev,
+        customRegulations: (prev.customRegulations || []).filter(r => r !== name)
+      }));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to archive regulation");
+    }
+  }, [userEmail]);
+
+  const handleRestoreModel = useCallback(async (name: string) => {
+    if (!userEmail) return;
+    try {
+      await api.restoreModel(name, userEmail);
+      setArchivedModels(prev => prev.filter(m => m !== name));
+      setMasterModels(prev => [...prev, name]);
+      // We don't automatically add it back to customModels of currentPlan unless user re-adds it
+    } catch (e) {
+      console.error(e);
+      alert("Failed to restore model");
+    }
+  }, [userEmail]);
+
+  const handleRestoreRegulation = useCallback(async (name: string) => {
+    if (!userEmail) return;
+    try {
+      await api.restoreRegulation(name, userEmail);
+      setArchivedRegs(prev => prev.filter(r => r !== name));
+      setMasterRegs(prev => [...prev, name]);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to restore regulation");
+    }
+  }, [userEmail]);
+
+  const handlePermanentDeleteModel = useCallback(async (name: string) => {
+    if (!userEmail) return;
+    try {
+      await api.permanentlyDeleteModel(name, userEmail);
+      setArchivedModels(prev => prev.filter(m => m !== name));
+      // Also ensure it's removed from master list if it was there (shouldn't be if it's archived, but safe)
+      setMasterModels(prev => prev.filter(m => m !== name));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to permanently delete model");
+    }
+  }, [userEmail]);
+
+  const handlePermanentDeleteRegulation = useCallback(async (name: string) => {
+    if (!userEmail) return;
+    try {
+      await api.permanentlyDeleteRegulation(name, userEmail);
+      setArchivedRegs(prev => prev.filter(r => r !== name));
+      // Also ensure it's removed from master list if it was there
+      setMasterRegs(prev => prev.filter(r => r !== name));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to permanently delete regulation");
+    }
+  }, [userEmail]);
 
   // -----------------------
   // Enhanced custom lists update with rename & delete protection
@@ -686,8 +880,9 @@ const App: React.FC = () => {
     // For Draft, show merge of table + custom lists
     const tableModels = getUniqueModels(activePlan);
     const customModels = activePlan.customModels || [];
-    return Array.from(new Set([...tableModels, ...customModels])).sort();
-  }, [activePlan, activeTab]);
+    const all = Array.from(new Set([...tableModels, ...customModels]));
+    return all.filter(m => !archivedModels.includes(m)).sort();
+  }, [activePlan, activeTab, archivedModels]);
 
   const sidebarRegulations = useMemo(() => {
     // For Final, strictly show what is in the table
@@ -697,9 +892,9 @@ const App: React.FC = () => {
     // For Draft, show merge of table + custom lists
     const tableRegs = getDraftRegList(activePlan);
     const customRegs = activePlan.customRegulations || [];
-    return Array.from(new Set([...tableRegs, ...customRegs])).sort();
-    return Array.from(new Set([...tableRegs, ...customRegs])).sort();
-  }, [activePlan, activeTab]);
+    const all = Array.from(new Set([...tableRegs, ...customRegs]));
+    return all.filter(r => !archivedRegs.includes(r)).sort();
+  }, [activePlan, activeTab, archivedRegs]);
 
   const missingRegulations = useMemo(() => {
     if (activeTab !== 'Draft') return [];
@@ -717,10 +912,7 @@ const App: React.FC = () => {
   // Models per tab
   // -----------------------
   const draftModels = useMemo(() => {
-    const tableModels = getUniqueModels(currentPlan);
-    const customModels = currentPlan.customModels || [];
-    // Merge and unique
-    return Array.from(new Set([...tableModels, ...customModels])).sort();
+    return getDraftModelList(currentPlan);
   }, [currentPlan]);
   const modelsForUI = activeTab === "Draft" ? draftModels : finalModels;
 
@@ -807,13 +999,13 @@ const App: React.FC = () => {
     }
   };
 
-  const saveDraftAsNew = async () => {
+  const handleSaveDraftConfirmed = async (name: string) => {
     if (!userEmail) return;
 
     const draftId = crypto.randomUUID();
     const payload: Draft = {
       id: draftId,
-      name: `Draft ${new Date().toLocaleString()}`,
+      name: name,
       updatedAt: Date.now(),
       data: {
         ...currentPlan,
@@ -835,10 +1027,22 @@ const App: React.FC = () => {
         next.sort((a, b) => b.updatedAt - a.updatedAt);
         return next;
       });
+
+      setIsSaveModalOpen(false);
+
+      // Handle pending navigation if any
+      if (pendingNavigation) {
+        pendingNavigation();
+        setPendingNavigation(null);
+      }
     } catch (e) {
       console.error(e);
       alert("Failed to save draft");
     }
+  };
+
+  const saveDraftAsNew = () => {
+    setIsSaveModalOpen(true);
   };
 
   // -----------------------
@@ -869,7 +1073,8 @@ const App: React.FC = () => {
       ...data,
       customModels: Array.from(new Set([...masterModels, ...(data.customModels || [])])),
       customRegulations: Array.from(new Set([...masterRegs, ...(data.customRegulations || [])])),
-      itemColors: { ...masterColors, ...(data.itemColors || {}) }
+      itemColors: { ...masterColors, ...(data.itemColors || {}) },
+      modelOrder: data.modelOrder || []
     };
     setCurrentPlan(mergedPlan);
     setCurrentDraftId(draft.id);
@@ -880,12 +1085,8 @@ const App: React.FC = () => {
 
   // Wrap actions to clear prompt
   const performSaveAsNew = async () => {
-    await saveDraftAsNew();
     setShowUnsavedPrompt(false);
-    if (pendingNavigation) {
-      pendingNavigation();
-      setPendingNavigation(null);
-    }
+    setIsSaveModalOpen(true);
   };
 
   const performUpdate = async () => {
@@ -935,6 +1136,7 @@ const App: React.FC = () => {
       customRegulations: [...masterRegs],
       itemColors: { ...masterColors },
       regOrder: [], // user freedom to add self
+      modelOrder: [],
     };
     setCurrentPlan(freshPlan);
     setCurrentDraftId(null);
@@ -1172,6 +1374,14 @@ const App: React.FC = () => {
         onSetItemColor={handleSetItemColor}
         currentDraftId={currentDraftId}
         onNewDraft={handleNewDraftClick}
+        archivedModels={archivedModels}
+        archivedRegulations={archivedRegs}
+        onArchiveModel={handleArchiveModel}
+        onArchiveRegulation={handleArchiveRegulation}
+        onRestoreModel={handleRestoreModel}
+        onRestoreRegulation={handleRestoreRegulation}
+        onPermanentDeleteModel={handlePermanentDeleteModel}
+        onPermanentDeleteRegulation={handlePermanentDeleteRegulation}
       />
 
       <main className="flex-grow flex flex-col overflow-hidden relative">
@@ -1282,6 +1492,13 @@ const App: React.FC = () => {
           accessToken={accessToken}
         />
 
+        <SaveDraftModal
+          isOpen={isSaveModalOpen}
+          onClose={() => setIsSaveModalOpen(false)}
+          onSave={handleSaveDraftConfirmed}
+          initialName={`Draft ${new Date().toLocaleString()}`}
+        />
+
         <div className="flex-grow p-1 overflow-hidden flex flex-col gap-6">
           <div className="flex h-full gap-6">
             <div className="flex-grow flex flex-col min-w-0">
@@ -1291,30 +1508,40 @@ const App: React.FC = () => {
                     viewMode={viewMode}
                     rowIds={viewMode === "Regulation" ? regulationsForUI : modelsForUI}
                     cellData={viewMode === "Regulation" ? activePlan.regulationCells : modelData}
-                    isEditable={activeTab === "Draft" && viewMode === "Regulation"}
+                    isEditable={activeTab === "Draft"}
                     onCellChange={handleCellChange}
                     onCellClick={
                       activeTab === "Final" && viewMode === "Regulation" ? handleFinalCellClick : undefined
                     }
                     financialYears={years}
                     onDeleteRow={
-                      activeTab === "Draft" && viewMode === "Regulation" ? deleteRegulationDraftOnly : undefined
+                      activeTab === "Draft"
+                        ? (viewMode === "Regulation" ? deleteRegulationDraftOnly : deleteModelDraftOnly)
+                        : undefined
                     }
                     onRowReorder={
-                      activeTab === "Draft" && viewMode === "Regulation" ? handleDraftRegReorder : undefined
+                      activeTab === "Draft"
+                        ? (viewMode === "Regulation" ? handleDraftRegReorder : handleDraftModelReorder)
+                        : undefined
                     }
                     layout={viewMode === "Regulation" ? activePlan.layout : undefined}
                     onLayoutChange={
                       activeTab === "Draft" && viewMode === "Regulation" ? handleLayoutChange : undefined
                     }
                     onRenameRow={
-                      activeTab === "Draft" && viewMode === "Regulation" ? handleRenameRow : undefined
+                      activeTab === "Draft" ? handleRenameRow : undefined
                     }
                     onAddRegulationFromDrag={
                       activeTab === "Draft" && viewMode === "Regulation" ? handleAddRegulationRow : undefined
                     }
+                    onAddModelRowFromDrag={
+                      activeTab === "Draft" && viewMode === "Model" ? handleAddModelRow : undefined
+                    }
                     onAddModelToCell={
                       activeTab === "Draft" && viewMode === "Regulation" ? handleAddModelToCell : undefined
+                    }
+                    onAddRegulationToCell={
+                      activeTab === "Draft" && viewMode === "Model" ? handleAddRegulationToCell : undefined
                     }
                     viewResolution={viewResolution}
                     highlightedModel={highlightedModel}

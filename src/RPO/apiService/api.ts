@@ -102,6 +102,67 @@ export const api = {
     return response.json();
   },
 
+  // --- MODELS ---
+  fetchModels: async (userEmail: string): Promise<string[]> => {
+    const response = await fetch(`${API_BASE_URL}/models`, {
+      headers: getHeaders(userEmail),
+    });
+    if (!response.ok) throw new Error("Failed to fetch models");
+    return response.json();
+  },
+
+  addModel: async (name: string, userEmail: string): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/models`, {
+      method: "POST",
+      headers: getHeaders(userEmail),
+      body: JSON.stringify({ name }),
+    });
+    if (!response.ok) throw new Error("Failed to add model");
+  },
+
+  deleteModel: async (name: string, userEmail: string): Promise<void> => {
+    const response = await fetch(
+      `${API_BASE_URL}/models/${encodeURIComponent(name)}`,
+      {
+        method: "DELETE",
+        headers: getHeaders(userEmail),
+      }
+    );
+    if (!response.ok) throw new Error("Failed to delete model");
+  },
+
+  archiveModel: async (name: string, userEmail: string): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/models/archive?name=${encodeURIComponent(name)}`, {
+      method: "POST",
+      headers: getHeaders(userEmail),
+    });
+    if (!response.ok) throw new Error("Failed to archive model");
+  },
+
+  fetchArchivedModels: async (userEmail: string): Promise<string[]> => {
+    const response = await fetch(`${API_BASE_URL}/models/archived`, {
+      headers: getHeaders(userEmail),
+    });
+    if (!response.ok) throw new Error("Failed to fetch archived models");
+    return response.json();
+  },
+
+  restoreModel: async (name: string, userEmail: string): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/models/restore?name=${encodeURIComponent(name)}`, {
+      method: "POST",
+      headers: getHeaders(userEmail),
+    });
+    if (!response.ok) throw new Error("Failed to restore model");
+  },
+
+  permanentlyDeleteModel: async (name: string, userEmail: string): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/models/permanent?name=${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      headers: getHeaders(userEmail),
+    });
+    if (!response.ok) throw new Error("Failed to permanently delete model");
+  },
+
   // --- REGULATIONS ---
   fetchRegulations: async (userEmail: string): Promise<string[]> => {
     const response = await fetch(`${API_BASE_URL}/regulations`, {
@@ -131,33 +192,36 @@ export const api = {
     if (!response.ok) throw new Error("Failed to delete regulation");
   },
 
-  // --- MODELS ---
-  fetchModels: async (userEmail: string): Promise<string[]> => {
-    const response = await fetch(`${API_BASE_URL}/models`, {
+  archiveRegulation: async (name: string, userEmail: string): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/regulations/archive?name=${encodeURIComponent(name)}`, {
+      method: "POST",
       headers: getHeaders(userEmail),
     });
-    if (!response.ok) throw new Error("Failed to fetch models");
+    if (!response.ok) throw new Error("Failed to archive regulation");
+  },
+
+  fetchArchivedRegulations: async (userEmail: string): Promise<string[]> => {
+    const response = await fetch(`${API_BASE_URL}/regulations/archived`, {
+      headers: getHeaders(userEmail),
+    });
+    if (!response.ok) throw new Error("Failed to fetch archived regulations");
     return response.json();
   },
 
-  addModel: async (name: string, userEmail: string): Promise<void> => {
-    const response = await fetch(`${API_BASE_URL}/models`, {
+  restoreRegulation: async (name: string, userEmail: string): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/regulations/restore?name=${encodeURIComponent(name)}`, {
       method: "POST",
       headers: getHeaders(userEmail),
-      body: JSON.stringify({ name }),
     });
-    if (!response.ok) throw new Error("Failed to add model");
+    if (!response.ok) throw new Error("Failed to restore regulation");
   },
 
-  deleteModel: async (name: string, userEmail: string): Promise<void> => {
-    const response = await fetch(
-      `${API_BASE_URL}/models/${encodeURIComponent(name)}`,
-      {
-        method: "DELETE",
-        headers: getHeaders(userEmail),
-      }
-    );
-    if (!response.ok) throw new Error("Failed to delete model");
+  permanentlyDeleteRegulation: async (name: string, userEmail: string): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/regulations/permanent?name=${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      headers: getHeaders(userEmail),
+    });
+    if (!response.ok) throw new Error("Failed to permanently delete regulation");
   },
 
   // --- SYNC ---

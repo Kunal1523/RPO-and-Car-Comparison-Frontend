@@ -49,7 +49,9 @@ interface PlanningGridProps {
   viewResolution?: "Month" | "Quarter" | "Year";
   visibleLevels?: { years: boolean; quarters: boolean; months: boolean };
   onAddRegulationFromDrag?: (name: string) => void;
+  onAddModelRowFromDrag?: (name: string) => void;
   onAddModelToCell?: (rowId: string, year: string, month: number, model: string) => void;
+  onAddRegulationToCell?: (rowId: string, year: string, month: number, reg: string) => void;
   // NEW: Highlighting
   highlightedModel?: string | null;
   highlightedRegulation?: string | null;
@@ -85,6 +87,7 @@ const DraggableRow = ({
   viewResolution = "Month",
   onRenameRow,
   onAddModelToCell,
+  onAddRegulationToCell,
   viewMode,
   highlightedModel,
   highlightedRegulation,
@@ -360,10 +363,19 @@ const DraggableRow = ({
                         try {
                           const payload = JSON.parse(raw);
 
-                          if (payload.type === 'model' && payload.name) {
-                            e.stopPropagation(); // Prevent container from catching it
-                            onAddModelToCell?.(rowId, fy.label, m, payload.name);
-                            return;
+                          if (viewMode === 'Regulation') {
+                            if (payload.type === 'model' && payload.name) {
+                              e.stopPropagation();
+                              onAddModelToCell?.(rowId, fy.label, m, payload.name);
+                              return;
+                            }
+                          } else {
+                            // Model view
+                            if (payload.type === 'regulation' && payload.name) {
+                              e.stopPropagation();
+                              onAddRegulationToCell?.(rowId, fy.label, m, payload.name);
+                              return;
+                            }
                           }
 
                           const { val, sourceKey } = payload;
@@ -479,7 +491,9 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
   viewResolution = "Month",
   onRenameRow,
   onAddRegulationFromDrag,
+  onAddModelRowFromDrag,
   onAddModelToCell,
+  onAddRegulationToCell,
   highlightedModel,
   highlightedRegulation,
   itemColors,
@@ -670,10 +684,10 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
     }
   };
 
-  // ✅ only allow reorder when:
+  // ✅ allow reorder when:
   // - handler is provided
-  // - AND we are in Regulation view (rows represent regs)
-  const isDraggable = !!onRowReorder && viewMode === "Regulation";
+  // - AND we are in Regulation or Model view
+  const isDraggable = !!onRowReorder && (viewMode === "Regulation" || viewMode === "Model");
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -689,8 +703,14 @@ const PlanningGrid: React.FC<PlanningGridProps> = ({
           if (!raw) return;
           try {
             const payload = JSON.parse(raw);
-            if (payload.type === 'regulation' && payload.name) {
-              onAddRegulationFromDrag?.(payload.name);
+            if (viewMode === 'Regulation') {
+              if (payload.type === 'regulation' && payload.name) {
+                onAddRegulationFromDrag?.(payload.name);
+              }
+            } else {
+              if (payload.type === 'model' && payload.name) {
+                onAddModelRowFromDrag?.(payload.name);
+              }
             }
           } catch (err) { }
         }}

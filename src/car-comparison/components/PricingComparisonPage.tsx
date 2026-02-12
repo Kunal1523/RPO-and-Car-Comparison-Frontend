@@ -842,7 +842,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, TrendingUp, List, LayoutGrid, ChevronDown, Upload, Plus, RotateCcw } from 'lucide-react';
+import { X, TrendingUp, List, LayoutGrid, ChevronDown, Upload, Plus, RotateCcw, Search } from 'lucide-react';
 import ChartView from '../components/ChartView';
 import TableView from '../components/TableView';
 import DownloadExcelButton from '../components/DownloadExcelButton';
@@ -1051,6 +1051,8 @@ const PriceComparisonPage = () => {
     selectedEditions: new Set<string>()
   });
 
+  const [filterSearch, setFilterSearch] = useState<Record<string, string>>({});
+
   // Store all available options (used to detect new options and for reset)
   const [allAvailableOptions, setAllAvailableOptions] = useState<{
     allFuelTypes: string[];
@@ -1072,6 +1074,9 @@ const PriceComparisonPage = () => {
   const transmissionDetailsRef = React.useRef<HTMLDetailsElement>(null);
   const paintDetailsRef = React.useRef<HTMLDetailsElement>(null);
   const editionDetailsRef = React.useRef<HTMLDetailsElement>(null);
+
+  // Ref for capturing chart
+  const chartContainerRef = React.useRef<HTMLDivElement>(null);
 
   // Timer ref for delayed closing
   const closeTimerRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -1290,18 +1295,7 @@ const PriceComparisonPage = () => {
     });
   };
 
-  // Simple toggle all - select all or deselect all in this category
-  const toggleSelectAll = (filterType: keyof CommonFilters, allValues: string[]) => {
-    setCommonFilters(prev => {
-      const currentSet = prev[filterType];
-      const allSelected = allValues.every(val => currentSet.has(val));
 
-      return {
-        ...prev,
-        [filterType]: allSelected ? new Set<string>() : new Set(allValues)
-      };
-    });
-  };
 
   // Reset all filters - select everything
   const resetAllFilters = () => {
@@ -1359,6 +1353,7 @@ const PriceComparisonPage = () => {
                 data: getFilteredPricingForCar(c.id)
               }))
             }
+            chartRef={chartContainerRef}
           />
           <button
             onClick={() => alert("Coming Soon")}
@@ -1390,72 +1385,95 @@ const PriceComparisonPage = () => {
 
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <select
-                      className="w-full bg-white border rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                      value={c.brand}
-                      onChange={e => updateCar(c.id, 'brand', e.target.value)}
-                    >
-                      <option value="">Brand</option>
-                      {catalog.map(b => <option key={b.brand_id} value={b.brand_name}>{b.brand_name}</option>)}
-                    </select>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        className="w-full bg-white border rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
+                        value={c.brand}
+                        onChange={e => updateCar(c.id, 'brand', e.target.value)}
+                      >
+                        <option value="">Brand</option>
+                        {catalog.map(b => <option key={b.brand_id} value={b.brand_name}>{b.brand_name}</option>)}
+                      </select>
 
-                    <select
-                      className="w-full bg-white border rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
-                      value={c.model}
-                      disabled={!c.brand}
-                      onChange={e => updateCar(c.id, 'model', e.target.value)}
-                    >
-                      <option value="">Model</option>
-                      {brand?.cars.map(m => <option key={m.car_id} value={m.car_name}>{m.car_name}</option>)}
-                    </select>
+                      <select
+                        className="w-full bg-white border rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
+                        value={c.model}
+                        disabled={!c.brand}
+                        onChange={e => updateCar(c.id, 'model', e.target.value)}
+                      >
+                        <option value="">Model</option>
+                        {brand?.cars.map(m => <option key={m.car_id} value={m.car_name}>{m.car_name}</option>)}
+                      </select>
+                    </div>
 
-                    <div className="relative" onMouseEnter={cancelCloseDropdown} onMouseLeave={() => closeDropdown(variantDetailsRefs.current.get(c.id) || null)}>
-                      <details ref={(el) => { if (el) variantDetailsRefs.current.set(c.id, el); }} className="bg-white border rounded-lg">
+                    <div className="relative w-full" onMouseEnter={cancelCloseDropdown} onMouseLeave={() => closeDropdown(variantDetailsRefs.current.get(c.id) || null)}>
+                      <details ref={(el) => { if (el) variantDetailsRefs.current.set(c.id, el); }} className="bg-white border rounded-lg w-full">
                         <summary className="px-2 py-1.5 cursor-pointer text-xs list-none flex items-center justify-between">
-                          <span className={carVariants.length === 0 ? 'text-slate-400' : 'text-slate-700'}>
+                          <span className={`${carVariants.length === 0 ? 'text-slate-400' : 'text-slate-700'} truncate mr-2`}>
                             Variants ({carVariants.filter(v => commonFilters.selectedVariants.has(v.id)).length}/{carVariants.length})
                           </span>
-                          <ChevronDown size={12} className="text-slate-400" />
+                          <ChevronDown size={12} className="text-slate-400 flex-shrink-0" />
                         </summary>
                         {carVariants.length > 0 && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto w-full" onMouseEnter={cancelCloseDropdown}>
                             <div className="p-2 space-y-1">
-                              <button
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  const allSelected = carVariants.every(v => commonFilters.selectedVariants.has(v.id));
-                                  setCommonFilters(prev => {
-                                    const newSet = new Set(prev.selectedVariants);
-                                    if (allSelected) {
-                                      // Deselect only this car's variants
-                                      carVariants.forEach(v => newSet.delete(v.id));
-                                    } else {
-                                      // Select only this car's variants
-                                      carVariants.forEach(v => newSet.add(v.id));
-                                    }
-                                    return { ...prev, selectedVariants: newSet };
-                                  });
-                                }}
-                                className="w-full text-left px-2 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                              >
-                                {carVariants.every(v => commonFilters.selectedVariants.has(v.id)) ? 'Deselect All' : 'Select All'}
-                              </button>
-                              <div className="border-t pt-1">
-                                {carVariants.map(v => (
-                                  <label key={v.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors">
-                                    <input
-                                      type="checkbox"
-                                      checked={commonFilters.selectedVariants.has(v.id)}
-                                      onChange={() => toggleCommonFilter('selectedVariants', v.id)}
-                                      className="rounded border-slate-300 w-3 h-3"
-                                    />
-                                    <span className={commonFilters.selectedVariants.has(v.id) ? 'text-slate-900 font-medium' : 'text-slate-500'}>
-                                      {v.name}
-                                    </span>
-                                  </label>
-                                ))}
+                              {/* Search Input */}
+                              <div className="relative mb-2">
+                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                  type="text"
+                                  placeholder="Search variants..."
+                                  className="w-full text-[10px] border border-slate-300 rounded p-1 pl-6 outline-none focus:ring-1 focus:ring-blue-500"
+                                  value={filterSearch[`variant_${c.id}`] || ''}
+                                  onChange={(e) => setFilterSearch(prev => ({ ...prev, [`variant_${c.id}`]: e.target.value }))}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
                               </div>
+
+                              {(() => {
+                                const searchTerm = (filterSearch[`variant_${c.id}`] || '').toLowerCase();
+                                const filteredVariants = carVariants.filter(v => v.name.toLowerCase().includes(searchTerm));
+
+                                return (
+                                  <>
+                                    <button
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        const allSelected = filteredVariants.every(v => commonFilters.selectedVariants.has(v.id));
+                                        setCommonFilters(prev => {
+                                          const newSet = new Set(prev.selectedVariants);
+                                          if (allSelected) {
+                                            filteredVariants.forEach(v => newSet.delete(v.id));
+                                          } else {
+                                            filteredVariants.forEach(v => newSet.add(v.id));
+                                          }
+                                          return { ...prev, selectedVariants: newSet };
+                                        });
+                                      }}
+                                      className="w-full text-left px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                    >
+                                      {filteredVariants.length > 0 && filteredVariants.every(v => commonFilters.selectedVariants.has(v.id)) ? 'Deselect All' : 'Select All'}
+                                    </button>
+                                    <div className="border-t pt-1">
+                                      {filteredVariants.length === 0 ? <div className="text-[10px] text-slate-400 p-2 text-center">No results</div> :
+                                        filteredVariants.map(v => (
+                                          <label key={v.id} className="flex items-center gap-2 text-[10px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded transition-colors">
+                                            <input
+                                              type="checkbox"
+                                              checked={commonFilters.selectedVariants.has(v.id)}
+                                              onChange={() => toggleCommonFilter('selectedVariants', v.id)}
+                                              className="rounded border-slate-300 w-3 h-3 flex-shrink-0"
+                                            />
+                                            <span className={`${commonFilters.selectedVariants.has(v.id) ? 'text-slate-900 font-medium' : 'text-slate-500'} break-words whitespace-normal`}>
+                                              {v.name}
+                                            </span>
+                                          </label>
+                                        ))}
+                                    </div>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
                         )}
@@ -1494,195 +1512,295 @@ const PriceComparisonPage = () => {
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
-                  {uniqueFuelTypes.length > 0 && (
-                    <div className="relative" onMouseEnter={cancelCloseDropdown} onMouseLeave={() => closeDropdown(fuelDetailsRef)}>
-                      <details ref={fuelDetailsRef} className="bg-slate-50 border rounded-lg">
-                        <summary className="px-2 py-1.5 cursor-pointer text-xs list-none flex items-center justify-between">
-                          <span className="text-slate-700 font-semibold">Fuel</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-500">{commonFilters.selectedFuelTypes.size}/{uniqueFuelTypes.length}</span>
-                            <ChevronDown size={12} className="text-slate-400" />
-                          </div>
-                        </summary>
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
-                          <div className="p-2 space-y-1">
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                toggleSelectAll('selectedFuelTypes', uniqueFuelTypes);
-                              }}
-                              className="w-full text-left px-2 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                            >
-                              {uniqueFuelTypes.every(f => commonFilters.selectedFuelTypes.has(f)) ? 'Deselect All' : 'Select All'}
-                            </button>
-                            <div className="border-t pt-1">
-                              {uniqueFuelTypes.map((fuel) => (
-                                <label
-                                  key={fuel}
-                                  className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={commonFilters.selectedFuelTypes.has(fuel)}
-                                    onChange={() => toggleCommonFilter('selectedFuelTypes', fuel)}
-                                    className="rounded border-slate-300 w-3 h-3"
-                                  />
-                                  <span className={commonFilters.selectedFuelTypes.has(fuel) ? 'text-slate-900 font-medium' : 'text-slate-500'}>
-                                    {fuel}
-                                  </span>
-                                </label>
-                              ))}
+                  {uniqueFuelTypes.length > 0 && (() => {
+                    const searchTerm = (filterSearch['fuel'] || '').toLowerCase();
+                    const filteredFuel = uniqueFuelTypes.filter(f => f.toLowerCase().includes(searchTerm));
+                    return (
+                      <div className="relative" onMouseEnter={cancelCloseDropdown} onMouseLeave={() => closeDropdown(fuelDetailsRef)}>
+                        <details ref={fuelDetailsRef} className="bg-slate-50 border rounded-lg">
+                          <summary className="px-2 py-1.5 cursor-pointer text-xs list-none flex items-center justify-between">
+                            <span className="text-slate-700 font-semibold">Fuel</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-500">{commonFilters.selectedFuelTypes.size}/{uniqueFuelTypes.length}</span>
+                              <ChevronDown size={12} className="text-slate-400" />
+                            </div>
+                          </summary>
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
+                            <div className="p-2 space-y-1">
+                              <div className="relative mb-2">
+                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                  type="text"
+                                  placeholder="Search..."
+                                  className="w-full text-[10px] border border-slate-300 rounded p-1 pl-6 outline-none focus:ring-1 focus:ring-blue-500"
+                                  value={filterSearch['fuel'] || ''}
+                                  onChange={(e) => setFilterSearch(prev => ({ ...prev, fuel: e.target.value }))}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  const allSelected = filteredFuel.every(f => commonFilters.selectedFuelTypes.has(f));
+                                  setCommonFilters(prev => {
+                                    const newSet = new Set(prev.selectedFuelTypes);
+                                    if (allSelected) {
+                                      filteredFuel.forEach(f => newSet.delete(f));
+                                    } else {
+                                      filteredFuel.forEach(f => newSet.add(f));
+                                    }
+                                    return { ...prev, selectedFuelTypes: newSet };
+                                  });
+                                }}
+                                className="w-full text-left px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              >
+                                {filteredFuel.length > 0 && filteredFuel.every(f => commonFilters.selectedFuelTypes.has(f)) ? 'Deselect All' : 'Select All'}
+                              </button>
+                              <div className="border-t pt-1">
+                                {filteredFuel.length === 0 ? <div className="text-[10px] text-slate-400 p-2 text-center">No results</div> :
+                                  filteredFuel.map((fuel) => (
+                                    <label
+                                      key={fuel}
+                                      className="flex items-center gap-2 text-[10px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded transition-colors"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={commonFilters.selectedFuelTypes.has(fuel)}
+                                        onChange={() => toggleCommonFilter('selectedFuelTypes', fuel)}
+                                        className="rounded border-slate-300 w-3 h-3"
+                                      />
+                                      <span className={commonFilters.selectedFuelTypes.has(fuel) ? 'text-slate-900 font-medium' : 'text-slate-500'}>
+                                        {fuel}
+                                      </span>
+                                    </label>
+                                  ))}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </details>
-                    </div>
-                  )}
+                        </details>
+                      </div>
+                    );
+                  })()}
 
-                  {uniqueTransmissions.length > 0 && (
-                    <div className="relative" onMouseEnter={cancelCloseDropdown} onMouseLeave={() => closeDropdown(transmissionDetailsRef)}>
-                      <details ref={transmissionDetailsRef} className="bg-slate-50 border rounded-lg">
-                        <summary className="px-2 py-1.5 cursor-pointer text-xs list-none flex items-center justify-between">
-                          <span className="text-slate-700 font-semibold">Trans.</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-500">{commonFilters.selectedTransmissions.size}/{uniqueTransmissions.length}</span>
-                            <ChevronDown size={12} className="text-slate-400" />
-                          </div>
-                        </summary>
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
-                          <div className="p-2 space-y-1">
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                toggleSelectAll('selectedTransmissions', uniqueTransmissions);
-                              }}
-                              className="w-full text-left px-2 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                            >
-                              {uniqueTransmissions.every(t => commonFilters.selectedTransmissions.has(t)) ? 'Deselect All' : 'Select All'}
-                            </button>
-                            <div className="border-t pt-1">
-                              {uniqueTransmissions.map((transmission) => (
-                                <label
-                                  key={transmission}
-                                  className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={commonFilters.selectedTransmissions.has(transmission)}
-                                    onChange={() => toggleCommonFilter('selectedTransmissions', transmission)}
-                                    className="rounded border-slate-300 w-3 h-3"
-                                  />
-                                  <span className={commonFilters.selectedTransmissions.has(transmission) ? 'text-slate-900 font-medium' : 'text-slate-500'}>
-                                    {transmission}
-                                  </span>
-                                </label>
-                              ))}
+                  {uniqueTransmissions.length > 0 && (() => {
+                    const searchTerm = (filterSearch['trans'] || '').toLowerCase();
+                    const filteredTrans = uniqueTransmissions.filter(t => t.toLowerCase().includes(searchTerm));
+                    return (
+                      <div className="relative" onMouseEnter={cancelCloseDropdown} onMouseLeave={() => closeDropdown(transmissionDetailsRef)}>
+                        <details ref={transmissionDetailsRef} className="bg-slate-50 border rounded-lg">
+                          <summary className="px-2 py-1.5 cursor-pointer text-xs list-none flex items-center justify-between">
+                            <span className="text-slate-700 font-semibold">Trans.</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-500">{commonFilters.selectedTransmissions.size}/{uniqueTransmissions.length}</span>
+                              <ChevronDown size={12} className="text-slate-400" />
+                            </div>
+                          </summary>
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
+                            <div className="p-2 space-y-1">
+                              <div className="relative mb-2">
+                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                  type="text"
+                                  placeholder="Search..."
+                                  className="w-full text-[10px] border border-slate-300 rounded p-1 pl-6 outline-none focus:ring-1 focus:ring-blue-500"
+                                  value={filterSearch['trans'] || ''}
+                                  onChange={(e) => setFilterSearch(prev => ({ ...prev, trans: e.target.value }))}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  const allSelected = filteredTrans.every(t => commonFilters.selectedTransmissions.has(t));
+                                  setCommonFilters(prev => {
+                                    const newSet = new Set(prev.selectedTransmissions);
+                                    if (allSelected) {
+                                      filteredTrans.forEach(t => newSet.delete(t));
+                                    } else {
+                                      filteredTrans.forEach(t => newSet.add(t));
+                                    }
+                                    return { ...prev, selectedTransmissions: newSet };
+                                  });
+                                }}
+                                className="w-full text-left px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              >
+                                {filteredTrans.length > 0 && filteredTrans.every(t => commonFilters.selectedTransmissions.has(t)) ? 'Deselect All' : 'Select All'}
+                              </button>
+                              <div className="border-t pt-1">
+                                {filteredTrans.length === 0 ? <div className="text-[10px] text-slate-400 p-2 text-center">No results</div> :
+                                  filteredTrans.map((transmission) => (
+                                    <label
+                                      key={transmission}
+                                      className="flex items-center gap-2 text-[10px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded transition-colors"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={commonFilters.selectedTransmissions.has(transmission)}
+                                        onChange={() => toggleCommonFilter('selectedTransmissions', transmission)}
+                                        className="rounded border-slate-300 w-3 h-3"
+                                      />
+                                      <span className={commonFilters.selectedTransmissions.has(transmission) ? 'text-slate-900 font-medium' : 'text-slate-500'}>
+                                        {transmission}
+                                      </span>
+                                    </label>
+                                  ))}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </details>
-                    </div>
-                  )}
+                        </details>
+                      </div>
+                    );
+                  })()}
 
-                  {uniquePaintTypes.length > 0 && (
-                    <div className="relative" onMouseEnter={cancelCloseDropdown} onMouseLeave={() => closeDropdown(paintDetailsRef)}>
-                      <details ref={paintDetailsRef} className="bg-slate-50 border rounded-lg">
-                        <summary className="px-2 py-1.5 cursor-pointer text-xs list-none flex items-center justify-between">
-                          <span className="text-slate-700 font-semibold">Paint</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-500">{commonFilters.selectedPaintTypes.size}/{uniquePaintTypes.length}</span>
-                            <ChevronDown size={12} className="text-slate-400" />
-                          </div>
-                        </summary>
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
-                          <div className="p-2 space-y-1">
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                toggleSelectAll('selectedPaintTypes', uniquePaintTypes);
-                              }}
-                              className="w-full text-left px-2 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                            >
-                              {uniquePaintTypes.every(p => commonFilters.selectedPaintTypes.has(p)) ? 'Deselect All' : 'Select All'}
-                            </button>
-                            <div className="border-t pt-1">
-                              {uniquePaintTypes.map((paint) => (
-                                <label
-                                  key={paint}
-                                  className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={commonFilters.selectedPaintTypes.has(paint)}
-                                    onChange={() => toggleCommonFilter('selectedPaintTypes', paint)}
-                                    className="rounded border-slate-300 w-3 h-3"
-                                  />
-                                  <span className={commonFilters.selectedPaintTypes.has(paint) ? 'text-slate-900 font-medium' : 'text-slate-500'}>
-                                    {paint}
-                                  </span>
-                                </label>
-                              ))}
+                  {uniquePaintTypes.length > 0 && (() => {
+                    const searchTerm = (filterSearch['paint'] || '').toLowerCase();
+                    const filteredPaint = uniquePaintTypes.filter(p => p.toLowerCase().includes(searchTerm));
+                    return (
+                      <div className="relative" onMouseEnter={cancelCloseDropdown} onMouseLeave={() => closeDropdown(paintDetailsRef)}>
+                        <details ref={paintDetailsRef} className="bg-slate-50 border rounded-lg">
+                          <summary className="px-2 py-1.5 cursor-pointer text-xs list-none flex items-center justify-between">
+                            <span className="text-slate-700 font-semibold">Paint</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-500">{commonFilters.selectedPaintTypes.size}/{uniquePaintTypes.length}</span>
+                              <ChevronDown size={12} className="text-slate-400" />
+                            </div>
+                          </summary>
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
+                            <div className="p-2 space-y-1">
+                              <div className="relative mb-2">
+                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                  type="text"
+                                  placeholder="Search..."
+                                  className="w-full text-[10px] border border-slate-300 rounded p-1 pl-6 outline-none focus:ring-1 focus:ring-blue-500"
+                                  value={filterSearch['paint'] || ''}
+                                  onChange={(e) => setFilterSearch(prev => ({ ...prev, paint: e.target.value }))}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  const allSelected = filteredPaint.every(p => commonFilters.selectedPaintTypes.has(p));
+                                  setCommonFilters(prev => {
+                                    const newSet = new Set(prev.selectedPaintTypes);
+                                    if (allSelected) {
+                                      filteredPaint.forEach(p => newSet.delete(p));
+                                    } else {
+                                      filteredPaint.forEach(p => newSet.add(p));
+                                    }
+                                    return { ...prev, selectedPaintTypes: newSet };
+                                  });
+                                }}
+                                className="w-full text-left px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              >
+                                {filteredPaint.length > 0 && filteredPaint.every(p => commonFilters.selectedPaintTypes.has(p)) ? 'Deselect All' : 'Select All'}
+                              </button>
+                              <div className="border-t pt-1">
+                                {filteredPaint.length === 0 ? <div className="text-[10px] text-slate-400 p-2 text-center">No results</div> :
+                                  filteredPaint.map((paint) => (
+                                    <label
+                                      key={paint}
+                                      className="flex items-center gap-2 text-[10px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded transition-colors"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={commonFilters.selectedPaintTypes.has(paint)}
+                                        onChange={() => toggleCommonFilter('selectedPaintTypes', paint)}
+                                        className="rounded border-slate-300 w-3 h-3"
+                                      />
+                                      <span className={commonFilters.selectedPaintTypes.has(paint) ? 'text-slate-900 font-medium' : 'text-slate-500'}>
+                                        {paint}
+                                      </span>
+                                    </label>
+                                  ))}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </details>
-                    </div>
-                  )}
+                        </details>
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                {uniqueEditions.length > 0 && (
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="relative" onMouseEnter={cancelCloseDropdown} onMouseLeave={() => closeDropdown(editionDetailsRef)}>
-                      <details ref={editionDetailsRef} className="bg-slate-50 border rounded-lg">
-                        <summary className="px-2 py-1.5 cursor-pointer text-xs list-none flex items-center justify-between">
-                          <span className="text-slate-700 font-semibold">Edition</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-500">{commonFilters.selectedEditions.size}/{uniqueEditions.length}</span>
-                            <ChevronDown size={12} className="text-slate-400" />
-                          </div>
-                        </summary>
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
-                          <div className="p-2 space-y-1">
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                toggleSelectAll('selectedEditions', uniqueEditions);
-                              }}
-                              className="w-full text-left px-2 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                            >
-                              {uniqueEditions.every(e => commonFilters.selectedEditions.has(e)) ? 'Deselect All' : 'Select All'}
-                            </button>
-                            <div className="border-t pt-1">
-                              {uniqueEditions.map((edition) => (
-                                <label
-                                  key={edition}
-                                  className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded transition-colors"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={commonFilters.selectedEditions.has(edition)}
-                                    onChange={() => toggleCommonFilter('selectedEditions', edition)}
-                                    className="rounded border-slate-300 w-3 h-3"
-                                  />
-                                  <span className={commonFilters.selectedEditions.has(edition) ? 'text-slate-900 font-medium' : 'text-slate-500'}>
-                                    {edition}
-                                  </span>
-                                </label>
-                              ))}
+                {uniqueEditions.length > 0 && (() => {
+                  const searchTerm = (filterSearch['edition'] || '').toLowerCase();
+                  const filteredEdition = uniqueEditions.filter(e => e.toLowerCase().includes(searchTerm));
+                  return (
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="relative" onMouseEnter={cancelCloseDropdown} onMouseLeave={() => closeDropdown(editionDetailsRef)}>
+                        <details ref={editionDetailsRef} className="bg-slate-50 border rounded-lg">
+                          <summary className="px-2 py-1.5 cursor-pointer text-xs list-none flex items-center justify-between">
+                            <span className="text-slate-700 font-semibold">Edition</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-500">{commonFilters.selectedEditions.size}/{uniqueEditions.length}</span>
+                              <ChevronDown size={12} className="text-slate-400" />
+                            </div>
+                          </summary>
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto" onMouseEnter={cancelCloseDropdown}>
+                            <div className="p-2 space-y-1">
+                              <div className="relative mb-2">
+                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                  type="text"
+                                  placeholder="Search..."
+                                  className="w-full text-[10px] border border-slate-300 rounded p-1 pl-6 outline-none focus:ring-1 focus:ring-blue-500"
+                                  value={filterSearch['edition'] || ''}
+                                  onChange={(e) => setFilterSearch(prev => ({ ...prev, edition: e.target.value }))}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  const allSelected = filteredEdition.every(ed => commonFilters.selectedEditions.has(ed));
+                                  setCommonFilters(prev => {
+                                    const newSet = new Set(prev.selectedEditions);
+                                    if (allSelected) {
+                                      filteredEdition.forEach(ed => newSet.delete(ed));
+                                    } else {
+                                      filteredEdition.forEach(ed => newSet.add(ed));
+                                    }
+                                    return { ...prev, selectedEditions: newSet };
+                                  });
+                                }}
+                                className="w-full text-left px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              >
+                                {filteredEdition.length > 0 && filteredEdition.every(e => commonFilters.selectedEditions.has(e)) ? 'Deselect All' : 'Select All'}
+                              </button>
+                              <div className="border-t pt-1">
+                                {filteredEdition.length === 0 ? <div className="text-[10px] text-slate-400 p-2 text-center">No results</div> :
+                                  filteredEdition.map((edition) => (
+                                    <label
+                                      key={edition}
+                                      className="flex items-center gap-2 text-[10px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded transition-colors"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={commonFilters.selectedEditions.has(edition)}
+                                        onChange={() => toggleCommonFilter('selectedEditions', edition)}
+                                        className="rounded border-slate-300 w-3 h-3"
+                                      />
+                                      <span className={commonFilters.selectedEditions.has(edition) ? 'text-slate-900 font-medium' : 'text-slate-500'}>
+                                        {edition}
+                                      </span>
+                                    </label>
+                                  ))}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </details>
+                        </details>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             );
           })()}
         </div>
 
         {carsWithPricing.length === 2 && globalViewMode === 'chart' ? (
-          <div className="flex-1 bg-white overflow-hidden flex flex-col">
+          <div ref={chartContainerRef} className="flex-1 bg-white overflow-hidden flex flex-col">
             <div className="flex-1 p-1">
               <ChartView
                 rawPricing={getFilteredPricingForCar('1')}
@@ -1710,7 +1828,7 @@ const PriceComparisonPage = () => {
             </div>
           </div>
         ) : (
-          <div className={`flex-1 grid ${carsWithPricing.length === 1 ? 'grid-cols-1' : 'grid-cols-2'} gap-px bg-slate-200 overflow-hidden`}>
+          <div ref={chartContainerRef} className={`flex-1 grid ${carsWithPricing.length === 1 ? 'grid-cols-1' : 'grid-cols-2'} gap-px bg-slate-200 overflow-hidden`}>
             {cars.map(car => {
               const filteredPricing = getFilteredPricingForCar(car.id);
               const chartColor = car.id === '1' ? '#2563eb' : '#dc2626';

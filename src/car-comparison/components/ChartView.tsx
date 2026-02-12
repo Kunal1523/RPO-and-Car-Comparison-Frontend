@@ -724,7 +724,8 @@ const ChartView: React.FC<ChartViewProps> = ({
             <YAxis
               type="number"
               dataKey="y"
-              domain={[priceRange.min * 0.95, priceRange.max * 1.01]}
+              domain={[1000000, 2100000]}
+              ticks={[1000000, 1100000, 1200000, 1300000, 1400000, 1500000, 1600000, 1700000, 1800000, 1900000, 2000000, 2100000]}
               tick={{ fontSize: 10 }}
               tickFormatter={(val) => formatPriceShort(val)}
               width={60}

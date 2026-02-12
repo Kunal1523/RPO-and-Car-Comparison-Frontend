@@ -160,7 +160,26 @@ export const getDraftRegList = (plan: PlanData): string[] => {
   return [...order, ...missing];
 };
 
+export const getDraftModelList = (plan: PlanData): string[] => {
+  const modelsFromCells = new Set<string>();
+  Object.values(plan.regulationCells || {}).forEach((vals) => {
+    (vals || []).forEach(v => {
+      if (isModel(v)) modelsFromCells.add(v.trim());
+    });
+  });
+
+  const order = plan.modelOrder || [];
+  const missing = Array.from(modelsFromCells).filter((m) => !order.includes(m)).sort();
+
+  return [...order, ...missing];
+};
+
 export const normalizeRegOrder = (plan: PlanData): PlanData => {
   const list = getDraftRegList(plan);
   return { ...plan, regOrder: list };
+};
+
+export const normalizeModelOrder = (plan: PlanData): PlanData => {
+  const list = getDraftModelList(plan);
+  return { ...plan, modelOrder: list };
 };

@@ -18,6 +18,7 @@ export interface PlanData {
   // We'll store a list of strings per cell to allow multiple models in one month
   regulationCells: Record<string, string[]>;
   regOrder?: string[];
+  modelOrder?: string[];
   customModels?: string[];
   customRegulations?: string[];
   layout?: {
