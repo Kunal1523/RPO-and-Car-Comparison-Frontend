@@ -86,24 +86,34 @@ export const validatePlanning = (
 ) => {
   const missingByReg: Record<string, string[]> = {};
 
-  if (!allModels || allModels.length === 0) return missingByReg;
-
-  const allowed = new Set(allModels.map(m => m.trim()));
+  const allowed = new Set((allModels || []).map(m => (m || "").trim()));
 
   regulations.forEach(regId => {
-    const plannedModelsInReg = new Set<string>();
+    const activePlanned = new Set<string>();
+    const inactivePlanned = new Set<string>();
 
-    Object.entries(planData.regulationCells).forEach(([key, values]) => {
+    Object.entries(planData.regulationCells || {}).forEach(([key, values]) => {
       if (key.startsWith(`${regId}|`)) {
-        values.forEach(v => {
+        (values || []).forEach(v => {
           const vv = (v || "").trim();
-          if (isModel(vv) && allowed.has(vv)) plannedModelsInReg.add(vv);
+          if (!isModel(vv)) return;
+          if (allowed.has(vv)) {
+            activePlanned.add(vv);
+          } else {
+            inactivePlanned.add(vv);
+          }
         });
       }
     });
 
-    const missing = allModels.filter(m => !plannedModelsInReg.has(m));
-    if (missing.length > 0) missingByReg[regId] = missing;
+    const missing = (allModels || []).filter(m => !activePlanned.has(m));
+    const deprecated = Array.from(inactivePlanned);
+
+    // Combine both: Missing active models AND planned inactive models (Archived/Deleted)
+    const totalAlerts = [...missing, ...deprecated];
+    if (totalAlerts.length > 0) {
+      missingByReg[regId] = totalAlerts;
+    }
   });
 
   return missingByReg;

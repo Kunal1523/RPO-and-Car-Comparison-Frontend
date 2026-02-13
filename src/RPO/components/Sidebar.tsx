@@ -63,6 +63,8 @@ interface SidebarProps {
     onRestoreRegulation: (name: string) => void;
     onPermanentDeleteModel: (name: string) => void;
     onPermanentDeleteRegulation: (name: string) => void;
+    onAddMasterModel: (name: string) => void;
+    onAddMasterRegulation: (name: string) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -101,7 +103,9 @@ const Sidebar: React.FC<SidebarProps> = ({
     onRestoreModel,
     onRestoreRegulation,
     onPermanentDeleteModel,
-    onPermanentDeleteRegulation
+    onPermanentDeleteRegulation,
+    onAddMasterModel,
+    onAddMasterRegulation
 }) => {
     const navigate = useNavigate();
     const [editingDraftId, setEditingDraftId] = React.useState<string | null>(null);
@@ -203,8 +207,11 @@ const Sidebar: React.FC<SidebarProps> = ({
             return;
         }
 
-        // Add immediately with default stringToColor
-        onUpdateCustomLists([...customModels, name], customRegulations);
+        // Add via API
+        onAddMasterModel(name);
+
+        // Optimistically set color locally? Or App handles it via refresh? 
+        // App handles adding to local list, but color might need setting if not default.
         onSetItemColor(name, stringToColor(name));
         setNewCustomModel("");
     };
@@ -240,8 +247,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             return;
         }
 
-        // Add immediately with default stringToColor
-        onUpdateCustomLists(customModels, [...customRegulations, name]);
+        // Add via API
+        onAddMasterRegulation(name);
+
         onSetItemColor(name, stringToColor(name));
         setNewCustomReg("");
     };
@@ -405,8 +413,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                                 <button
                                     onClick={() => setShowArchived(false)}
                                     className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all ${!showArchived
-                                            ? 'bg-blue-500 text-white shadow-sm'
-                                            : 'text-blue-200 hover:text-white hover:bg-white/5'
+                                        ? 'bg-blue-500 text-white shadow-sm'
+                                        : 'text-blue-200 hover:text-white hover:bg-white/5'
                                         }`}
                                 >
                                     Active
@@ -414,8 +422,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                                 <button
                                     onClick={() => setShowArchived(true)}
                                     className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all ${showArchived
-                                            ? 'bg-amber-500 text-white shadow-sm'
-                                            : 'text-blue-200 hover:text-white hover:bg-white/5'
+                                        ? 'bg-amber-500 text-white shadow-sm'
+                                        : 'text-blue-200 hover:text-white hover:bg-white/5'
                                         }`}
                                 >
                                     <Archive size={10} />

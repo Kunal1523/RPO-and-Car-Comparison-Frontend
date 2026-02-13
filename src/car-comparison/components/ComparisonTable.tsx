@@ -852,7 +852,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
   const [expandAll, setExpandAll] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [hiddenVehicles, setHiddenVehicles] = useState<Set<number>>(new Set());
-  const [isEditingEnabled, setIsEditingEnabled] = useState(true);
+  const [isEditingEnabled, setIsEditingEnabled] = useState(false);
 
   // Mock Edit Handler
   const handleEditClick = (featureName: string, variant: string, currentValue: string) => {
