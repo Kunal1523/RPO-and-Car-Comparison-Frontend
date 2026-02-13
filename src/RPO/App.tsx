@@ -129,8 +129,9 @@ const App: React.FC = () => {
 
   // Point 3: Global Library uses Master State + currentPlan
   const globalLibrary = useMemo(() => {
-    const modelsSet = new Set([...masterModels, ...(currentPlan.customModels || [])]);
-    const regsSet = new Set([...masterRegs, ...(currentPlan.customRegulations || [])]);
+    // FRESH ACTIVE LIST: strictly based on API master lists, independent of draft data.
+    const modelsSet = new Set(masterModels);
+    const regsSet = new Set(masterRegs);
 
     const colorsMap: Record<string, string> = {};
     const normalizeKey = (s: string) => (s || "").replace(/\s+/g, ' ').trim().toLowerCase();
@@ -149,11 +150,12 @@ const App: React.FC = () => {
     applyToMap(currentPlan.itemColors || {});
 
     return {
-      models: Array.from(modelsSet).sort(),
-      regs: Array.from(regsSet).sort(),
+      // Filter out archived items from the active list view
+      models: Array.from(modelsSet).filter(m => !archivedModels.includes(m)).sort(),
+      regs: Array.from(regsSet).filter(r => !archivedRegs.includes(r)).sort(),
       colors: colorsMap
     };
-  }, [masterModels, masterRegs, masterColors, currentPlan]);
+  }, [masterModels, masterRegs, masterColors, currentPlan, archivedModels, archivedRegs]);
 
   // Final drilldown modal
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
@@ -329,16 +331,8 @@ const App: React.FC = () => {
 
       const processContent = (content: PlanData | null | undefined) => {
         if (!content) return;
-        (content.customModels || []).forEach(m => {
-          const norm = normalize(m);
-          const low = norm.toLowerCase();
-          if (low && !mModelsCanon.has(low)) mModelsCanon.set(low, norm);
-        });
-        (content.customRegulations || []).forEach(r => {
-          const norm = normalize(r);
-          const low = norm.toLowerCase();
-          if (low && !mRegsCanon.has(low)) mRegsCanon.set(low, norm);
-        });
+        // TRUST API for models/regs casing and presence. 
+        // Only scrape colors from drafts to preserve them.
         if (content.itemColors) {
           Object.entries(content.itemColors).forEach(([name, color]) => {
             const low = normalize(name).toLowerCase();
@@ -360,10 +354,24 @@ const App: React.FC = () => {
         processContent(f.data);
       }
 
+      // 3. Process API fetched active lists (Source of truth)
+      (Array.isArray(m) ? m : []).forEach((name: string) => {
+        const norm = normalize(name);
+        const low = norm.toLowerCase();
+        // API results should be available even if not in any draft
+        if (low && !mModelsCanon.has(low)) mModelsCanon.set(low, norm);
+      });
+
+      (Array.isArray(r) ? r : []).forEach((name: string) => {
+        const norm = normalize(name);
+        const low = norm.toLowerCase();
+        if (low && !mRegsCanon.has(low)) mRegsCanon.set(low, norm);
+      });
+
       // Populate master lists with original casing (first found), EXCLUDING archived items
       const modelsList = Array.from(mModelsCanon.values());
-      const archivedModelsSet = new Set((Array.isArray(am) ? am : []).map(m => normalize(m))); // Use passed-in 'am'
-      setMasterModels(modelsList.filter(m => !archivedModelsSet.has(normalize(m))));
+      const archivedModelsSet = new Set((Array.isArray(am) ? am : []).map(ma => normalize(ma)));
+      setMasterModels(modelsList.filter(ma => !archivedModelsSet.has(normalize(ma))));
 
       const regsList = Array.from(mRegsCanon.values());
       const archivedRegsSet = new Set((Array.isArray(ar) ? ar : []).map(r => normalize(r))); // Use passed-in 'ar'
@@ -756,12 +764,12 @@ const App: React.FC = () => {
       await api.archiveModel(name, userEmail);
       setMasterModels(prev => prev.filter(m => m !== name));
       setArchivedModels(prev => prev.includes(name) ? prev : [...prev, name]);
-      // Update current plan if it's in custom list or order
-      setCurrentPlan(prev => ({
-        ...prev,
-        customModels: (prev.customModels || []).filter(m => m !== name),
-        modelOrder: (prev.modelOrder || []).filter(m => m !== name)
-      }));
+
+      // Do NOT update currentPlan. 
+      // 1. If it's in the grid, we want to keep it (now marked as archived via icons).
+      // 2. If it's in the sidebar list, globalLibrary filtering will hide it automatically.
+      // 3. This avoids triggering "Unsaved Changes".
+
     } catch (e) {
       console.error(e);
       alert("Failed to archive model");
@@ -774,11 +782,10 @@ const App: React.FC = () => {
       await api.archiveRegulation(name, userEmail);
       setMasterRegs(prev => prev.filter(r => r !== name));
       setArchivedRegs(prev => prev.includes(name) ? prev : [...prev, name]);
-      // Update current plan if it's in custom list
-      setCurrentPlan(prev => ({
-        ...prev,
-        customRegulations: (prev.customRegulations || []).filter(r => r !== name)
-      }));
+
+      // Do NOT update currentPlan.
+      // Same logic as handleArchiveModel.
+
     } catch (e) {
       console.error(e);
       alert("Failed to archive regulation");
@@ -833,6 +840,51 @@ const App: React.FC = () => {
     } catch (e) {
       console.error(e);
       alert("Failed to permanently delete regulation");
+    }
+  }, [userEmail]);
+
+  // -----------------------
+  // Add Model/Regulation (Independent of Draft Save)
+  // -----------------------
+  const handleAddMasterModel = useCallback(async (name: string) => {
+    if (!userEmail) return;
+    try {
+      await api.addModel(name, userEmail);
+
+      // Update local master list
+      setMasterModels(prev => {
+        if (prev.includes(name)) return prev;
+        return [...prev, name].sort();
+      });
+
+      // Do NOT update currentPlan.customModels.
+      // The Sidebar uses globalLibrary.models which merges masterModels + currentPlan.customModels.
+      // By updating masterModels only, the Sidebar will show the new item, 
+      // but currentPlan remains unchanged, thus isDraftDirty remains false.
+
+    } catch (e) {
+      console.error(e);
+      alert("Failed to add model to database");
+    }
+  }, [userEmail]);
+
+  const handleAddMasterRegulation = useCallback(async (name: string) => {
+    if (!userEmail) return;
+    try {
+      await api.addRegulation(name, userEmail);
+
+      // Update local master list
+      setMasterRegs(prev => {
+        if (prev.includes(name)) return prev;
+        return [...prev, name].sort();
+      });
+
+      // Do NOT update currentPlan.customRegulations.
+      // Same logic as above: avoid triggering unsaved changes.
+
+    } catch (e) {
+      console.error(e);
+      alert("Failed to add regulation to database");
     }
   }, [userEmail]);
 
@@ -903,15 +955,11 @@ const App: React.FC = () => {
 
   const missingRegulations = useMemo(() => {
     if (activeTab !== 'Draft') return [];
-    // "Missing" means they are in the sidebar list (sidebarRegulations) but NOT used in the table (getDraftRegList).
-    // Warning: sidebarRegulations depends on getDraftRegList.
-    // sidebarRegulations = tableRegs U customRegs.
-    // So missing = (tableRegs U customRegs) - tableRegs = customRegs - tableRegs.
+    // "Missing" means they are in the GLobal Active List (globalLibrary.regs) 
+    // but NOT used in the table grid (getDraftRegList).
     const tableRegs = new Set(getDraftRegList(activePlan));
-    // We re-calculate sidebar list or just use customRegulations prop directly? 
-    // sidebarRegulations is memoized.
-    return sidebarRegulations.filter(r => !tableRegs.has(r));
-  }, [activePlan, activeTab, sidebarRegulations]);
+    return globalLibrary.regs.filter(r => !tableRegs.has(r));
+  }, [activePlan, activeTab, globalLibrary.regs]);
 
   // -----------------------
   // Models per tab
@@ -929,8 +977,10 @@ const App: React.FC = () => {
   // Compliance
   // -----------------------
   const draftCompliance = useMemo(() => {
-    return validatePlanning(currentPlan, draftRegulations, draftModels);
-  }, [currentPlan, draftRegulations, draftModels]);
+    // track compliance against ALL ACTIVE REGULATIONS + whatever is in the draft
+    const allRegs = Array.from(new Set([...globalLibrary.regs, ...draftRegulations]));
+    return validatePlanning(currentPlan, allRegs, globalLibrary.models);
+  }, [currentPlan, globalLibrary.regs, draftRegulations, globalLibrary.models]);
 
   const validationForSidebar = activeTab === "Final" ? finalCompliance : draftCompliance;
 
@@ -975,8 +1025,8 @@ const App: React.FC = () => {
       updatedAt: Date.now(),
       data: {
         ...currentPlan,
-        customModels: masterModels,
-        customRegulations: masterRegs,
+        customModels: [],
+        customRegulations: [],
         itemColors: masterColors
       },
     };
@@ -1014,8 +1064,8 @@ const App: React.FC = () => {
       updatedAt: Date.now(),
       data: {
         ...currentPlan,
-        customModels: masterModels,
-        customRegulations: masterRegs,
+        customModels: [],
+        customRegulations: [],
         itemColors: masterColors
       },
     };
@@ -1074,10 +1124,11 @@ const App: React.FC = () => {
 
   const loadDraft = (draft: Draft) => {
     const data = typeof draft.data === 'string' ? JSON.parse(draft.data as any) : draft.data;
+    // INDEPENDENT LOADING: Don't let old draft data infect the global master list view.
     const mergedPlan = {
       ...data,
-      customModels: Array.from(new Set([...masterModels, ...(data.customModels || [])])),
-      customRegulations: Array.from(new Set([...masterRegs, ...(data.customRegulations || [])])),
+      customModels: [], // Sidebar will use global master list via globalLibrary
+      customRegulations: [],
       itemColors: { ...masterColors, ...(data.itemColors || {}) },
       modelOrder: data.modelOrder || []
     };
@@ -1387,6 +1438,8 @@ const App: React.FC = () => {
         onRestoreRegulation={handleRestoreRegulation}
         onPermanentDeleteModel={handlePermanentDeleteModel}
         onPermanentDeleteRegulation={handlePermanentDeleteRegulation}
+        onAddMasterModel={handleAddMasterModel}
+        onAddMasterRegulation={handleAddMasterRegulation}
       />
 
       <main className="flex-grow flex flex-col overflow-hidden relative">
@@ -1567,11 +1620,17 @@ const App: React.FC = () => {
 
             <ComplianceSidebar
               isOpen={rightSidebarOpen}
-              regulations={regulationsForUI}
+              // For Draft tab, show ALL active regulations plus any regulations currently implemented in the draft
+              regulations={activeTab === "Draft" ? Array.from(new Set([...globalLibrary.regs, ...draftRegulations])).sort() : regulationsForUI}
               validation={validationForSidebar}
               activeTab={activeTab}
               deleteRegulation={activeTab === "Draft" ? deleteRegulationDraftOnly : (() => { })}
               missingRegulations={missingRegulations}
+              // NEW: Pass archive/active lists for status indicators
+              archivedRegulations={archivedRegs}
+              archivedModels={archivedModels}
+              allActiveRegulations={masterRegs}
+              allActiveModels={masterModels}
             />
           </div>
         </div>

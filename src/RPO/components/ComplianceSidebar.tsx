@@ -10,6 +10,11 @@ interface ComplianceSidebarProps {
   activeTab: NavTab;
   deleteRegulation?: (reg: string) => void;
   missingRegulations?: string[]; // Regulations in sidebar list but NOT in table data
+  // New props for status
+  archivedRegulations?: string[];
+  archivedModels?: string[];
+  allActiveRegulations?: string[];
+  allActiveModels?: string[];
 }
 
 const ComplianceSidebar: React.FC<ComplianceSidebarProps> = ({
@@ -19,7 +24,26 @@ const ComplianceSidebar: React.FC<ComplianceSidebarProps> = ({
   activeTab,
   deleteRegulation,
   missingRegulations = [],
+  archivedRegulations = [],
+  archivedModels = [],
+  allActiveRegulations = [],
+  allActiveModels = [],
 }) => {
+  const norm = (s: string) => (s || "").replace(/\s+/g, ' ').trim().toLowerCase();
+
+  const getStatus = (name: string, type: 'model' | 'reg') => {
+    const n = norm(name);
+    const archived = type === 'reg' ? archivedRegulations : archivedModels;
+    const active = type === 'reg' ? allActiveRegulations : allActiveModels;
+
+    const isArchived = archived.some(a => norm(a) === n);
+    const isActive = active.some(a => norm(a) === n);
+
+    if (isArchived) return 'archived';
+    if (!isActive) return 'deleted';
+    return 'active';
+  };
+
   return (
     <div
       className={`bg-white border border-gray-200 rounded-xl flex flex-col shadow-sm transition-all duration-300 ease-in-out ${isOpen ? "w-80 p-5 opacity-100" : "w-0 p-0 opacity-0 overflow-hidden border-none"
@@ -52,20 +76,35 @@ const ComplianceSidebar: React.FC<ComplianceSidebarProps> = ({
                 </button>
               )}
 
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-sm text-gray-700 truncate mr-2">{reg}</span>
+              <div className="flex items-start justify-between mb-1 gap-2">
+                <span className="font-bold text-sm text-gray-700 leading-tight" title={reg}>{reg}</span>
                 {isDone ? (
-                  <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
+                  <CheckCircle className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
                 ) : (
-                  <span className="text-[9px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">
+                  <span className="text-[9px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold uppercase shrink-0 mt-0.5">
                     Incomplete
                   </span>
                 )}
               </div>
 
+              {/* Status Badges Row */}
+              <div className="flex flex-wrap gap-1 mb-2">
+                {(() => {
+                  const status = getStatus(reg, 'reg');
+                  const isMissingFromTable = missingRegulations.some(m => norm(m) === norm(reg));
+
+                  const badges = [];
+                  if (status === 'archived') badges.push(<span key="archived" className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold" title="Archived">ARCHIVED</span>);
+                  if (status === 'deleted') badges.push(<span key="deleted" className="text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold" title="Permanently Deleted">DELETED</span>);
+                  if (activeTab === "Draft" && isMissingFromTable) badges.push(<span key="notinuse" className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold" title="Not yet added to draft grid">NOT IN USE</span>);
+
+                  return badges;
+                })()}
+              </div>
+
               {!isDone && (
                 <div className="mt-2">
-                  <p className="text-[10px] text-gray-500 mb-1 font-medium">Missing Models:</p>
+                  <p className="text-[10px] text-gray-500 mb-1 font-medium">Compliance Issues:</p>
                   <div className="flex flex-wrap gap-1">
                     {missing.map((m) => (
                       <span
@@ -74,6 +113,12 @@ const ComplianceSidebar: React.FC<ComplianceSidebarProps> = ({
                         style={{ backgroundColor: stringToColor(m) }}
                       >
                         {m}
+                        {(() => {
+                          const status = getStatus(m, 'model');
+                          if (status === 'archived') return <span className="ml-1 text-[8px] text-amber-600">(A)</span>;
+                          if (status === 'deleted') return <span className="ml-1 text-[8px] text-red-600">(D)</span>;
+                          return null;
+                        })()}
                       </span>
                     ))}
                   </div>
@@ -85,23 +130,7 @@ const ComplianceSidebar: React.FC<ComplianceSidebarProps> = ({
       </div>
 
       <div className="mt-4 pt-4 border-t border-gray-100 whitespace-nowrap">
-        {/* Missing Regulations Box (Draft Only) */}
-        {activeTab === "Draft" && missingRegulations.length > 0 && (
-          <div className="mt-1">
-            <h4 className="text-[10px] text-gray-400 uppercase font-black mb-2 flex items-center gap-1">
-              <AlertCircle className="w-3 h-3 text-red-500" />
-              Missing Regulations
-            </h4>
-            <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-lg p-3 space-y-1">
-              <p className="font-medium mb-1">Not used in plan:</p>
-              <ul className="list-disc list-inside space-y-0.5">
-                {missingRegulations.map(r => (
-                  <li key={r} className="truncate">{r}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
+        {/* Box removed - now showing as 'NOT IN USE' badges in the list above */}
       </div>
     </div>
   );
