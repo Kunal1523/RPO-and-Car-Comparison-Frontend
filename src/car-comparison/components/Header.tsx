@@ -61,12 +61,12 @@
 // src/components/Header.tsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, BarChart3, GitCompare, Upload, ArrowLeft } from 'lucide-react';
+import { LogOut, BarChart3, GitCompare, Upload, ArrowLeft, Layers } from 'lucide-react';
 import logo from '../Images/amlgolabslogowhite.png';
 
 interface HeaderProps {
-  currentPage?: 'comparison' | 'pricing';
-  onPageChange?: (page: 'comparison' | 'pricing') => void;
+  currentPage?: 'comparison' | 'pricing' | 'stackup';
+  onPageChange?: (page: 'comparison' | 'pricing' | 'stackup') => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChange }) => {
@@ -143,6 +143,17 @@ const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChang
             >
               <BarChart3 size={16} />
               Pricing Comparison
+            </button>
+
+            <button
+              onClick={() => onPageChange('stackup')}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${currentPage === 'stackup'
+                ? 'bg-blue-900 text-white shadow'
+                : 'bg-white text-blue-900 hover:bg-blue-100'
+                }`}
+            >
+              <Layers size={16} />
+              Feature Stack-Up
             </button>
           </div>
           <div id="header-action-bar" className="flex items-center gap-3">

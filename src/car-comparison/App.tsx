@@ -319,10 +319,11 @@ import ComparisonTable from './components/ComparisonTable';
 import NewsButtonCards from './components/NewsButtonCards';
 import LoginPage from './components/LoginPage';
 import PricingComparisonPage from './components/PricingComparisonPage';
+import FeatureStackUpPage from './components/FeatureStackUpPage';
 import { ComparisonResponse, SelectionState, NewsResponse } from './types';
 import { fetchComparisonDetails, fetchCarNews } from './services/api';
 
-type PageView = 'comparison' | 'pricing';
+type PageView = 'comparison' | 'pricing' | 'stackup';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -477,6 +478,15 @@ const App: React.FC = () => {
       <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
         <Header currentPage={currentPage} onPageChange={setCurrentPage} />
         <PricingComparisonPage />
+      </div>
+    );
+  }
+
+  if (currentPage === 'stackup') {
+    return (
+      <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
+        <Header currentPage={currentPage} onPageChange={setCurrentPage} />
+        <FeatureStackUpPage />
       </div>
     );
   }
