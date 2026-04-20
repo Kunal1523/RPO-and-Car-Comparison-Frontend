@@ -872,19 +872,21 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
     const variants = data.columns.slice(1);
 
-    data.data.forEach((row) => {
+    data.data.forEach((row: any) => {
       const featureText = row.feature;
       const ftLower = featureText.trim().toLowerCase();
+      const category = row.category || 'Additional Features';
 
-      const values: { [key: string]: string } = {};
+      const values: { [key: string]: any } = {};
       const isPriceRow = ftLower === 'price value';
 
       variants.forEach((v) => {
         const val = row[v];
 
-        // Handle Price Value with nested pricing object
         if (isPriceRow && typeof val === 'object' && val !== null && 'pricing' in val) {
-          // Store the entire pricing object for later rendering
+          values[v] = val;
+        } else if (val && typeof val === 'object') {
+          // This is our new sub_variant_values map
           values[v] = val;
         } else if (typeof val === 'string') {
           values[v] = val && val.trim() !== '' ? val : NO_INFO;
@@ -893,22 +895,24 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
         }
       });
 
-      const hasAnyInfo = Object.values(values).some((val) => val !== NO_INFO);
+      const hasAnyInfo = Object.values(values).some((val) => {
+        if (typeof val === 'object' && val !== null) {
+          if ('pricing' in val) return true;
+          return Object.values(val as object).some(v => v && String(v).trim() !== '' && v !== NO_INFO);
+        }
+        return val !== NO_INFO;
+      });
+
       if (!hasAnyInfo) return;
 
-      // Add Price Value and Variant Launched to price group
       if (isPriceRow || ftLower.startsWith('variant launched')) {
         priceGroup.push({ featureName: featureText, values });
         return;
       }
 
-      const separatorIndex = featureText.indexOf(' - ');
-      if (separatorIndex !== -1) {
-        const category = featureText.substring(0, separatorIndex).trim();
-        const featureName = featureText.substring(separatorIndex + 3).trim();
-
+      if (category && category !== 'Additional Features') {
         if (!groupMap[category]) groupMap[category] = [];
-        groupMap[category].push({ featureName, values });
+        groupMap[category].push({ featureName: featureText, values });
       } else {
         additionalGroup.push({ featureName: featureText, values });
       }
@@ -920,7 +924,10 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
     Object.keys(groupMap).forEach((key) => {
       const items = groupMap[key];
       const hasDifferences = items.some(item => {
-        const variantValues = variants.map(v => item.values[v]);
+        const variantValues = variants.map(v => {
+          const val = item.values[v];
+          return typeof val === 'object' ? JSON.stringify(val) : val;
+        });
         const nonNoInfoValues = variantValues.filter(v => v !== NO_INFO);
         const uniqueVals = new Set(nonNoInfoValues);
         return uniqueVals.size > 1;
@@ -931,7 +938,10 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
     if (additionalGroup.length > 0) {
       const hasDifferences = additionalGroup.some(item => {
-        const variantValues = variants.map(v => item.values[v]);
+        const variantValues = variants.map(v => {
+          const val = item.values[v];
+          return typeof val === 'object' ? JSON.stringify(val) : val;
+        });
         const nonNoInfoValues = variantValues.filter(v => v !== NO_INFO);
         const uniqueVals = new Set(nonNoInfoValues);
         return uniqueVals.size > 1;
@@ -941,11 +951,11 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
     const CATEGORY_ORDER = [
       'Price & Basic Info',
+      'Transmission',
+      'Fuel',
       'Brake', 'Brakes',
       'Dimension', 'Dimensions',
       'Engine',
-      'Fuel',
-      'Transmission',
       'Suspension', 'Suspensions',
       'Tyre', 'Tyres',
       'Exterior',
@@ -1507,7 +1517,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                             if (hiddenVehicles.has(vIdx)) return null;
 
                             const value = item.values[v];
-                            const isPriceCell = isPriceRow && value && typeof value === 'object' && value !== null && 'pricing' in (value as object);
+                            const isPriceCell = isPriceRow && value && typeof value === 'object' && (value as any).is_price_class;
 
                             return (
                               <div
@@ -1516,57 +1526,100 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                                   }`}
                               >
                                 {isPriceCell ? (
-                                  <div className="space-y-1">
-                                    {((item.values[v] as any)?.pricing?.prices || [])
-                                      .map((price: any) => {
-                                        const parts = [
-                                          price.fuel_type,
-                                          price.engine_type,
-                                          price.transmission_type,
-                                          price.paint_type,
-                                          price.edition
-                                        ].filter(Boolean);
+                                  <div className="space-y-2">
+                                    {(value as any).sub_variants.map((sv: any, svIdx: number) => (
+                                      <div key={svIdx} className="border-b border-slate-200 last:border-0 pb-1.5 last:pb-0">
+                                        <div className="text-[8px] text-slate-400 font-bold uppercase tracking-tight mb-0.5">
+                                          {sv.name}
+                                        </div>
+                                        <div className="space-y-1">
+                                          {(sv.pricing || []).map((price: any, pIdx: number) => {
+                                            const parts = [
+                                              price.fuel_type,
+                                              price.engine_type,
+                                              price.transmission_type,
+                                              price.paint_type,
+                                              price.edition
+                                            ].filter(Boolean);
+                                            const label = parts.join(' ') || 'Standard';
+                                            const formattedPrice = new Intl.NumberFormat('en-IN', {
+                                              style: 'currency',
+                                              currency: price.currency || 'INR',
+                                              maximumFractionDigits: 0
+                                            }).format(price.ex_showroom_price);
 
-                                        const label = parts.join(' ') || 'Standard';
-
-                                        return { price, label };
-                                      })
-                                      .sort((a: { price: any; label: string }, b: { price: any; label: string }) => a.label.localeCompare(b.label))
-                                      .map(({ price, label }: { price: any; label: string }, pIdx: number) => {
-                                        const formattedPrice = new Intl.NumberFormat('en-IN', {
-                                          style: 'currency',
-                                          currency: price.currency || 'INR',
-                                          maximumFractionDigits: 0
-                                        }).format(price.ex_showroom_price);
-
-                                        return (
-                                          <div key={pIdx} className="flex flex-col xl:flex-row xl:items-center xl:justify-between border-b border-slate-200 pb-1 last:border-0 last:pb-0 gap-0.5">
-                                            <span className="text-[9px] text-slate-600 font-medium uppercase tracking-wide break-words">
-                                              <HighlightText text={label} highlight={searchTerm} />
-                                            </span>
-                                            <span className="text-xs font-bold text-green-700 whitespace-nowrap">
-                                              <HighlightText text={formattedPrice} highlight={searchTerm} />
-                                            </span>
-                                          </div>
-                                        );
-                                      })}
+                                            return (
+                                              <div key={pIdx} className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-0.5">
+                                                <span className="text-[9px] text-slate-600 font-medium uppercase tracking-wide">
+                                                  <HighlightText text={label} highlight={searchTerm} />
+                                                </span>
+                                                <span className="text-xs font-bold text-green-700 whitespace-nowrap">
+                                                  <HighlightText text={formattedPrice} highlight={searchTerm} />
+                                                </span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
                                 ) : (
-                                  <div className="flex items-center justify-between gap-1 group/edit min-h-[20px]">
-                                    <span className="flex-1">
-                                      <HighlightText text={String(item.values[v])} highlight={searchTerm} />
-                                    </span>
-                                    {isEditingEnabled && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleEditClick(item.featureName, v, String(item.values[v]));
-                                        }}
-                                        className="p-1 text-slate-400 hover:text-blue-600 rounded-full hover:bg-slate-100 transition-colors opacity-0 group-hover/edit:opacity-100 focus:opacity-100 flex-shrink-0"
-                                        title="Edit Value"
-                                      >
-                                        <Edit2 size={12} />
-                                      </button>
+                                  <div className="flex flex-col gap-1 w-full py-1">
+                                    {typeof value === 'string' ? (
+                                      <div className="text-slate-400 italic text-[9px]">{value}</div>
+                                    ) : (
+                                      (() => {
+                                        const grouped: Record<string, string[]> = {};
+                                        Object.entries(value as object).forEach(([name, val]) => {
+                                          const dVal = String(val || NO_INFO);
+                                          if (!grouped[dVal]) grouped[dVal] = [];
+                                          grouped[dVal].push(name);
+                                        });
+
+                                        return Object.entries(grouped).map(([displayVal, names], gIdx) => {
+                                          const isNoInfo = displayVal === NO_INFO;
+                                          const cleanNames = names.map(name => {
+                                            let clean = name;
+                                            if (v && clean.toLowerCase().startsWith(v.toLowerCase())) {
+                                              clean = clean.substring(v.length).trim();
+                                              if (clean.startsWith('-')) clean = clean.substring(1).trim();
+                                            }
+                                            return clean || name;
+                                          });
+                                          const combinedNames = cleanNames.join(' / ');
+
+                                          return (
+                                            <div key={gIdx} className={`flex items-start gap-1.5 ${isNoInfo ? 'text-slate-400 italic' : 'text-slate-900'}`}>
+                                              {!isNoInfo && <span className="text-blue-500 mt-0.5 whitespace-nowrap">•</span>}
+                                              <div className="flex-1 flex flex-wrap items-center gap-1 min-h-[16px]">
+                                                {!isNoInfo && (
+                                                  <>
+                                                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight whitespace-nowrap">
+                                                      <HighlightText text={combinedNames} highlight={searchTerm} />
+                                                    </span>
+                                                    <span className="text-slate-600">→</span>
+                                                  </>
+                                                )}
+                                                <span className={isNoInfo ? 'text-[9px]' : 'font-medium'}>
+                                                  <HighlightText text={displayVal} highlight={searchTerm} />
+                                                </span>
+                                                {isEditingEnabled && !isNoInfo && (
+                                                  <button
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleEditClick(item.featureName, `${v} (${combinedNames})`, displayVal);
+                                                    }}
+                                                    className="p-0.5 text-slate-400 hover:text-blue-600 rounded-full hover:bg-slate-100 transition-colors opacity-0 group-hover/edit:opacity-100 focus:opacity-100 ml-auto"
+                                                    title="Edit Value"
+                                                  >
+                                                    <Edit2 size={10} />
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        });
+                                      })()
                                     )}
                                   </div>
                                 )}

@@ -239,8 +239,14 @@ import {
   DropdownOption,
   NewsResponse,
   Brand,
-  Variant
+  Variant,
+  CompactVariant,
+  VariantClassData,
+  VariantClassDetailsResponse,
+  ModelPlan,
+  PlanFeature
 } from '../types';
+
 
 const BASE_API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -299,6 +305,7 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
     const versions: Record<string, DropdownOption[]> = {};
     const variants: Record<string, string[]> = {};
     const variantIds: Record<string, string> = {}; // ✅ NEW: Store variant IDs
+    const carIds: Record<string, string> = {}; // ✅ NEW: Store car IDs
 
     // Step 2: For each car, fetch variants
     for (const brand of brands) {
@@ -312,6 +319,9 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
         if (!models[brand.brand_name].includes(car.car_name)) {
           models[brand.brand_name].push(car.car_name);
         }
+
+        const bmKey = `${brand.brand_name}__${car.car_name}`;
+        carIds[bmKey] = car.car_id; // ✅ Store car_id
 
         // Fetch variants for this car
         try {
@@ -374,6 +384,7 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
       versions,
       variants,
       variantIds,
+      carIds,
     };
 
   } catch (error) {
@@ -382,11 +393,9 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
   }
 };
 
-// ============== FETCH COMPARISON DETAILS (NEW API) ==============
-
 /**
- * NEW: Uses /api/compare/variants endpoint
- * Accepts multiple selections (2-5 cars)
+ * UPDATED: Uses /api/compare/classes endpoint
+ * Accepts multiple selections (2-5 classes)
  */
 export const fetchComparisonDetails = async (
   selections: SelectionState[]
@@ -396,27 +405,23 @@ export const fetchComparisonDetails = async (
     throw new Error('At least 2 vehicles required for comparison');
   }
 
-  if (selections.length > 5) {
-    throw new Error('Maximum 5 vehicles can be compared');
-  }
+  // Extract class names from selections (Sidebar now stores class name in 'variant' field)
+  const variantClasses = selections
+    .map(sel => sel.variant)
+    .filter(name => name);
 
-  // Extract variant IDs from selections
-  const variantIds = selections
-    .map(sel => sel.variant_id)
-    .filter(id => id) as string[];
-
-  if (variantIds.length !== selections.length) {
-    throw new Error('Some variant IDs are missing. Please reselect the variants.');
+  if (variantClasses.length !== selections.length) {
+    throw new Error('Some variant classes are missing. Please reselect the vehicles.');
   }
 
   const payload = {
-    variant_ids: variantIds,
-    version: 1, // Always use version 1 for now
+    variant_classes: variantClasses,
+    version: 1,
   };
 
-  console.log('Comparison payload:', payload);
+  console.log('Comparison payload (Classes):', payload);
 
-  const res = await fetch(`${BASE_API}/api/compare/variants`, {
+  const res = await fetch(`${BASE_API}/api/compare/classes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -426,12 +431,59 @@ export const fetchComparisonDetails = async (
     throw new Error(`Failed to fetch comparison details: ${res.status}`);
   }
 
-  const data = await res.json();
+  const result = await res.json();
+  if (!result.success) {
+    throw new Error(result.message || 'Failed to fetch comparison details');
+  }
 
-  // The new API already returns in the correct format
+  const classDataArray = result.data || [];
+
+  // Transform class-grouped data into feature-row data for ComparisonTable
+  // Columns correspond to Variant Classes (1 card = 1 column)
+  const columns = ['Feature', ...classDataArray.map((cls: any) => cls.variant_class)];
+  
+  // Flatten features across all classes
+  const featureMap: Map<string, { feature: string, category: string, [key: string]: any }> = new Map();
+
+  classDataArray.forEach((cls: any) => {
+    const className = cls.variant_class;
+    
+    (cls.features || []).forEach((feat: any) => {
+      const featureKey = `${feat.category}__${feat.feature_name}`;
+      if (!featureMap.has(featureKey)) {
+        featureMap.set(featureKey, {
+          feature: feat.feature_name,
+          category: feat.category,
+        });
+      }
+      
+      const row = featureMap.get(featureKey)!;
+      // Store the entire sub_variant_values object for this class column
+      row[className] = feat.sub_variant_values || {};
+    });
+
+    // 3. Add synthetic Price Value feature if not present
+    const priceKey = 'Price & Basic Info__Price Value';
+    if (!featureMap.has(priceKey)) {
+      featureMap.set(priceKey, {
+        feature: 'Price Value',
+        category: 'Price & Basic Info',
+      });
+    }
+    const priceRow = featureMap.get(priceKey)!;
+    // Map class name to a structure containing all its sub-variants' pricing
+    priceRow[className] = {
+      is_price_class: true,
+      sub_variants: cls.sub_variants.map((sv: any) => ({
+        name: sv.variant_name,
+        pricing: sv.pricing
+      }))
+    };
+  });
+
   return {
-    columns: data.columns,
-    data: data.data,
+    columns,
+    data: Array.from(featureMap.values()),
   };
 };
 
@@ -446,3 +498,72 @@ export const fetchCarNews = async (carModel: string): Promise<NewsResponse> => {
   const json: NewsResponse = await res.json();
   return json;
 };
+
+// ============== FETCH VARIANT CLASSES (NEW) ==============
+
+export const fetchVariantClasses = async (carId: string): Promise<VariantClassData[]> => {
+  const res = await fetch(`${BASE_API}/variants/classes/${carId}`);
+  if (!res.ok) throw new Error(`Failed to fetch variant classes: ${res.status}`);
+  const json = await res.json();
+  return json.data;
+};
+
+export const fetchVariantClassDetails = async (variantClass: string, version: number = 1): Promise<VariantClassDetailsResponse> => {
+  const res = await fetch(`${BASE_API}/api/variant-class/${variantClass}?version=${version}`);
+  if (!res.ok) throw new Error(`Failed to fetch class details: ${res.status}`);
+  const json = await res.json();
+  return json.data;
+};
+
+// ============== MODEL PLANNING API ==============
+
+export const createModelPlan = async (name: string, variantClass: string, version: number = 1): Promise<ModelPlan> => {
+  const res = await fetch(`${BASE_API}/api/model-plans`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, base_variant_class: variantClass, version }),
+  });
+  if (!res.ok) throw new Error(`Failed to create plan: ${res.status}`);
+  const json = await res.json();
+  return json.data;
+};
+
+export const fetchModelPlans = async (variantClass?: string): Promise<ModelPlan[]> => {
+  const url = variantClass 
+    ? `${BASE_API}/api/model-plans?base_variant_class=${variantClass}`
+    : `${BASE_API}/api/model-plans`;
+  const res = await fetch(url);
+  const json = await res.json();
+  return json.data;
+};
+
+export const fetchModelPlanById = async (planId: string): Promise<ModelPlan> => {
+  const res = await fetch(`${BASE_API}/api/model-plans/${planId}`);
+  const json = await res.json();
+  return json.data;
+};
+
+export const updatePlanFeature = async (planId: string, planFeatureId: string, payload: { value?: string, cost_delta?: number }): Promise<any> => {
+  const res = await fetch(`${BASE_API}/api/model-plans/${planId}/features/${planFeatureId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return await res.json();
+};
+
+export const addPlanFeature = async (planId: string, payload: { feature_name: string, category: string, value?: string, cost_delta: number }): Promise<any> => {
+  const res = await fetch(`${BASE_API}/api/model-plans/${planId}/features`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return await res.json();
+};
+
+export const deletePlanFeature = async (planId: string, planFeatureId: string): Promise<any> => {
+  const res = await fetch(`${BASE_API}/api/model-plans/${planId}/features/${planFeatureId}`, {
+    method: 'DELETE',
+  });
+  return await res.json();
+};

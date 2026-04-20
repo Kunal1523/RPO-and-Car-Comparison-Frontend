@@ -1,7 +1,7 @@
 // src/components/Sidebar.tsx
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { ModelDetails, SelectionState, DropdownOption } from '../types';
-import { fetchModelDetails } from '../services/api';
+import { ModelDetails, SelectionState, DropdownOption, VariantClassData } from '../types';
+import { fetchModelDetails, fetchVariantClasses } from '../services/api';
 import { ChevronDown, CarFront, ChevronLeft, ChevronRight, X, Plus, GripVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -54,6 +54,9 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
 
   const [isOpen, setIsOpen] = useState<boolean>(true);
   const [contentKey, setContentKey] = useState(0);
+
+  // ✅ Track variant classes for each selection index
+  const [variantClassesMap, setVariantClassesMap] = useState<Record<number, VariantClassData[]>>({});
 
   // Resize state
   const [sidebarWidth, setSidebarWidth] = useState(480);
@@ -163,6 +166,53 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
     }
   }, [modelData]);
 
+  // ✅ FETCH Variant Classes when brand/model changes
+  useEffect(() => {
+    if (!modelData) return;
+
+    selections.forEach((sel, idx) => {
+      if (sel.brand && sel.model) {
+        const bmKey = `${sel.brand}__${sel.model}`;
+        const carId = modelData.carIds[bmKey];
+        
+        // If we have a carId and we haven't fetched classes for this specific selection yet
+        // OR the classes we have don't match the current selection's brand/model
+        if (carId) {
+          const fetchClasses = async () => {
+            try {
+              const classes = await fetchVariantClasses(carId);
+              setVariantClassesMap(prev => ({ ...prev, [idx]: classes }));
+            } catch (err) {
+              console.error(`Failed to fetch classes for ${bmKey}:`, err);
+            }
+          };
+          
+          // Check if we need to fetch
+          const existingClasses = variantClassesMap[idx];
+          const firstVariant = existingClasses?.[0]?.variants?.[0];
+          const needsFetch = !existingClasses || (firstVariant && firstVariant.id && !modelData.variantIds[`${sel.brand}__${sel.model}__${sel.version}__${sel.variant}`]);
+          
+          // Actually, just compare carId if we can. 
+          // Simplified: fetch if not present. Clear on model change.
+          if (!existingClasses) {
+            fetchClasses();
+          }
+        }
+      }
+    });
+
+    // Clean up classes for indices that no longer exist
+    if (Object.keys(variantClassesMap).length > selections.length) {
+      setVariantClassesMap(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(key => {
+          if (parseInt(key) >= selections.length) delete next[parseInt(key)];
+        });
+        return next;
+      });
+    }
+  }, [selections, modelData, variantClassesMap]);
+
   useEffect(() => {
     if (isOpen && hasData) setContentKey((k) => k + 1);
   }, [isOpen, hasData]);
@@ -188,17 +238,35 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
 
       if (field === 'brand') {
         next[idx] = { brand: value, model: '', version: '', variant: '' };
+        // Clear classes for this index
+        setVariantClassesMap(prev => {
+          const nextVal = { ...prev };
+          delete nextVal[idx];
+          return nextVal;
+        });
       } else if (field === 'model') {
         // Find first available version for this car
         const bmKeyStr = `${current.brand}__${value}`;
         const firstVer = modelData?.versions[bmKeyStr]?.[0]?.value || '';
         next[idx] = { ...current, model: value, version: firstVer, variant: '' };
+        // Clear classes for this index to trigger re-fetch
+        setVariantClassesMap(prev => {
+          const nextVal = { ...prev };
+          delete nextVal[idx];
+          return nextVal;
+        });
       } else if (field === 'variant') {
-        const bmvKey = `${current.brand}__${current.model}__${current.version}`;
-        const variantKey = `${bmvKey}__${value}`;
-        const variantId = modelData?.variantIds?.[variantKey] || '';
-
-        next[idx] = { ...current, variant: value, variant_id: variantId };
+        // value here is actually variant_class name
+        const classes = variantClassesMap[idx] || [];
+        const selectedClass = classes.find(c => c.variant_class === value);
+        
+        if (selectedClass && selectedClass.variants.length > 0) {
+          // Pick the first variant's ID from the class
+          const firstVariant = selectedClass.variants[0];
+          next[idx] = { ...current, variant: value, variant_id: firstVariant.id };
+        } else {
+          next[idx] = { ...current, variant: value, variant_id: '' };
+        }
       } else if (field === 'version') {
         const bmvKey = `${current.brand}__${current.model}__${value}`;
         const variantKey = `${bmvKey}__${current.variant}`;
@@ -237,8 +305,16 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
     }));
   };
 
-  const getVariantOptions = (s: SelectionState): string[] => {
+  const getVariantOptions = (idx: number, s: SelectionState): string[] => {
     if (!modelData || !s.model) return [];
+    
+    // Check if we have variant classes for this selection
+    const classes = variantClassesMap[idx];
+    if (classes && classes.length > 0) {
+      return classes.map(c => c.variant_class);
+    }
+
+    // Fallback to regular variants if classes are still loading or unavailable
     const key = bmKey(s);
     const versions = key ? modelData.versions[key] || [] : [];
     if (versions.length === 0) return [];
@@ -446,7 +522,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
                             <td key={`var-${idx}`} className="p-0.5">
                               {renderCellDropdown(
                                 sel.variant,
-                                getVariantOptions(sel),
+                                getVariantOptions(idx, sel),
                                 (v) => handleSelectionChange(idx, 'variant', v),
                                 !sel.model,
                                 "Var"

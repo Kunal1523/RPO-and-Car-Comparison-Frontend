@@ -1,134 +1,13 @@
-// // src/types.ts
-
-// export interface SelectionState {
-//   brand: string;
-//   model: string;
-//   variant: string;
-//   version?: string;
-// }
-
-// export interface ModelDetails {
-//   brands: string[];
-//   models: Record<string, string[]>;
-//   variants: Record<string, string[]>;
-//   versions: Record<string, string[]>;
-// }
-
-// export interface ComparisonResponse {
-//   columns: string[];
-//   data: Record<string, any>[];
-// }
-
-// export interface GroupedFeature {
-//   featureName: string;
-//   values: Record<string, string>;
-// }
-
-// export interface FeatureGroup {
-//   groupName: string;
-//   items: GroupedFeature[];
-// }
-
-// // News related types
-// export interface NewsArticle {
-//   title: string;
-//   description: string | null;
-//   url: string;
-//   source: {
-//     name: string;
-//     icon?: string;
-//     authors?: string[];
-//   };
-//   published: string;
-// }
-
-// export interface NewsResponse {
-//   car: string;
-//   total: number;
-//   top5_news: NewsArticle[];
-// }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // src/types.ts
 
-// export interface SelectionState {
-//   brand: string;
-//   model: string;
-//   version: string;   // ✅ now compulsory (not optional)
-//   variant: string;
-// }
-
-// export interface DropdownOption {
-//   value: string;
-//   label: string;
-// }
-
-// export interface ModelDetails {
-//   brands: string[];
-//   models: Record<string, string[]>;
-
-//   // ✅ key = `${brand}__${model}` -> versions (value=id, label=version_label)
-//   versions: Record<string, DropdownOption[]>;
-
-//   // ✅ key = `${brand}__${model}__${version}` -> variants list
-//   variants: Record<string, string[]>;
-// }
-
-// export interface ComparisonResponse {
-//   columns: string[];
-//   data: Record<string, any>[];
-// }
-
-// export interface GroupedFeature {
-//   featureName: string;
-//   values: Record<string, string>;
-// }
-
-// export interface FeatureGroup {
-//   groupName: string;
-//   items: GroupedFeature[];
-// }
-
-// export interface NewsArticle {
-//   title: string;
-//   description: string | null;
-//   url: string;
-//   source: {
-//     name: string;
-//     icon?: string;
-//     authors?: string[];
-//   };
-//   published: string;
-// }
-
-// export interface NewsResponse {
-//   car: string;
-//   total: number;
-//   top5_news: NewsArticle[];
-// }
-
-
-// src/types.ts
+// ============== CORE SELECTION TYPES ==============
 
 export interface SelectionState {
   brand: string;
   model: string;
   version: string;
   variant: string;
-  variant_id?: string; // ✅ NEW: Store variant_id for new API
+  variant_id?: string;
 }
 
 export interface DropdownOption {
@@ -141,9 +20,48 @@ export interface ModelDetails {
   models: Record<string, string[]>;
   versions: Record<string, DropdownOption[]>;
   variants: Record<string, string[]>;
-  variantIds: Record<string, string>; // ✅ NEW: Map variant name to ID
+  variantIds: Record<string, string>;
+  carIds: Record<string, string>;
 }
 
+// ============== API RESPONSE TYPES ==============
+
+export interface Brand {
+  brand_id: string;
+  brand_name: string;
+  cars: Car[];
+}
+
+export interface Car {
+  car_id: string;
+  car_name: string;
+}
+
+export interface CompactVariant {
+  id: string;
+  name: string;
+  version: number;
+  is_latest: boolean;
+}
+
+export interface VariantClassData {
+  variant_class: string;
+  variants: CompactVariant[];
+}
+
+export interface Variant {
+  variant_id: string;
+  variant_name: string;
+  version: number;
+  car_name: string;
+  brand_name: string;
+  ex_showroom_price: number | null;
+  currency: string;
+  type: string;
+  price_display: string;
+}
+
+// ============== COMPARISON & PRICING ==============
 
 export interface PriceDetail {
   type: string;
@@ -164,8 +82,8 @@ export interface VariantPriceData {
 
 export interface ComparisonResponse {
   columns: string[];
-  data: Array<{ feature: string;[key: string]: any }>;
-  variant_pricing?: { [variantName: string]: VariantPriceData };
+  data: Record<string, any>[];
+  variant_pricing?: Record<string, VariantPriceData>;
 }
 
 export interface GroupedFeature {
@@ -178,6 +96,8 @@ export interface FeatureGroup {
   items: GroupedFeature[];
   hasDifferences?: boolean;
 }
+
+// ============== NEWS TYPES ==============
 
 export interface NewsArticle {
   title: string;
@@ -197,27 +117,56 @@ export interface NewsResponse {
   top5_news: NewsArticle[];
 }
 
-// ============== NEW API RESPONSE TYPES ==============
+// ============== FEATURE STACK-UP TYPES ==============
 
-export interface Brand {
-  brand_id: string;
-  brand_name: string;
-  cars: Car[];
+export interface SubVariantPricing {
+  currency: string;
+  ex_showroom_price: number;
+  fuel_type?: string | null;
+  engine_type?: string | null;
+  transmission_type?: string | null;
+  paint_type?: string | null;
+  edition?: string | null;
 }
 
-export interface Car {
-  car_id: string;
-  car_name: string;
-}
-
-export interface Variant {
+export interface SubVariantMeta {
   variant_id: string;
   variant_name: string;
-  version: number;
-  car_name: string;
-  brand_name: string;
-  ex_showroom_price: number | null;
-  currency: string;
-  type: string;
-  price_display: string;
+  pricing: SubVariantPricing[];
+}
+
+export interface MergedFeature {
+  feature_id: string;
+  feature_name: string;
+  category: string;
+  sub_variant_values: Record<string, string>;
+}
+
+export interface VariantClassDetailsResponse {
+  variant_class: string;
+  car_id: string;
+  sub_variants: SubVariantMeta[];
+  features: MergedFeature[];
+}
+
+export interface PlanFeature {
+  plan_feature_id: string;
+  feature_id: string | null;
+  feature_name: string;
+  category: string;
+  value: string;
+  is_inherited: boolean;
+  is_deleted: boolean;
+  cost_delta: number;
+}
+
+export interface ModelPlan {
+  plan_id: string;
+  name: string;
+  base_variant_class: string;
+  base_car_id: string;
+  created_at: string;
+  updated_at?: string;
+  features?: PlanFeature[];
+  total_delta_cost?: number;
 }
