@@ -543,7 +543,7 @@ export const fetchModelPlanById = async (planId: string): Promise<ModelPlan> => 
   return json.data;
 };
 
-export const updatePlanFeature = async (planId: string, planFeatureId: string, payload: { value?: string, cost_delta?: number }): Promise<any> => {
+export const updatePlanFeature = async (planId: string, planFeatureId: string, payload: { value?: string | null, cost_delta?: number }): Promise<any> => {
   const res = await fetch(`${BASE_API}/api/model-plans/${planId}/features/${planFeatureId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -552,7 +552,7 @@ export const updatePlanFeature = async (planId: string, planFeatureId: string, p
   return await res.json();
 };
 
-export const addPlanFeature = async (planId: string, payload: { feature_name: string, category: string, value?: string, cost_delta: number }): Promise<any> => {
+export const addPlanFeature = async (planId: string, payload: { feature_name: string, category: string, value?: string | null, cost_delta: number }): Promise<any> => {
   const res = await fetch(`${BASE_API}/api/model-plans/${planId}/features`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

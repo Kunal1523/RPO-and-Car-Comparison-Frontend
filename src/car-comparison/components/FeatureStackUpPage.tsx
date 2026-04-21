@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  Plus, 
-  Trash2, 
-  Check, 
-  X, 
-  TrendingUp, 
+import {
+  Plus,
+  Trash2,
+  Check,
+  X,
+  TrendingUp,
   Info,
   Save,
   ChevronDown,
@@ -24,21 +24,22 @@ import {
   FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  fetchModelDetails, 
-  fetchVariantClasses, 
+import {
+  fetchModelDetails,
+  fetchVariantClasses,
   fetchVariantClassDetails,
   createModelPlan,
+  fetchModelPlans,
   fetchModelPlanById,
   updatePlanFeature,
   addPlanFeature,
   deletePlanFeature
 } from '../services/api';
-import { 
-  ModelDetails, 
-  SelectionState, 
-  DropdownOption, 
-  VariantClassData, 
+import {
+  ModelDetails,
+  SelectionState,
+  DropdownOption,
+  VariantClassData,
   VariantClassDetailsResponse,
   ModelPlan,
   PlanFeature
@@ -47,7 +48,7 @@ import {
 //Animations
 const containerVariant = {
   hidden: { opacity: 0 },
-  visible: { 
+  visible: {
     opacity: 1,
     transition: { staggerChildren: 0.1 }
   }
@@ -84,6 +85,9 @@ const FeatureStackUpPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddingMode, setIsAddingMode] = useState(false);
   const [newPlanName, setNewPlanName] = useState('');
+  
+  const [plans, setPlans] = useState<ModelPlan[]>([]);
+  const [isFetchingPlans, setIsFetchingPlans] = useState(false);
 
   const [newFeature, setNewFeature] = useState({
     name: '',
@@ -96,10 +100,14 @@ const FeatureStackUpPage: React.FC = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const data = await fetchModelDetails();
-        setModelData(data);
+        const [details, planList] = await Promise.all([
+          fetchModelDetails(),
+          fetchModelPlans()
+        ]);
+        setModelData(details);
+        setPlans(planList || []);
       } catch (err) {
-        console.error('Failed to fetch model details', err);
+        console.error('Failed to fetch initial data', err);
       }
     };
     loadData();
@@ -130,10 +138,10 @@ const FeatureStackUpPage: React.FC = () => {
   // Fetch variant classes when car changes to populate "Base Model" dropdown
   useEffect(() => {
     if (!modelData || !selection.brand || !selection.model) return;
-    
+
     const bmKey = `${selection.brand}__${selection.model}`;
     const carId = modelData.carIds[bmKey];
-    
+
     if (carId) {
       const loadClasses = async () => {
         try {
@@ -169,8 +177,8 @@ const FeatureStackUpPage: React.FC = () => {
 
   const handleCreatePlan = async () => {
     if (!selection.variant || !newPlanName) {
-        alert("Please enter a plan name and select a base model");
-        return;
+      alert("Please enter a plan name and select a base model");
+      return;
     }
 
     setIsLoading(true);
@@ -180,6 +188,9 @@ const FeatureStackUpPage: React.FC = () => {
       const fullPlan = await fetchModelPlanById(result.plan_id);
       setCurrentPlan(fullPlan);
       setNewPlanName('');
+      // Refresh plans list
+      const updatedPlans = await fetchModelPlans();
+      setPlans(updatedPlans);
     } catch (err) {
       console.error('Failed to create plan', err);
       alert('Error creating plan');
@@ -188,7 +199,25 @@ const FeatureStackUpPage: React.FC = () => {
     }
   };
 
-  const handleUpdateFeature = async (featureId: string, updates: { value?: string, cost_delta?: number }) => {
+  const handleLoadPlan = async (planId: string) => {
+    setIsLoading(true);
+    try {
+      const fullPlan = await fetchModelPlanById(planId);
+      setCurrentPlan(fullPlan);
+      // Sync selection to match plan's base class so reference view updates
+      setSelection(prev => ({
+        ...prev,
+        variant: fullPlan.base_variant_class
+      }));
+    } catch (err) {
+      console.error('Failed to load plan', err);
+      alert('Error loading plan');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateFeature = async (featureId: string, updates: { value?: string | null, cost_delta?: number }) => {
     if (!currentPlan) return;
     try {
       const res = await updatePlanFeature(currentPlan.plan_id, featureId, updates);
@@ -218,7 +247,7 @@ const FeatureStackUpPage: React.FC = () => {
       if (res.success) {
         setCurrentPlan(prev => ({
           ...prev!,
-          features: [...(prev!.features || []), res.data]
+          features: [...(prev!.features || []), { ...res.data, tag: res.data.tag || 'Additional' }]
         }));
         setNewFeature({ name: '', category: 'Exterior', value: 'Standard', cost: 0 });
         setIsAddingMode(false);
@@ -246,31 +275,55 @@ const FeatureStackUpPage: React.FC = () => {
   const filteredFeatures = useMemo(() => {
     if (currentPlan && currentPlan.features) {
       if (!searchTerm) return currentPlan.features;
-      return currentPlan.features.filter(f => 
+      return currentPlan.features.filter(f =>
         f.feature_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         f.category.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-    
+
     // If no plan yet, filter base class features for preview
     if (baseClassData && baseClassData.features) {
       if (!searchTerm) return baseClassData.features;
-      return baseClassData.features.filter(f => 
+      return baseClassData.features.filter(f =>
         f.feature_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         f.category.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-    
+
     return [];
   }, [currentPlan, baseClassData, searchTerm]);
 
   const groupedFeatures = useMemo(() => {
-    return filteredFeatures.reduce((acc, f) => {
+    const grouped = filteredFeatures.reduce((acc, f) => {
       const category = (f as any).category || 'Other';
-      if (!acc[category]) acc[category] = [];
-      acc[category].push(f);
+      if (!acc[category]) acc[category] = { items: [], inherited: 0, additional: 0 };
+      acc[category].items.push(f);
+
+      const tag = (f as any).tag;
+      const isInherited = (f as any).is_inherited === true || tag === 'Inherited';
+      const isAdditional = tag === 'Additional' || (!isInherited && (f as any).plan_feature_id);
+
+      if (isInherited) acc[category].inherited++;
+      else if (isAdditional) acc[category].additional++;
+
       return acc;
-    }, {} as Record<string, any[]>);
+    }, {} as Record<string, { items: any[], inherited: number, additional: number }>);
+
+    // Sort: Additional features on top
+    Object.keys(grouped).forEach(cat => {
+      grouped[cat].items.sort((a, b) => {
+        const tagA = (a as any).tag || '';
+        const tagB = (b as any).tag || '';
+        const isAddA = tagA === 'Additional' || (!(a as any).is_inherited && (a as any).plan_feature_id);
+        const isAddB = tagB === 'Additional' || (!(b as any).is_inherited && (b as any).plan_feature_id);
+
+        if (isAddA && !isAddB) return -1;
+        if (!isAddA && isAddB) return 1;
+        return 0;
+      });
+    });
+
+    return grouped;
   }, [filteredFeatures]);
 
   // Sync active category
@@ -309,7 +362,7 @@ const FeatureStackUpPage: React.FC = () => {
                 <CarFront size={24} />
                 <h2 className="text-lg font-black tracking-tight">BASE MODEL</h2>
               </div>
-              <button 
+              <button
                 onClick={() => setIsSidebarOpen(false)}
                 className="lg:hidden p-1 hover:bg-white/10 rounded"
               >
@@ -318,11 +371,30 @@ const FeatureStackUpPage: React.FC = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Recent Plans Select */}
+              {plans.length > 0 && (
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest pl-1">Load Recent Plan</label>
+                  <div className="relative group">
+                    <select 
+                      value={currentPlan?.plan_id || ''}
+                      onChange={(e) => handleLoadPlan(e.target.value)}
+                      className="w-full appearance-none bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm font-bold shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all text-blue-900"
+                    >
+                      <option value="">Choose Saved Plan</option>
+                      {plans.map(p => <option key={p.plan_id} value={p.plan_id}>{p.name} ({p.base_variant_class})</option>)}
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" size={16} />
+                  </div>
+                  <div className="h-px bg-slate-100 my-4" />
+                </div>
+              )}
+
               {/* Brand Select */}
               <div className="space-y-2">
                 <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest pl-1">Brand</label>
                 <div className="relative group">
-                  <select 
+                  <select
                     value={selection.brand}
                     onChange={(e) => handleSelectionChange('brand', e.target.value)}
                     className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
@@ -338,7 +410,7 @@ const FeatureStackUpPage: React.FC = () => {
               <div className="space-y-2">
                 <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest pl-1">Car Model</label>
                 <div className="relative group">
-                  <select 
+                  <select
                     disabled={!selection.brand}
                     value={selection.model}
                     onChange={(e) => handleSelectionChange('model', e.target.value)}
@@ -355,7 +427,7 @@ const FeatureStackUpPage: React.FC = () => {
               <div className="space-y-2">
                 <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest pl-1">Release Version</label>
                 <div className="relative group">
-                  <select 
+                  <select
                     disabled={!selection.model}
                     value={selection.version}
                     onChange={(e) => handleSelectionChange('version', e.target.value)}
@@ -370,29 +442,29 @@ const FeatureStackUpPage: React.FC = () => {
                 </div>
               </div>
 
-            {/* Base Model Select */}
-            <div className="space-y-2">
-              <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest pl-1">Select Base Model</label>
-              <div className="relative group">
-                <select 
-                  disabled={!selection.version}
-                  value={selection.variant}
-                  onChange={(e) => setSelection(prev => ({ ...prev, variant: e.target.value }))}
-                  className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:opacity-50"
-                >
-                  <option value="">Choose Reference</option>
-                  {variantClasses.map(c => <option key={c.variant_class} value={c.variant_class}>{c.variant_class}</option>)}
-                </select>
-                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+              {/* Base Model Select */}
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest pl-1">Select Base Model</label>
+                <div className="relative group">
+                  <select
+                    disabled={!selection.version}
+                    value={selection.variant}
+                    onChange={(e) => setSelection(prev => ({ ...prev, variant: e.target.value }))}
+                    className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:opacity-50"
+                  >
+                    <option value="">Choose Reference</option>
+                    {variantClasses.map(c => <option key={c.variant_class} value={c.variant_class}>{c.variant_class}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                </div>
               </div>
-            </div>
 
 
               <div className="pt-4 space-y-4">
                 <div className="h-px bg-slate-100" />
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest pl-1">New Plan Name</label>
-                  <input 
+                  <input
                     type="text"
                     value={newPlanName}
                     onChange={(e) => setNewPlanName(e.target.value)}
@@ -400,7 +472,7 @@ const FeatureStackUpPage: React.FC = () => {
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold shadow-sm focus:ring-2 focus:ring-blue-500 outline-none"
                   />
                 </div>
-                <button 
+                <button
                   onClick={handleCreatePlan}
                   disabled={!selection.variant || !newPlanName || isLoading}
                   className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black rounded-2xl shadow-lg shadow-emerald-200 transition-all flex items-center justify-center gap-2"
@@ -421,7 +493,7 @@ const FeatureStackUpPage: React.FC = () => {
         <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 shadow-sm z-20">
           <div className="flex items-center gap-6">
             {!isSidebarOpen && (
-              <button 
+              <button
                 onClick={() => setIsSidebarOpen(true)}
                 className="p-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-all"
               >
@@ -465,23 +537,22 @@ const FeatureStackUpPage: React.FC = () => {
                 {/* Net BOM Delta Box */}
                 <div className="px-4 py-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3 group hover:border-slate-300 transition-colors">
                   <div className="text-right">
-                    <p className="text-[8px] uppercase font-black text-slate-400 leading-none mb-1">Net BOM Delta</p>
+                    <p className="text-[8px] uppercase font-black text-slate-400 leading-none mb-1">Delta Cost</p>
                     <p className={`text-sm font-black leading-none ${totalDelta >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                       {totalDelta >= 0 ? '+' : '-'} ₹{Math.abs(totalDelta).toLocaleString()}
                     </p>
                   </div>
-                  <div className={`p-1.5 rounded-lg transition-all ${
-                    totalDelta >= 0 
-                      ? 'bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white' 
+                  <div className={`p-1.5 rounded-lg transition-all ${totalDelta >= 0
+                      ? 'bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white'
                       : 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white'
-                  }`}>
+                    }`}>
                     {totalDelta >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
                   </div>
                 </div>
               </div>
             )}
-            
-            <button 
+
+            <button
               className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white font-black text-sm rounded-2xl shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all"
               onClick={() => alert("Changes persisted to database")}
             >
@@ -493,13 +564,13 @@ const FeatureStackUpPage: React.FC = () => {
         <div className="flex-1 flex overflow-hidden">
           {!selection.variant ? (
             <div className="flex-1 h-full flex flex-col items-center justify-center text-center p-8 bg-white/40">
-                <div className="w-24 h-24 bg-blue-50 text-blue-100 rounded-full flex items-center justify-center mb-8">
-                  <Layers size={48} className="opacity-20 text-blue-600" />
-                </div>
-                <h2 className="text-3xl font-black text-slate-800 mb-4 tracking-tight">Ready to build the future?</h2>
-                <p className="text-slate-500 font-medium max-w-md mx-auto leading-relaxed">
-                  Select a base model from the sidebar to preview features and start your stack-up.
-                </p>
+              <div className="w-24 h-24 bg-blue-50 text-blue-100 rounded-full flex items-center justify-center mb-8">
+                <Layers size={48} className="opacity-20 text-blue-600" />
+              </div>
+              <h2 className="text-3xl font-black text-slate-800 mb-4 tracking-tight">Ready to build the future?</h2>
+              <p className="text-slate-500 font-medium max-w-md mx-auto leading-relaxed">
+                Select a base model from the sidebar to preview features and start your stack-up.
+              </p>
             </div>
           ) : (
             <>
@@ -515,31 +586,27 @@ const FeatureStackUpPage: React.FC = () => {
                     <button
                       key={cat}
                       onClick={() => setActiveCategory(cat)}
-                      className={`w-full text-left px-4 py-3 rounded-xl text-xs font-black transition-all flex items-center justify-between group ${
-                        activeCategory === cat 
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' 
-                        : 'text-slate-500 hover:bg-white hover:text-slate-800'
-                      }`}
+                      className={`w-full text-left px-4 py-3 rounded-xl text-xs font-black transition-all flex flex-col gap-1 group ${activeCategory === cat
+                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
+                          : 'text-slate-500 hover:bg-white hover:text-slate-800'
+                        }`}
                     >
-                      <span className="truncate pr-2">{cat}</span>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${
-                        activeCategory === cat ? 'bg-blue-500/50 text-white' : 'bg-slate-200 text-slate-500'
-                      }`}>
-                        {groupedFeatures[cat].length}
-                      </span>
+                      <div className="w-full flex items-center justify-between">
+                        <span className="truncate pr-2">{cat}</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${activeCategory === cat ? 'bg-blue-500/50 text-white' : 'bg-slate-200 text-slate-500'
+                          }`}>
+                          {groupedFeatures[cat].items.length}
+                        </span>
+                      </div>
+
+                      {currentPlan && (
+                        <div className={`flex items-center gap-2 text-[8px] font-bold ${activeCategory === cat ? 'text-blue-100' : 'text-slate-400'}`}>
+                          <span className="flex items-center gap-0.5"><div className={`w-1 h-1 rounded-full ${activeCategory === cat ? 'bg-white' : 'bg-blue-400'}`} /> {groupedFeatures[cat].inherited} Existing</span>
+                          <span className="flex items-center gap-0.5"><div className={`w-1 h-1 rounded-full ${activeCategory === cat ? 'bg-white' : 'bg-purple-400'}`} /> {groupedFeatures[cat].additional} Added</span>
+                        </div>
+                      )}
                     </button>
                   ))}
-                  
-                  {currentPlan && (
-                    <div className="pt-4 mt-4 border-t border-slate-200 px-1">
-                       <button 
-                        onClick={() => setIsAddingMode(true)}
-                        className="w-full text-left px-4 py-3 rounded-xl text-xs font-black bg-slate-900 text-white shadow-xl hover:bg-slate-800 transition-all flex items-center gap-2"
-                      >
-                        <Plus size={14} /> New Feature
-                      </button>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -547,73 +614,93 @@ const FeatureStackUpPage: React.FC = () => {
               <div className="flex-1 flex flex-col overflow-hidden bg-white/40">
                 {/* Content Header (Search & Meta) */}
                 <div className="p-6 border-b border-slate-200 bg-white/80 backdrop-blur-md flex items-center gap-6">
-                   <div className="flex-1 relative">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                      <input 
-                        type="text"
-                        placeholder={`Search in ${activeCategory}...`}
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-slate-50 border-none rounded-2xl pl-11 pr-6 py-3 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                      />
-                   </div>
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="text"
+                      placeholder={`Search in ${activeCategory}...`}
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full bg-slate-50 border-none rounded-2xl pl-11 pr-6 py-3 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                    />
+                  </div>
 
-                   {/* Plan Stage Indicator */}
-                   <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
-                      <div className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${!currentPlan ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 opacity-50'}`}>
-                         1. Preview
-                      </div>
-                      <ChevronRight size={14} className="text-slate-400" />
-                      <div className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${currentPlan ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 opacity-50'}`}>
-                         2. Active
-                      </div>
-                   </div>
+                  {currentPlan && (
+                    <button
+                      onClick={() => setIsAddingMode(true)}
+                      className="flex items-center gap-2 px-4 py-3 bg-slate-900 text-white rounded-xl text-xs font-black shadow-lg hover:bg-slate-800 transition-all shrink-0"
+                    >
+                      <PlusCircle size={16} />
+                      <span>Add New Feature</span>
+                    </button>
+                  )}
+
+                  {/* Plan Stage Indicator */}
+                  <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+                    <div className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${!currentPlan ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 opacity-50'}`}>
+                      1. Preview
+                    </div>
+                    <ChevronRight size={14} className="text-slate-400" />
+                    <div className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${currentPlan ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 opacity-50'}`}>
+                      2. Active
+                    </div>
+                  </div>
                 </div>
 
                 {/* Table Header Labels (Sticky) */}
-                <div className="grid grid-cols-12 gap-1 px-8 text-[9px] font-black text-slate-400 uppercase tracking-widest py-3 border-b border-slate-100 bg-slate-50/50">
-                  <div className="col-span-3">Feature Set</div>
-                  <div className="col-span-4 px-4 border-l border-slate-200">Base Reference Features</div>
-                  <div className="col-span-5 px-6 border-l border-slate-200">Target Model Configuration</div>
+                <div className="grid grid-cols-12 gap-0 text-[10px] font-black uppercase tracking-widest bg-slate-100/80 backdrop-blur-sm sticky top-0 z-10 border-b border-slate-200">
+                  <div className="col-span-2 py-4 px-8 text-slate-600">Feature Set</div>
+                  <div className="col-span-4 py-4 px-6 border-l border-slate-200 text-slate-600 bg-slate-50/50">Base Reference Features</div>
+                  <div className="col-span-6 py-4 px-8 border-l-2 border-blue-200 text-blue-800 bg-blue-50/30">Target Model Configuration</div>
                 </div>
 
                 {/* Scrollable List */}
                 <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
                   {isAddingMode && currentPlan && (
-                    <motion.div 
+                    <motion.div
                       layout
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       className="m-6 bg-slate-900 rounded-3xl p-6 text-white shadow-2xl"
                     >
                       <div className="grid grid-cols-12 gap-4 items-end">
-                        <div className="col-span-5 space-y-2">
+                        <div className="col-span-3 space-y-2">
                           <label className="text-[10px] uppercase font-black text-slate-400">Feature Name</label>
-                          <input 
+                          <input
                             autoFocus
                             type="text"
                             placeholder="e.g. Next-Gen Connected Suite"
                             value={newFeature.name}
-                            onChange={(e) => setNewFeature({...newFeature, name: e.target.value})}
+                            onChange={(e) => setNewFeature({ ...newFeature, name: e.target.value })}
                             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </div>
                         <div className="col-span-3 space-y-2">
                           <label className="text-[10px] uppercase font-black text-slate-400">Category</label>
-                          <select 
+                          <select
                             value={newFeature.category}
-                            onChange={(e) => setNewFeature({...newFeature, category: e.target.value})}
+                            onChange={(e) => setNewFeature({ ...newFeature, category: e.target.value })}
                             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-xs font-bold outline-none"
                           >
                             {Object.keys(groupedFeatures).map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
                         </div>
                         <div className="col-span-2 space-y-2">
+                          <label className="text-[10px] uppercase font-black text-slate-400">Value</label>
+                          <input
+                            type="text"
+                            placeholder="Standard"
+                            value={newFeature.value}
+                            onChange={(e) => setNewFeature({ ...newFeature, value: e.target.value })}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div className="col-span-2 space-y-2">
                           <label className="text-[10px] uppercase font-black text-slate-400">Cost (₹)</label>
-                          <input 
+                          <input
                             type="number"
                             value={newFeature.cost || ''}
-                            onChange={(e) => setNewFeature({...newFeature, cost: Number(e.target.value)})}
+                            onChange={(e) => setNewFeature({ ...newFeature, cost: Number(e.target.value) })}
                             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold outline-none"
                           />
                         </div>
@@ -625,85 +712,95 @@ const FeatureStackUpPage: React.FC = () => {
                     </motion.div>
                   )}
 
-                  {activeCategory && groupedFeatures[activeCategory]?.map((feature: any) => {
+                  {activeCategory && (groupedFeatures[activeCategory]?.items || []).map((feature: any) => {
                     const isPlanFeature = 'plan_feature_id' in feature;
                     const featureName = isPlanFeature ? feature.feature_name : feature.feature_name;
-                    
+
                     let baseValues: Record<string, string> = {};
                     if (isPlanFeature) {
-                       const baseF = baseClassData?.features.find(f => f.feature_name === feature.feature_name);
-                       baseValues = baseF?.sub_variant_values || { "Value": feature.value };
+                      const baseF = baseClassData?.features.find(f => f.feature_name === feature.feature_name);
+                      baseValues = baseF?.sub_variant_values || { "Value": feature.value };
                     } else {
-                       baseValues = feature.sub_variant_values || {};
+                      baseValues = feature.sub_variant_values || {};
                     }
 
                     return (
-                      <div 
+                      <div
                         key={isPlanFeature ? feature.plan_feature_id : (feature.feature_id || feature.feature_name)}
-                        className="grid grid-cols-12 gap-1 items-stretch hover:bg-slate-50/40 transition-colors group border-b border-slate-50"
+                        className="grid grid-cols-12 gap-0 items-stretch hover:bg-blue-50/20 transition-colors group border-b border-slate-100"
                       >
-                        {/* 1. Feature Name */}
-                        <div className="col-span-3 py-5 px-8 flex items-center">
-                           <p className="text-xs font-black text-slate-800 tracking-tight leading-tight">{featureName}</p>
+                        {/* LEFT SECTION: REFERENCE (col-span-6) */}
+                        <div className="col-span-2 py-5 px-8 flex flex-col justify-center bg-white">
+                          <p className="text-xs font-black text-slate-800 tracking-tight leading-tight">{featureName}</p>
+                          {(feature.tag || isPlanFeature) && (
+                            <span className={`mt-1 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md w-fit ${
+                              (feature.tag === 'Inherited' || (isPlanFeature && feature.is_inherited)) 
+                                ? 'bg-blue-50 text-blue-600' 
+                                : 'bg-purple-100 text-purple-700'
+                            }`}>
+                              {feature.tag || (feature.is_inherited ? 'Inherited' : 'Additional')}
+                            </span>
+                          )}
                         </div>
 
-                        {/* 2. Base Model Reference */}
-                        <div className="col-span-4 py-5 px-6 border-l border-slate-100 flex flex-col justify-center gap-1.5">
-                           {Object.entries(baseValues).map(([svName, val]) => (
-                              <div key={svName} className="flex items-center justify-between gap-3 text-[9px] font-black">
-                                 <span className="text-slate-400 truncate max-w-[140px] uppercase tracking-tighter">{svName.replace(selection.variant + ' ', '')}</span>
-                                 <span className={`px-2 py-0.5 rounded-md border min-w-[60px] text-right font-black ${
-                                   val === 'Yes' ? 'bg-blue-50 text-blue-600 border-blue-100/50' : 'bg-slate-50 text-slate-600 border-slate-100/50'
-                                 }`}>
-                                    {val || '—'}
-                                 </span>
-                              </div>
-                           ))}
+                        <div className="col-span-4 py-5 px-6 border-l border-slate-100 flex flex-col justify-center gap-1.5 bg-slate-50/30">
+                          {Object.entries(baseValues).map(([svName, val]) => (
+                            <div key={svName} className="flex items-center justify-between gap-3 text-[9px] font-black">
+                              <span className="text-slate-500 font-black truncate max-w-[120px] uppercase tracking-tighter">
+                                {svName.replace(selection.variant + ' ', '')}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-md border min-w-[60px] text-right font-black ${val === 'Yes' ? 'bg-blue-50 text-blue-600 border-blue-100/50' : 'bg-white text-slate-600 border-slate-100/50'
+                                }`}>
+                                {val || '—'}
+                              </span>
+                            </div>
+                          ))}
                         </div>
 
-                        {/* 3. New Model Controller */}
-                        <div className="col-span-5 py-5 px-8 border-l border-slate-100 bg-slate-50/20 flex items-center">
+                        {/* RIGHT SECTION: CONFIGURATION (col-span-6) */}
+                        <div className="col-span-6 py-5 px-8 border-l-2 border-blue-100 bg-blue-50/10 flex items-center">
                           {isPlanFeature ? (
                             <div className="w-full grid grid-cols-12 gap-4 items-center">
-                              <div className="col-span-5">
-                                 <select 
-                                  value={feature.value}
-                                  onChange={(e) => handleUpdateFeature(feature.plan_feature_id, { value: e.target.value })}
-                                  className={`w-full px-3 py-2 rounded-xl text-[10px] font-black border transition-all shadow-sm outline-none cursor-pointer ${
-                                    ['Standard', 'Yes', 'S'].includes(feature.value) ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                                    ['Optional', 'O'].includes(feature.value) ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                                    'bg-white text-slate-500 border-slate-200'
-                                  }`}
-                                >
-                                  <option value="Standard">Standard</option>
-                                  <option value="Optional">Optional</option>
-                                  <option value="Not Available">Not Available</option>
-                                </select>
+                              <div className="col-span-5 relative">
+                                <input
+                                  list={`options-${feature.plan_feature_id}`}
+                                  value={feature.value || ''}
+                                  placeholder="Select or type..."
+                                  onChange={(e) => handleUpdateFeature(feature.plan_feature_id, { value: e.target.value || null })}
+                                  className={`w-full px-3 py-2 rounded-xl text-[10px] font-black border transition-all shadow-sm outline-none ${['Standard', 'Yes', 'S'].includes(feature.value) ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                                      ['Optional', 'O'].includes(feature.value) ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                        'bg-white text-slate-800 border-slate-300'
+                                    }`}
+                                />
+                                <datalist id={`options-${feature.plan_feature_id}`}>
+                                  {feature.available_options?.map((opt: string) => (
+                                    <option key={opt} value={opt} />
+                                  ))}
+                                </datalist>
                               </div>
                               <div className="col-span-5 relative">
-                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 text-[10px] font-black">₹</span>
-                                 <input 
-                                    type="number"
-                                    defaultValue={feature.cost_delta || ''}
-                                    placeholder="0"
-                                    onBlur={(e) => handleUpdateFeature(feature.plan_feature_id, { cost_delta: Number(e.target.value) })}
-                                    className={`w-full bg-white border border-slate-200 rounded-xl pl-6 pr-3 py-2 text-[10px] font-black text-right outline-none transition-all focus:ring-2 focus:ring-blue-500 ${
-                                      feature.cost_delta !== 0 ? 'text-blue-600 border-blue-100' : 'text-slate-400'
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-black text-[10px]">₹</span>
+                                <input
+                                  type="number"
+                                  defaultValue={feature.cost_delta || ''}
+                                  placeholder="0"
+                                  onBlur={(e) => handleUpdateFeature(feature.plan_feature_id, { cost_delta: Number(e.target.value) })}
+                                  className={`w-full bg-white border border-slate-300 rounded-xl pl-6 pr-3 py-2 text-[10px] font-black text-right outline-none transition-all focus:ring-2 focus:ring-blue-500 ${feature.cost_delta !== 0 ? 'text-blue-600 border-blue-200' : 'text-slate-500'
                                     }`}
-                                  />
+                                />
                               </div>
                               <div className="col-span-2 flex justify-end">
-                                <button 
+                                <button
                                   onClick={() => handleDelete(feature.plan_feature_id)}
-                                  className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                                 >
                                   <Trash2 size={14} />
                                 </button>
                               </div>
                             </div>
                           ) : (
-                            <div className="w-full flex items-center justify-center opacity-40">
-                               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Selected for Reference Only</p>
+                            <div className="w-full flex items-center justify-center opacity-60">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Selected for Reference Only</p>
                             </div>
                           )}
                         </div>

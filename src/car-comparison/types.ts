@@ -154,10 +154,12 @@ export interface PlanFeature {
   feature_id: string | null;
   feature_name: string;
   category: string;
-  value: string;
+  value: string | null;
   is_inherited: boolean;
   is_deleted: boolean;
   cost_delta: number;
+  tag?: string;
+  available_options?: string[];
 }
 
 export interface ModelPlan {
