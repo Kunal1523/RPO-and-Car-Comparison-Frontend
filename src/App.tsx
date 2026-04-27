@@ -5,6 +5,7 @@ import ProjectSelection from './shared/ProjectSelection';
 import RPOApp from './RPO/App';
 import CarComparisonApp from './car-comparison/App';
 import { AnimatePresence } from 'framer-motion';
+import Chatbot from './chatbot/Chatbot';
 import './RPO/App.css';
 
 
@@ -94,9 +95,10 @@ const AppRoutes = () => {
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </AnimatePresence>
+            <Chatbot />
         </div>
     );
-}
+};
 
 // Wrappers to handle styling conflicts or specific context provisions
 const RPOWrapper = () => {

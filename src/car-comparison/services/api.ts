@@ -394,8 +394,8 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
 };
 
 /**
- * UPDATED: Uses /api/compare/classes endpoint
- * Accepts multiple selections (2-5 classes)
+ * UPDATED: Uses /api/compare/mixed endpoint
+ * Accepts multiple selections (2-20 items, can be classes or plans)
  */
 export const fetchComparisonDetails = async (
   selections: SelectionState[]
@@ -405,23 +405,28 @@ export const fetchComparisonDetails = async (
     throw new Error('At least 2 vehicles required for comparison');
   }
 
-  // Extract class names from selections (Sidebar now stores class name in 'variant' field)
   const variantClasses = selections
+    .filter(sel => !sel.plan_id)
     .map(sel => sel.variant)
     .filter(name => name);
 
-  if (variantClasses.length !== selections.length) {
-    throw new Error('Some variant classes are missing. Please reselect the vehicles.');
+  const planIds = selections
+    .filter(sel => sel.plan_id)
+    .map(sel => sel.plan_id as string);
+
+  if (variantClasses.length + planIds.length !== selections.length) {
+    throw new Error('Some variant classes or plans are missing. Please reselect the vehicles.');
   }
 
   const payload = {
     variant_classes: variantClasses,
+    plan_ids: planIds,
     version: 1,
   };
 
-  console.log('Comparison payload (Classes):', payload);
+  console.log('Comparison payload (Mixed):', payload);
 
-  const res = await fetch(`${BASE_API}/api/compare/classes`, {
+  const res = await fetch(`${BASE_API}/api/compare/mixed`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -438,14 +443,21 @@ export const fetchComparisonDetails = async (
 
   const classDataArray = result.data || [];
 
-  // Transform class-grouped data into feature-row data for ComparisonTable
-  // Columns correspond to Variant Classes (1 card = 1 column)
-  const columns = ['Feature', ...classDataArray.map((cls: any) => cls.variant_class)];
+  // Sort classDataArray to match the original order of selections
+  const sortedClassData = selections.map(sel => {
+    // If it's a plan, match by variant_class (which contains the plan name in the backend response)
+    // or if it's a standard variant, match by variant name.
+    // Note: The mixed API typically returns plans with their plan name as the 'variant_class'.
+    return classDataArray.find((cls: any) => 
+      cls.variant_class === sel.variant || cls.variant_class === sel.plan_id
+    );
+  }).filter(Boolean);
+
+  const columns = ['Feature', ...sortedClassData.map((cls: any) => cls.variant_class)];
   
-  // Flatten features across all classes
   const featureMap: Map<string, { feature: string, category: string, [key: string]: any }> = new Map();
 
-  classDataArray.forEach((cls: any) => {
+  sortedClassData.forEach((cls: any) => {
     const className = cls.variant_class;
     
     (cls.features || []).forEach((feat: any) => {
@@ -458,11 +470,9 @@ export const fetchComparisonDetails = async (
       }
       
       const row = featureMap.get(featureKey)!;
-      // Store the entire sub_variant_values object for this class column
       row[className] = feat.sub_variant_values || {};
     });
 
-    // 3. Add synthetic Price Value feature if not present
     const priceKey = 'Price & Basic Info__Price Value';
     if (!featureMap.has(priceKey)) {
       featureMap.set(priceKey, {
@@ -471,7 +481,6 @@ export const fetchComparisonDetails = async (
       });
     }
     const priceRow = featureMap.get(priceKey)!;
-    // Map class name to a structure containing all its sub-variants' pricing
     priceRow[className] = {
       is_price_class: true,
       sub_variants: cls.sub_variants.map((sv: any) => ({

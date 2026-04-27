@@ -1250,20 +1250,40 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
     });
   };
 
-  const getGridColumns = () => {
-    const visibleCount = visibleVariants.length;
-    if (visibleCount <= 3) {
-      return `minmax(160px, 1fr) repeat(${visibleCount}, minmax(160px, 1fr))`;
-    } else if (visibleCount === 4) {
-      return `minmax(140px, 0.9fr) repeat(${visibleCount}, minmax(140px, 1fr))`;
-    } else {
-      return `minmax(110px, 0.8fr) repeat(${visibleCount}, minmax(110px, 1fr))`;
-    }
+  // Compute a flexible or fixed per-column width.
+  const isLargeCount = visibleVariants.length > 5;
+  
+  const getColWidth = () => {
+    const count = visibleVariants.length;
+    if (count <= 2)  return 300;
+    if (count <= 3)  return 260;
+    if (count <= 4)  return 220;
+    if (count <= 5)  return 190;
+    if (count <= 6)  return 160;
+    if (count <= 8)  return 140;
+    if (count <= 10) return 120;
+    if (count <= 13) return 110;
+    return 100;
   };
 
+  const COL_WIDTH = getColWidth();
+  const FEATURE_COL_WIDTH = visibleVariants.length <= 3 ? 200 : 160;
+
+  // Total min-width only matters when we want to force horizontal scroll (large counts)
+  const tableMinWidth = isLargeCount 
+    ? (FEATURE_COL_WIDTH + COL_WIDTH * visibleVariants.length)
+    : 0;
+
   const gridColsStyle: React.CSSProperties = {
-    gridTemplateColumns: getGridColumns(),
+    display: 'grid',
+    // For small counts, we use minmax with a hard max to avoid "blown out" wide columns on ultra-wide screens
+    gridTemplateColumns: isLargeCount 
+      ? `${FEATURE_COL_WIDTH}px repeat(${visibleVariants.length}, ${COL_WIDTH}px)`
+      : `${FEATURE_COL_WIDTH}px repeat(${visibleVariants.length}, minmax(${COL_WIDTH}px, ${visibleVariants.length <= 2 ? '400px' : '350px'}))`,
+    minWidth: tableMinWidth ? `${tableMinWidth}px` : 'fit-content',
+    width: isLargeCount ? 'auto' : '100%',
   };
+
 
   const variantBg = (idx: number) => {
     const colors = [
@@ -1277,17 +1297,19 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
   };
 
   const getFontSize = () => {
-    const visibleCount = visibleVariants.length;
-    if (visibleCount <= 3) return 'text-sm';
-    if (visibleCount === 4) return 'text-xs';
-    return 'text-[11px]';
+    const count = visibleVariants.length;
+    if (count <= 3) return 'text-sm';
+    if (count <= 5) return 'text-xs';
+    if (count <= 8) return 'text-[11px]';
+    return 'text-[10px]';
   };
 
   const getHeaderFontSize = () => {
-    const visibleCount = visibleVariants.length;
-    if (visibleCount <= 3) return 'text-sm md:text-base';
-    if (visibleCount === 4) return 'text-xs md:text-sm';
-    return 'text-[11px] md:text-xs';
+    const count = visibleVariants.length;
+    if (count <= 3) return 'text-sm';
+    if (count <= 5) return 'text-xs';
+    if (count <= 8) return 'text-[11px]';
+    return 'text-[10px]';
   };
 
   return (
@@ -1389,11 +1411,13 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
       <div
         className="flex-1 overflow-x-auto w-full"
+        style={{ minWidth: 0 }}
       >
+        <div style={{ minWidth: tableMinWidth ? `${tableMinWidth}px` : '100%' }}>
 
-        <div className="grid border-b-2 border-slate-300 sticky top-0 z-20 shadow-sm" style={gridColsStyle}>
-          <div className={`p-2 font-semibold uppercase tracking-[0.08em] text-[10px] md:text-xs flex items-center bg-slate-900 text-white border-r border-slate-700`}>
-            Feature
+        <div className="grid border-b border-slate-200 sticky top-0 z-20 shadow-md backdrop-blur-md bg-white/90" style={gridColsStyle}>
+          <div className="p-3 font-bold uppercase tracking-wider text-[10px] md:text-xs flex items-center bg-gradient-to-br from-slate-800 to-slate-900 text-white border-r border-slate-700 shadow-inner">
+            <span className="opacity-90">Comparison Feature</span>
           </div>
 
           {variants.map((v, idx) => {
@@ -1403,22 +1427,25 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
             return (
               <div
                 key={idx}
-                className={`p-2 font-semibold text-[10px] md:text-xs border-l border-white flex flex-col items-start justify-center relative group ${variantBg(idx)}`}
+                className={`p-3 font-bold text-[11px] md:text-sm border-l border-white/20 flex flex-col items-start justify-center relative group ${variantBg(idx)} transition-all duration-300 hover:brightness-110`}
                 title={v}
               >
                 <button
                   onClick={() => toggleVehicleVisibility(idx)}
-                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/20 hover:bg-white/30 rounded p-0.5"
+                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-all bg-black/20 hover:bg-black/40 rounded-full p-1 text-white shadow-sm"
                   title="Hide this vehicle"
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                     <circle cx="12" cy="12" r="3"></circle>
                     <line x1="1" y1="1" x2="23" y2="23"></line>
                   </svg>
                 </button>
-                <div className="text-[9px] opacity-80 uppercase tracking-tighter">Veh {idx + 1}</div>
-                <span className="truncate w-full">{v}</span>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px] font-black">{idx + 1}</span>
+                  <div className="text-[9px] opacity-70 uppercase tracking-widest font-black">Vehicle</div>
+                </div>
+                <span className="truncate w-full leading-tight drop-shadow-sm">{v}</span>
               </div>
             );
           })}
@@ -1522,17 +1549,19 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                             return (
                               <div
                                 key={vIdx}
-                                className={`relative p-1 px-2 text-[10px] border-l border-slate-200 ${item.values[v] === NO_INFO ? 'text-slate-400 italic' : 'text-slate-900'
-                                  }`}
+                                className={`relative p-1 px-2 text-[10px] border-l border-slate-200 overflow-hidden ${
+                                  item.values[v] === NO_INFO ? 'text-slate-400 italic' : 'text-slate-900'
+                                }`}
+                                style={{ wordBreak: 'break-word', minWidth: 0 }}
                               >
                                 {isPriceCell ? (
-                                  <div className="space-y-2">
+                                  <div className="space-y-1.5 overflow-y-auto" style={{ maxHeight: '240px' }}>
                                     {(value as any).sub_variants.map((sv: any, svIdx: number) => (
-                                      <div key={svIdx} className="border-b border-slate-200 last:border-0 pb-1.5 last:pb-0">
-                                        <div className="text-[8px] text-slate-400 font-bold uppercase tracking-tight mb-0.5">
+                                      <div key={svIdx} className="border-b border-slate-200 last:border-0 pb-1 last:pb-0">
+                                        <div className="text-[7px] text-slate-400 font-bold uppercase tracking-tight mb-0.5 truncate" title={sv.name}>
                                           {sv.name}
                                         </div>
-                                        <div className="space-y-1">
+                                        <div className="space-y-0.5">
                                           {(sv.pricing || []).map((price: any, pIdx: number) => {
                                             const parts = [
                                               price.fuel_type,
@@ -1541,7 +1570,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                                               price.paint_type,
                                               price.edition
                                             ].filter(Boolean);
-                                            const label = parts.join(' ') || 'Standard';
+                                            const label = parts.join(' / ') || 'Standard';
                                             const formattedPrice = new Intl.NumberFormat('en-IN', {
                                               style: 'currency',
                                               currency: price.currency || 'INR',
@@ -1549,11 +1578,11 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                                             }).format(price.ex_showroom_price);
 
                                             return (
-                                              <div key={pIdx} className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-0.5">
-                                                <span className="text-[9px] text-slate-600 font-medium uppercase tracking-wide">
+                                              <div key={pIdx} className="flex flex-col gap-0">
+                                                <span className="text-[7px] text-slate-500 font-medium leading-tight break-words whitespace-normal">
                                                   <HighlightText text={label} highlight={searchTerm} />
                                                 </span>
-                                                <span className="text-xs font-bold text-green-700 whitespace-nowrap">
+                                                <span className="text-[9px] font-bold text-green-700 whitespace-nowrap">
                                                   <HighlightText text={formattedPrice} highlight={searchTerm} />
                                                 </span>
                                               </div>
@@ -1576,7 +1605,11 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                                           grouped[dVal].push(name);
                                         });
 
-                                        return Object.entries(grouped).map(([displayVal, names], gIdx) => {
+                                        const groupEntries = Object.entries(grouped);
+                                        // If only 1 unique value across all sub-variants → show value only, no "Name →" prefix
+                                        const isSingleValue = groupEntries.length === 1;
+
+                                        return groupEntries.map(([displayVal, names], gIdx) => {
                                           const isNoInfo = displayVal === NO_INFO;
                                           const cleanNames = names.map(name => {
                                             let clean = name;
@@ -1590,9 +1623,10 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
                                           return (
                                             <div key={gIdx} className={`flex items-start gap-1.5 ${isNoInfo ? 'text-slate-400 italic' : 'text-slate-900'}`}>
-                                              {!isNoInfo && <span className="text-blue-500 mt-0.5 whitespace-nowrap">•</span>}
+                                              {!isNoInfo && !isSingleValue && <span className="text-blue-500 mt-0.5 whitespace-nowrap">•</span>}
                                               <div className="flex-1 flex flex-wrap items-center gap-1 min-h-[16px]">
-                                                {!isNoInfo && (
+                                                {/* Only show "Name →" when there are multiple different values */}
+                                                {!isNoInfo && !isSingleValue && (
                                                   <>
                                                     <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight whitespace-nowrap">
                                                       <HighlightText text={combinedNames} highlight={searchTerm} />
@@ -1635,8 +1669,9 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
               </div>
             );
           })}
-        </div>
-      </div>
+        </div>{/* end groups list */}
+        </div>{/* end minWidth wrapper */}
+      </div>{/* end overflow-x */}
     </div>
   );
 };

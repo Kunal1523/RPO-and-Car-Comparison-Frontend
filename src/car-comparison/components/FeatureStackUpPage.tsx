@@ -121,8 +121,6 @@ const FeatureStackUpPage: React.FC = () => {
         try {
           const data = await fetchVariantClassDetails(selection.variant, 1);
           setBaseClassData(data);
-          // Reset current plan when selecting a new base model preview
-          setCurrentPlan(null);
         } catch (err) {
           console.error("Failed to fetch base details", err);
         } finally {
@@ -157,6 +155,8 @@ const FeatureStackUpPage: React.FC = () => {
 
   const handleSelectionChange = (field: keyof SelectionState, value: string) => {
 
+    // Clear active plan when manually changing selections
+    setCurrentPlan(null);
 
     setSelection(prev => {
       const next = { ...prev, [field]: value };
@@ -449,7 +449,10 @@ const FeatureStackUpPage: React.FC = () => {
                   <select
                     disabled={!selection.version}
                     value={selection.variant}
-                    onChange={(e) => setSelection(prev => ({ ...prev, variant: e.target.value }))}
+                    onChange={(e) => {
+                      setSelection(prev => ({ ...prev, variant: e.target.value }));
+                      setCurrentPlan(null);
+                    }}
                     className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:opacity-50"
                   >
                     <option value="">Choose Reference</option>
@@ -727,7 +730,9 @@ const FeatureStackUpPage: React.FC = () => {
                     return (
                       <div
                         key={isPlanFeature ? feature.plan_feature_id : (feature.feature_id || feature.feature_name)}
-                        className="grid grid-cols-12 gap-0 items-stretch hover:bg-blue-50/20 transition-colors group border-b border-slate-100"
+                        className={`grid grid-cols-12 gap-0 items-stretch hover:bg-blue-50/20 transition-colors group border-b border-slate-100 ${
+                          isPlanFeature && feature.value !== feature.original_value ? 'bg-amber-50/50' : ''
+                        }`}
                       >
                         {/* LEFT SECTION: REFERENCE (col-span-6) */}
                         <div className="col-span-2 py-5 px-8 flex flex-col justify-center bg-white">
@@ -764,13 +769,21 @@ const FeatureStackUpPage: React.FC = () => {
                               <div className="col-span-5 relative">
                                 <input
                                   list={`options-${feature.plan_feature_id}`}
-                                  value={feature.value || ''}
+                                  defaultValue={feature.value || ''}
                                   placeholder="Select or type..."
-                                  onChange={(e) => handleUpdateFeature(feature.plan_feature_id, { value: e.target.value || null })}
-                                  className={`w-full px-3 py-2 rounded-xl text-[10px] font-black border transition-all shadow-sm outline-none ${['Standard', 'Yes', 'S'].includes(feature.value) ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                                      ['Optional', 'O'].includes(feature.value) ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                                        'bg-white text-slate-800 border-slate-300'
-                                    }`}
+                                  onBlur={(e) => handleUpdateFeature(feature.plan_feature_id, { value: e.target.value || null })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') e.currentTarget.blur();
+                                  }}
+                                  className={`w-full px-3 py-2 rounded-xl text-[10px] font-black border transition-all shadow-sm outline-none ${
+                                    feature.value !== feature.original_value 
+                                      ? 'bg-amber-100 border-amber-300 text-amber-900 ring-2 ring-amber-200' 
+                                      : ['Standard', 'Yes', 'S'].includes(feature.value) 
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
+                                        : ['Optional', 'O'].includes(feature.value) 
+                                          ? 'bg-amber-50 text-amber-700 border-amber-100' 
+                                          : 'bg-white text-slate-800 border-slate-300'
+                                  }`}
                                 />
                                 <datalist id={`options-${feature.plan_feature_id}`}>
                                   {feature.available_options?.map((opt: string) => (

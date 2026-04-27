@@ -31,8 +31,9 @@ const App: React.FC = () => {
   const [isLoadingNews, setIsLoadingNews] = useState(false);
 
   const [currentSelections, setCurrentSelections] = useState<SelectionState[]>([
-    { brand: '', model: '', version: '', variant: '' },
-    { brand: '', model: '', version: '', variant: '' },
+    { brand: 'Hyundai', model: 'Creta', version: 'v1', variant: 'E' },
+    { brand: 'Hyundai', model: 'Creta', version: 'v1', variant: 'EX' },
+    { brand: 'Hyundai', model: 'Creta', version: 'v1', variant: 'EX(O)' },
   ]);
 
   // Track the variant IDs currently shown in comparisonData
@@ -42,7 +43,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!comparisonData || currentSelections.length === 0 || isLoading) return;
 
-    const newIds = currentSelections.map(s => s.variant_id).filter(Boolean) as string[];
+    const newIds = currentSelections.map(s => s.plan_id || s.variant).filter(Boolean) as string[];
     const oldIds = lastFetchedVariantIds.current;
 
     if (newIds.length === 0) return;
@@ -80,7 +81,7 @@ const App: React.FC = () => {
       const uniqueModels = Array.from(
         new Set(
           currentSelections
-            .map(sel => sel.model)
+            .map(sel => sel.brand === 'CUSTOM_PLAN' ? null : sel.model)
             .filter((model): model is string => Boolean(model && model.trim() !== ''))
         )
       );
@@ -128,10 +129,7 @@ const App: React.FC = () => {
         alert(`Please complete all fields for Vehicle ${i + 1}.`);
         return;
       }
-      if (!sel.variant_id) {
-        alert(`Missing variant ID for Vehicle ${i + 1}. Please reselect the variant.`);
-        return;
-      }
+      // Note: We don't need variant_id because the backend now expects variant_classes or plan_ids
     }
 
     setIsLoading(true);
@@ -142,7 +140,7 @@ const App: React.FC = () => {
       const data = await fetchComparisonDetails(selections);
       setComparisonData(data);
       // Store IDs for future local reordering
-      lastFetchedVariantIds.current = selections.map(s => s.variant_id!).filter(Boolean);
+      lastFetchedVariantIds.current = selections.map(s => s.plan_id || s.variant).filter(Boolean) as string[];
     } catch (error) {
       console.error('Error fetching comparison details:', error);
       alert('Failed to fetch comparison details. Please try again.');

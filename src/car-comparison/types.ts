@@ -8,6 +8,7 @@ export interface SelectionState {
   version: string;
   variant: string;
   variant_id?: string;
+  plan_id?: string;
 }
 
 export interface DropdownOption {
@@ -155,6 +156,7 @@ export interface PlanFeature {
   feature_name: string;
   category: string;
   value: string | null;
+  original_value: string | null;
   is_inherited: boolean;
   is_deleted: boolean;
   cost_delta: number;
