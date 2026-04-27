@@ -1,7 +1,7 @@
 // src/components/Sidebar.tsx
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { ModelDetails, SelectionState, DropdownOption } from '../types';
-import { fetchModelDetails } from '../services/api';
+import { ModelDetails, SelectionState, DropdownOption, VariantClassData, ModelPlan } from '../types';
+import { fetchModelDetails, fetchVariantClasses, fetchModelPlans } from '../services/api';
 import { ChevronDown, CarFront, ChevronLeft, ChevronRight, X, Plus, GripVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -51,9 +51,13 @@ const getVersionLabel = (versionValue: string): string => {
 
 const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, setSelections }) => {
   const [modelData, setModelData] = useState<ModelDetails | null>(null);
+  const [plans, setPlans] = useState<ModelPlan[]>([]);
 
   const [isOpen, setIsOpen] = useState<boolean>(true);
   const [contentKey, setContentKey] = useState(0);
+
+  // ✅ Track variant classes for each selection index
+  const [variantClassesMap, setVariantClassesMap] = useState<Record<number, VariantClassData[]>>({});
 
   // Resize state
   const [sidebarWidth, setSidebarWidth] = useState(480);
@@ -97,10 +101,14 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
   useEffect(() => {
     const loadData = async () => {
       try {
-        const data = await fetchModelDetails();
+        const [data, planData] = await Promise.all([
+          fetchModelDetails(),
+          fetchModelPlans()
+        ]);
         setModelData(data);
+        setPlans(planData || []);
       } catch (err) {
-        console.error('Failed to fetch model details', err);
+        console.error('Failed to fetch data', err);
       }
     };
     loadData();
@@ -124,21 +132,13 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
       if (versions.length === 0) return null;
 
       const versionVal = versions[0].value;
-      const bmvKey = `${brandName}__${model}__${versionVal}`;
-      const variants = modelData.variants[bmvKey] || [];
-
-      if (variants.length === 0) return null;
-
-      const variant = variants[0];
-      const variantKey = `${bmvKey}__${variant}`;
-      const variantId = modelData.variantIds?.[variantKey] || '';
 
       return {
         brand: brandName,
         model,
         version: versionVal,
-        variant,
-        variant_id: variantId
+        variant: '',
+        variant_id: ''
       };
     };
 
@@ -163,13 +163,76 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
     }
   }, [modelData]);
 
+  // ✅ FETCH Variant Classes when brand/model changes
+  useEffect(() => {
+    if (!modelData) return;
+
+    selections.forEach((sel, idx) => {
+      if (sel.brand && sel.model) {
+        const bmKey = `${sel.brand}__${sel.model}`;
+        const carId = modelData.carIds[bmKey];
+
+        // If we have a carId and we haven't fetched classes for this specific selection yet
+        // OR the classes we have don't match the current selection's brand/model
+        if (carId) {
+          const fetchClasses = async () => {
+            try {
+              const classes = await fetchVariantClasses(carId);
+              setVariantClassesMap(prev => ({ ...prev, [idx]: classes }));
+            } catch (err) {
+              console.error(`Failed to fetch classes for ${bmKey}:`, err);
+            }
+          };
+
+          // Check if we need to fetch
+          const existingClasses = variantClassesMap[idx];
+
+          // Actually, just compare carId if we can. 
+          // Simplified: fetch if not present. Clear on model change.
+          if (!existingClasses) {
+            fetchClasses();
+          } else if (existingClasses.length > 0 && !sel.variant) {
+            // Auto-select first variant class
+            const firstClass = existingClasses[0];
+            const firstVariantId = firstClass.variants.length > 0 ? firstClass.variants[0].id : '';
+
+            // Wrap in setTimeout to avoid updating state during another state's render cycle if any
+            setTimeout(() => {
+              setSelections(prev => {
+                const next = [...prev];
+                if (next[idx].brand === sel.brand && next[idx].model === sel.model && !next[idx].variant) {
+                  next[idx] = { ...next[idx], variant: firstClass.variant_class, variant_id: firstVariantId };
+                }
+                return next;
+              });
+            }, 0);
+          }
+        }
+      }
+    });
+
+    // Clean up classes for indices that no longer exist
+    if (Object.keys(variantClassesMap).length > selections.length) {
+      setVariantClassesMap(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(key => {
+          if (parseInt(key) >= selections.length) delete next[parseInt(key)];
+        });
+        return next;
+      });
+    }
+  }, [selections, modelData, variantClassesMap]);
+
   useEffect(() => {
     if (isOpen && hasData) setContentKey((k) => k + 1);
   }, [isOpen, hasData]);
 
+  const MAX_VEHICLES = 20;
+  const CHUNK_SIZE = 5;
+
   const addVehicleCard = () => {
-    if (selections.length >= 5) {
-      alert('Maximum 5 vehicles can be compared');
+    if (selections.length >= MAX_VEHICLES) {
+      alert(`Maximum ${MAX_VEHICLES} vehicles can be compared`);
       return;
     }
     setSelections((prev) => [...prev, { brand: '', model: '', version: '', variant: '' }]);
@@ -187,18 +250,36 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
       const current = next[idx];
 
       if (field === 'brand') {
-        next[idx] = { brand: value, model: '', version: '', variant: '' };
+        next[idx] = { brand: value, model: '', version: '', variant: '', plan_id: undefined };
+        // Clear classes for this index
+        setVariantClassesMap(prev => {
+          const nextVal = { ...prev };
+          delete nextVal[idx];
+          return nextVal;
+        });
       } else if (field === 'model') {
         // Find first available version for this car
         const bmKeyStr = `${current.brand}__${value}`;
         const firstVer = modelData?.versions[bmKeyStr]?.[0]?.value || '';
         next[idx] = { ...current, model: value, version: firstVer, variant: '' };
+        // Clear classes for this index to trigger re-fetch
+        setVariantClassesMap(prev => {
+          const nextVal = { ...prev };
+          delete nextVal[idx];
+          return nextVal;
+        });
       } else if (field === 'variant') {
-        const bmvKey = `${current.brand}__${current.model}__${current.version}`;
-        const variantKey = `${bmvKey}__${value}`;
-        const variantId = modelData?.variantIds?.[variantKey] || '';
+        // value here is actually variant_class name
+        const classes = variantClassesMap[idx] || [];
+        const selectedClass = classes.find(c => c.variant_class === value);
 
-        next[idx] = { ...current, variant: value, variant_id: variantId };
+        if (selectedClass && selectedClass.variants.length > 0) {
+          // Pick the first variant's ID from the class
+          const firstVariant = selectedClass.variants[0];
+          next[idx] = { ...current, variant: value, variant_id: firstVariant.id };
+        } else {
+          next[idx] = { ...current, variant: value, variant_id: '' };
+        }
       } else if (field === 'version') {
         const bmvKey = `${current.brand}__${current.model}__${value}`;
         const variantKey = `${bmvKey}__${current.variant}`;
@@ -237,8 +318,17 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
     }));
   };
 
-  const getVariantOptions = (s: SelectionState): string[] => {
+  const getVariantOptions = (idx: number, s: SelectionState): string[] => {
+    if (s.brand === 'CUSTOM_PLAN') return [];
     if (!modelData || !s.model) return [];
+
+    // Check if we have variant classes for this selection
+    const classes = variantClassesMap[idx];
+    if (classes && classes.length > 0) {
+      return classes.map(c => c.variant_class);
+    }
+
+    // Fallback to regular variants if classes are still loading or unavailable
     const key = bmKey(s);
     const versions = key ? modelData.versions[key] || [] : [];
     if (versions.length === 0) return [];
@@ -265,7 +355,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
         className={`block w-full appearance-none bg-white border border-slate-300 text-slate-800 py-1.5 px-2 pr-6 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors ${disabled ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : 'cursor-pointer'
           }`}
       >
-        <option value="">{placeholder}</option>
+        <option value="" disabled hidden>{placeholder}</option>
         {options.map((opt) => {
           const o = typeof opt === 'string' ? { value: opt, label: opt } : opt;
           return (
@@ -351,149 +441,181 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
                 initial="hidden"
                 animate="visible"
               >
-                {/* Matrix Container for Horizontal Scroll */}
-                <div className="flex-1 overflow-auto p-1">
-                  <div className="inline-block min-w-full align-middle">
-                    <table className="min-w-full border-collapse table-fixed">
-                      <thead>
-                        <tr>
-                          {/* Label Column - Very Narrow */}
-                          <th className="p-1 w-12 sticky left-0 bg-slate-50 z-10 border-b border-slate-200">
-                            {/* Empty header for label column */}
-                          </th>
+                {/* Matrix Container - Chunks of 5 vehicles per row */}
+                <div className="flex-1 overflow-auto p-1 space-y-2">
+                  {Array.from({ length: Math.ceil(selections.length / CHUNK_SIZE) }, (_, chunkIdx) => {
+                    const start = chunkIdx * CHUNK_SIZE;
+                    const chunkSelections = selections.slice(start, start + CHUNK_SIZE);
+                    const isLastChunk = start + CHUNK_SIZE >= selections.length;
 
-                          {selections.map((_, idx) => (
-                            <th key={`head-${idx}`} className="p-1 border-b border-slate-200 bg-slate-50">
-                              <div className="flex items-center justify-between px-1">
-                                <div className="flex items-center gap-1">
-                                  {idx > 0 && (
-                                    <button
-                                      onClick={() => moveVehicle(idx, 'left')}
-                                      className="text-slate-400 hover:text-blue-500 transition-colors"
-                                      title="Move Left"
-                                    >
-                                      <ChevronLeft size={10} />
-                                    </button>
-                                  )}
-                                  <span className="text-[9px] font-bold text-slate-700 whitespace-nowrap">Veh {idx + 1}</span>
-                                  {idx < selections.length - 1 && (
-                                    <button
-                                      onClick={() => moveVehicle(idx, 'right')}
-                                      className="text-slate-400 hover:text-blue-500 transition-colors"
-                                      title="Move Right"
-                                    >
-                                      <ChevronRight size={10} />
-                                    </button>
-                                  )}
-                                </div>
-                                {selections.length > 2 && (
-                                  <button
-                                    onClick={() => removeVehicleCard(idx)}
-                                    className="text-slate-400 hover:text-red-500 transition-colors ml-1"
-                                  >
-                                    <X size={10} />
-                                  </button>
-                                )}
-                              </div>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200 bg-white">
-
-                        {/* Brand Row */}
-                        <tr>
-                          <td className="p-1 px-2 text-[9px] font-bold text-slate-600 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">
-                            Brand
-                          </td>
-                          {selections.map((sel, idx) => (
-                            <td key={`brand-${idx}`} className="p-0.5">
-                              {renderCellDropdown(
-                                sel.brand,
-                                modelData.brands,
-                                (v) => handleSelectionChange(idx, 'brand', v),
-                                false,
-                                "Brand"
-                              )}
-                            </td>
-                          ))}
-                        </tr>
-
-                        {/* Car Row */}
-                        <tr>
-                          <td className="p-1 px-2 text-[9px] font-bold text-slate-600 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">
-                            Car
-                          </td>
-                          {selections.map((sel, idx) => (
-                            <td key={`car-${idx}`} className="p-0.5">
-                              {renderCellDropdown(
-                                sel.model,
-                                sel.brand ? modelData.models[sel.brand] || [] : [],
-                                (v) => handleSelectionChange(idx, 'model', v),
-                                !sel.brand,
-                                "Car"
-                              )}
-                            </td>
-                          ))}
-                        </tr>
-
-                        {/* Variant Row */}
-                        <tr>
-                          <td className="p-1 px-2 text-[9px] font-bold text-slate-600 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">
-                            Var
-                          </td>
-                          {selections.map((sel, idx) => (
-                            <td key={`var-${idx}`} className="p-0.5">
-                              {renderCellDropdown(
-                                sel.variant,
-                                getVariantOptions(sel),
-                                (v) => handleSelectionChange(idx, 'variant', v),
-                                !sel.model,
-                                "Var"
-                              )}
-                            </td>
-                          ))}
-                        </tr>
-
-                        {/* Date Row (Version) */}
-                        <tr>
-                          <td className="p-1 px-2 text-[9px] font-bold text-slate-600 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">
-                            Date
-                          </td>
-                          {selections.map((sel, idx) => (
-                            <td key={`ver-${idx}`} className="p-0.5">
-                              {renderCellDropdown(
-                                sel.version,
-                                getVersionOptions(sel),
-                                (v) => handleSelectionChange(idx, 'version', v),
-                                !sel.variant,
-                                "Date"
-                              )}
-                            </td>
-                          ))}
-                        </tr>
-
-                        {/* ADD BUTTON ROW */}
-                        {selections.length < 5 && (
-                          <tr>
-                            <td
-                              colSpan={selections.length + 1}
-                              className="p-2 bg-slate-50 border-t border-slate-200"
-                            >
-                              <button
-                                onClick={addVehicleCard}
-                                className="w-full flex items-center justify-center py-2 px-3 text-xs font-semibold text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 border border-blue-300 border-dashed transition-all"
-                              >
-                                <Plus size={14} className="mr-1.5" />
-                                Add Another Vehicle
-                              </button>
-                            </td>
-                          </tr>
+                    return (
+                      <div key={`chunk-${chunkIdx}`} className="inline-block min-w-full align-middle">
+                        {chunkIdx > 0 && (
+                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-2 pt-1 pb-0.5 border-t border-slate-200">
+                            Vehicles {start + 1}–{Math.min(start + CHUNK_SIZE, selections.length)}
+                          </div>
                         )}
+                        <table className="min-w-full border-collapse">
+                          <thead>
+                            <tr>
+                              <th className="p-1 w-12 sticky left-0 bg-slate-50 z-10 border-b border-slate-200" />
+                              {chunkSelections.map((_, ci) => {
+                                const idx = start + ci;
+                                const colors = [
+                                  'bg-blue-600',
+                                  'bg-emerald-600',
+                                  'bg-violet-600',
+                                  'bg-orange-600',
+                                  'bg-sky-600'
+                                ];
+                                const headerBg = colors[idx % colors.length];
 
-                      </tbody>
-                    </table>
-                  </div>
+                                return (
+                                  <th 
+                                    key={`head-${idx}`} 
+                                    className={`p-1 border-b border-slate-200 border-l border-white/20 ${headerBg}`}
+                                    style={{ width: `${100 / chunkSelections.length}%` }}
+                                  >
+                                    <div className="flex items-center justify-between px-1 text-white">
+                                      <div className="flex items-center gap-1">
+                                        {idx > 0 && (
+                                          <button onClick={() => moveVehicle(idx, 'left')} className="text-white/70 hover:text-white transition-colors" title="Move Left">
+                                            <ChevronLeft size={10} />
+                                          </button>
+                                        )}
+                                        <span className="text-[9px] font-bold whitespace-nowrap">Veh {idx + 1}</span>
+                                        {idx < selections.length - 1 && (
+                                          <button onClick={() => moveVehicle(idx, 'right')} className="text-white/70 hover:text-white transition-colors" title="Move Right">
+                                            <ChevronRight size={10} />
+                                          </button>
+                                        )}
+                                      </div>
+                                      {selections.length > 1 && (
+                                        <button onClick={() => removeVehicleCard(idx)} className="text-white/70 hover:text-red-300 transition-colors ml-1">
+                                          <X size={10} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </th>
+                                );
+                              })}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 bg-white">
+
+                            {/* Brand Row */}
+                            <tr>
+                              <td className="p-1 px-2 text-[9px] font-extrabold text-slate-900 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Brand</td>
+                              {chunkSelections.map((sel, ci) => {
+                                const idx = start + ci;
+                                const brandOptions = [
+                                  { value: 'CUSTOM_PLAN', label: '⭐ New Model Plan' },
+                                  ...modelData.brands.map(b => ({ value: b, label: b }))
+                                ];
+                                return (
+                                  <td key={`brand-${idx}`} className="p-0.5 border-l border-slate-50">
+                                    {renderCellDropdown(sel.brand, brandOptions, (v) => handleSelectionChange(idx, 'brand', v), false, "Brand")}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+
+                            {/* Car Row */}
+                            <tr>
+                              <td className="p-1 px-2 text-[9px] font-extrabold text-slate-900 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Car</td>
+                              {chunkSelections.map((sel, ci) => {
+                                const idx = start + ci;
+                                let carOptions: any = [];
+                                if (sel.brand === 'CUSTOM_PLAN') {
+                                  carOptions = plans.map(p => ({ value: p.plan_id, label: `${p.name} (${p.base_variant_class})` }));
+                                } else if (sel.brand) {
+                                  carOptions = modelData.models[sel.brand] || [];
+                                }
+                                return (
+                                  <td key={`car-${idx}`} className="p-0.5 border-l border-slate-50">
+                                    {renderCellDropdown(
+                                      sel.brand === 'CUSTOM_PLAN' ? sel.plan_id || '' : sel.model,
+                                      carOptions,
+                                      (v) => {
+                                        if (sel.brand === 'CUSTOM_PLAN') {
+                                          const p = plans.find(pl => pl.plan_id === v);
+                                          if (p) {
+                                            setSelections(prev => {
+                                              const n = [...prev];
+                                              n[idx] = { brand: 'CUSTOM_PLAN', model: 'Plan', variant: p.name, plan_id: v, version: 'v1' };
+                                              return n;
+                                            });
+                                          }
+                                        } else {
+                                          handleSelectionChange(idx, 'model', v);
+                                        }
+                                      },
+                                      !sel.brand,
+                                      sel.brand === 'CUSTOM_PLAN' ? "Plan" : "Car"
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+
+                            {/* Variant Row */}
+                            <tr>
+                              <td className="p-1 px-2 text-[9px] font-extrabold text-slate-900 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Var</td>
+                              {chunkSelections.map((sel, ci) => {
+                                const idx = start + ci;
+                                return (
+                                  <td key={`var-${idx}`} className="p-0.5 border-l border-slate-50">
+                                    {renderCellDropdown(
+                                      sel.variant,
+                                      sel.brand === 'CUSTOM_PLAN' ? [{ value: sel.variant, label: sel.variant }] : getVariantOptions(idx, sel),
+                                      (v) => handleSelectionChange(idx, 'variant', v),
+                                      !sel.model || sel.brand === 'CUSTOM_PLAN',
+                                      "Var"
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+
+                            {/* Date Row */}
+                            <tr>
+                              <td className="p-1 px-2 text-[9px] font-extrabold text-slate-900 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Date</td>
+                              {chunkSelections.map((sel, ci) => {
+                                const idx = start + ci;
+                                return (
+                                  <td key={`ver-${idx}`} className="p-0.5 border-l border-slate-50">
+                                    {renderCellDropdown(
+                                      sel.version,
+                                      sel.brand === 'CUSTOM_PLAN' ? [{ value: 'v1', label: 'Latest' }] : getVersionOptions(sel),
+                                      (v) => handleSelectionChange(idx, 'version', v),
+                                      !sel.variant || sel.brand === 'CUSTOM_PLAN',
+                                      "Date"
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+
+                            {/* Add button only on the last chunk, and only if under limit */}
+                            {isLastChunk && selections.length < MAX_VEHICLES && (
+                              <tr>
+                                <td colSpan={chunkSelections.length + 1} className="p-2 bg-slate-50 border-t border-slate-200">
+                                  <button
+                                    onClick={addVehicleCard}
+                                    className="w-full flex items-center justify-center py-2 px-3 text-xs font-semibold text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 border border-blue-300 border-dashed transition-all"
+                                  >
+                                    <Plus size={14} className="mr-1.5" />
+                                    Add Another Vehicle ({selections.length}/{MAX_VEHICLES})
+                                  </button>
+                                </td>
+                              </tr>
+                            )}
+
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })}
                 </div>
               </motion.div>
             )}

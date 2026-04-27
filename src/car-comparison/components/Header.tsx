@@ -1,73 +1,19 @@
-// // src/components/Header.tsx
-// import React from 'react';
-// import { LogOut } from 'lucide-react';
-// import logo from '../Images/amlgolabslogowhite.png';
-
-// const Header: React.FC = () => {
-//   const handleLogout = () => {
-//     sessionStorage.removeItem('isLoggedIn');
-//     window.location.reload();
-//   };
-
-//   return (
-//     <header className="bg-blue-900 border-b border-slate-200 h-16 
-//       grid grid-cols-3 items-center px-4 md:px-8 sticky top-0 z-30 shadow-xl">
-
-//       {/* LEFT: LOGO */}
-//       <div className="flex items-center gap-3">
-//         <div className="bg-white rounded-xl px-3 py-1 shadow flex items-center justify-center">
-//           <div className="h-10 w-32 overflow-hidden flex items-center justify-center">
-//             <img
-//               src={logo}
-//               alt="Logo"
-//               className="w-full object-cover object-center"
-//             />
-//           </div>
-//         </div>
-//       </div>
-
-//       {/* CENTER: TITLE */}
-//       <div className="text-center">
-//         <h1 className="text-lg md:text-xl font-bold text-white">
-//           Automobile Comparison Platform
-//         </h1>
-//         <span className="text-xs text-white">
-//           Compare variants side-by-side in seconds
-//         </span>
-//       </div>
-
-//       {/* RIGHT: LOGOUT */}
-//       <div className="flex justify-end">
-//         <button
-//           onClick={handleLogout}
-//           className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg 
-//             bg-white hover:bg-slate-50 text-slate-700 hover:text-red-600
-//             border border-slate-300 hover:border-red-400
-//             transition-all duration-200 shadow-sm hover:shadow-md
-//             active:scale-95"
-//         >
-//           <LogOut size={18} />
-//           <span className="hidden sm:inline">Logout</span>
-//         </button>
-//       </div>
-
-//     </header>
-//   );
-// };
-
-// export default Header;
-
-
 // src/components/Header.tsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, BarChart3, GitCompare, Upload, ArrowLeft } from 'lucide-react';
+import { LogOut, BarChart3, GitCompare, ArrowLeft, Layers, ChevronRight } from 'lucide-react';
 import logo from '../Images/amlgolabslogowhite.png';
 
 interface HeaderProps {
-  currentPage?: 'comparison' | 'pricing';
-  onPageChange?: (page: 'comparison' | 'pricing') => void;
+  currentPage?: 'comparison' | 'pricing' | 'stackup';
+  onPageChange?: (page: 'comparison' | 'pricing' | 'stackup') => void;
 }
+
+const NAV_TABS = [
+  { key: 'comparison' as const, label: 'Feature Comparison',  Icon: GitCompare },
+  { key: 'pricing'    as const, label: 'Pricing Comparison',  Icon: BarChart3  },
+  { key: 'stackup'   as const, label: 'Feature Stack-Up',     Icon: Layers     },
+];
 
 const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChange }) => {
   const navigate = useNavigate();
@@ -79,86 +25,105 @@ const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChang
   };
 
   return (
-    <>
-      {/* MAIN HEADER */}
-      <header className="bg-blue-900 border-b border-slate-200 h-16 
-        flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shadow-xl">
+    <header
+      style={{
+        background: 'linear-gradient(135deg, #0f1f6e 0%, #1a3aad 60%, #1e47c8 100%)',
+        boxShadow: '0 4px 24px rgba(15,31,110,0.35)',
+      }}
+      className="sticky top-0 z-30"
+    >
+      {/* ── TOP BAR ── */}
+      <div className="flex items-center justify-between px-5 h-[58px]">
 
-        {/* LEFT LOGO */}
+        {/* LEFT: Back + Logo */}
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/select')}
-            className="text-white/80 hover:text-white transition-colors"
             title="Back to Project Selection"
+            className="group flex items-center justify-center w-8 h-8 rounded-full
+                       bg-white/10 hover:bg-white/20 border border-white/20
+                       text-white/70 hover:text-white transition-all duration-200"
           >
-            <ArrowLeft size={24} />
+            <ArrowLeft size={16} />
           </button>
-          <div className="bg-white rounded-xl px-3 py-1 shadow flex items-center justify-center cursor-pointer" onClick={() => navigate('/select')}>
-            <div className="h-10 w-32 overflow-hidden flex items-center justify-center">
-              <img src={logo} alt="Logo" className="w-full object-cover object-center" />
-            </div>
-          </div>
-        </div>
 
-        {/* CENTER TITLE */}
-        <h1 className="text-lg md:text-xl font-bold text-white">
-          Automobile Comparison Platform
-        </h1>
-
-        {/* RIGHT LOGOUT */}
-        <div>
           <button
-            onClick={handleLogout}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg 
-              bg-white hover:bg-slate-50 text-slate-700 hover:text-red-600
-              border border-slate-300 hover:border-red-400 transition-all shadow-sm"
+            onClick={() => navigate('/select')}
+            className="bg-white rounded-xl px-3 py-1.5 shadow-md flex items-center
+                       justify-center hover:shadow-lg transition-shadow duration-200"
           >
-            <LogOut size={18} />
-            <span className="hidden sm:inline">Logout</span>
+            <div className="h-8 w-28 overflow-hidden flex items-center justify-center">
+              <img src={logo} alt="AMLGO Labs" className="w-full object-contain" />
+            </div>
           </button>
         </div>
-      </header>
 
-      {/* 🔹 SUB-NAVIGATION BAR BELOW HEADER */}
+        {/* CENTER: Title */}
+        <div className="absolute left-1/2 -translate-x-1/2 text-center pointer-events-none">
+          <h1 className="text-base md:text-lg font-bold text-white tracking-tight leading-none">
+            Automobile Comparison Platform
+          </h1>
+          <p className="text-[10px] text-blue-200/80 mt-0.5 tracking-wide">
+            Compare variants side-by-side in seconds
+          </p>
+        </div>
+
+        {/* RIGHT: Logout */}
+        <button
+          onClick={handleLogout}
+          className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-lg
+                     bg-white/10 hover:bg-white/20 text-white
+                     border border-white/20 hover:border-white/40
+                     transition-all duration-200 backdrop-blur-sm"
+        >
+          <LogOut size={15} />
+          <span className="hidden sm:inline">Logout</span>
+        </button>
+      </div>
+
+      {/* ── NAV TABS ── */}
       {onPageChange && (
-        <div className="bg-blue-800/30 border-b border-blue-200 px-6 py-2 flex justify-between items-center">
-          <div className="flex gap-3">
-            <button
-              onClick={() => onPageChange('comparison')}
-              className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${currentPage === 'comparison'
-                ? 'bg-blue-900 text-white shadow'
-                : 'bg-white text-blue-900 hover:bg-blue-100'
-                }`}
-            >
-              <GitCompare size={16} />
-              Feature Comparison
-            </button>
+        <div
+          className="flex items-center justify-between px-5 border-t"
+          style={{ borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.18)' }}
+        >
+          {/* Tabs */}
+          <div className="flex items-center gap-0.5">
+            {NAV_TABS.map(({ key, label, Icon }) => {
+              const active = currentPage === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => onPageChange(key)}
+                  className={`
+                    relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold
+                    transition-all duration-200 focus:outline-none
+                    ${active
+                      ? 'text-white'
+                      : 'text-blue-200/70 hover:text-white/90'
+                    }
+                  `}
+                >
+                  <Icon size={14} className={active ? 'text-white' : 'text-blue-300/70'} />
+                  {label}
 
-            <button
-              onClick={() => onPageChange('pricing')}
-              className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${currentPage === 'pricing'
-                ? 'bg-blue-900 text-white shadow'
-                : 'bg-white text-blue-900 hover:bg-blue-100'
-                }`}
-            >
-              <BarChart3 size={16} />
-              Pricing Comparison
-            </button>
+                  {/* Active underline indicator */}
+                  {active && (
+                    <span
+                      className="absolute bottom-0 left-0 right-0 h-[3px] rounded-t-full"
+                      style={{ background: 'linear-gradient(90deg, #60a5fa, #a78bfa)' }}
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <div id="header-action-bar" className="flex items-center gap-3">
-            {currentPage === 'comparison' && (
-              <button
-                onClick={() => alert("Coming Soon")}
-                className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-bold text-slate-500 hover:text-blue-600 transition-colors border border-dashed border-slate-300 hover:border-blue-400 bg-white shadow-sm"
-                title="Upload New Car (Features)"
-              >
-                <Upload size={16} /> <span className="hidden sm:inline">Upload New Car (Features)</span>
-              </button>
-            )}
-          </div>
+
+          {/* Right slot (for injected controls) */}
+          <div id="header-action-bar" className="flex items-center gap-3" />
         </div>
       )}
-    </>
+    </header>
   );
 };
 
