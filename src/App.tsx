@@ -6,6 +6,7 @@ import RPOApp from './RPO/App';
 import CarComparisonApp from './car-comparison/App';
 import { AnimatePresence } from 'framer-motion';
 import Chatbot from './chatbot/Chatbot';
+import FeedbackButton from './shared/FeedbackButton';
 import './RPO/App.css';
 
 
@@ -51,6 +52,9 @@ const App: React.FC = () => {
 const AppRoutes = () => {
     const location = useLocation();
     const navigate = useNavigate();
+    const isCarComparison = location.pathname.startsWith('/car-comparison');
+    const isRPO = location.pathname.startsWith('/rpo');
+
     return (
         <div className="app-root">
             <AnimatePresence mode="wait">
@@ -95,7 +99,12 @@ const AppRoutes = () => {
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </AnimatePresence>
-            <Chatbot />
+            
+            {/* Show Chatbot only on Car Comparison pages */}
+            {isCarComparison && <Chatbot />}
+            
+            {/* Show floating Feedback Button only on RPO pages */}
+            {isRPO && <FeedbackButton variant="floating" />}
         </div>
     );
 };

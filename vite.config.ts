@@ -28,12 +28,12 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
-  
+
   return {
     server: {
       port: 3000, // Choose one port for the unified app
       host: '0.0.0.0',
-      allowedHosts: ['kaylyn-unoppugned-vertie.ngrok-free.dev']
+      allowedHosts: ['kaylyn-unoppugned-vertie.ngrok-free.dev', 'autoinsights.amlgolabs.com']
     },
     plugins: [react()],
     define: {
