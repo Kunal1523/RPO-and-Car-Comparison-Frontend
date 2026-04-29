@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8000/chatbot';
+const API_BASE_URL = `${import.meta.env.VITE_API_BASE_URL}/chatbot`;
 
 export interface ChatMessage {
     role: 'user' | 'bot';
