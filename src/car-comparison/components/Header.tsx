@@ -3,6 +3,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogOut, BarChart3, GitCompare, ArrowLeft, Layers, ChevronRight } from 'lucide-react';
 import logo from '../Images/amlgolabslogowhite.png';
+import FeedbackButton from '../../shared/FeedbackButton';
 
 interface HeaderProps {
   currentPage?: 'comparison' | 'pricing' | 'stackup';
@@ -68,17 +69,21 @@ const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChang
           </p>
         </div>
 
-        {/* RIGHT: Logout */}
-        <button
-          onClick={handleLogout}
-          className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-lg
-                     bg-white/10 hover:bg-white/20 text-white
-                     border border-white/20 hover:border-white/40
-                     transition-all duration-200 backdrop-blur-sm"
-        >
-          <LogOut size={15} />
-          <span className="hidden sm:inline">Logout</span>
-        </button>
+        {/* RIGHT: Feedback + Logout */}
+        <div className="flex items-center gap-3">
+          <FeedbackButton variant="header" />
+          
+          <button
+            onClick={handleLogout}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-lg
+                       bg-white/10 hover:bg-white/20 text-white
+                       border border-white/20 hover:border-white/40
+                       transition-all duration-200 backdrop-blur-sm"
+          >
+            <LogOut size={15} />
+            <span className="hidden sm:inline">Logout</span>
+          </button>
+        </div>
       </div>
 
       {/* ── NAV TABS ── */}
