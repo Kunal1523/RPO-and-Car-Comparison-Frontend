@@ -1,19 +1,20 @@
 // src/components/Header.tsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, BarChart3, GitCompare, ArrowLeft, Layers, ChevronRight } from 'lucide-react';
+import { LogOut, BarChart3, GitCompare, ArrowLeft, Layers, Bot } from 'lucide-react';
 import logo from '../Images/amlgolabslogowhite.png';
 import FeedbackButton from '../../shared/FeedbackButton';
 
 interface HeaderProps {
-  currentPage?: 'comparison' | 'pricing' | 'stackup';
-  onPageChange?: (page: 'comparison' | 'pricing' | 'stackup') => void;
+  currentPage?: 'comparison' | 'pricing' | 'stackup' | 'chatbot';
+  onPageChange?: (page: 'comparison' | 'pricing' | 'stackup' | 'chatbot') => void;
 }
 
 const NAV_TABS = [
   { key: 'comparison' as const, label: 'Feature Comparison',  Icon: GitCompare },
   { key: 'pricing'    as const, label: 'Pricing Comparison',  Icon: BarChart3  },
   { key: 'stackup'   as const, label: 'Feature Stack-Up',     Icon: Layers     },
+  { key: 'chatbot'   as const, label: 'Chatbot',              Icon: Bot        },
 ];
 
 const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChange }) => {

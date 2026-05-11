@@ -5,7 +5,6 @@ import ProjectSelection from './shared/ProjectSelection';
 import RPOApp from './RPO/App';
 import CarComparisonApp from './car-comparison/App';
 import { AnimatePresence } from 'framer-motion';
-import Chatbot from './chatbot/Chatbot';
 import FeedbackButton from './shared/FeedbackButton';
 import './RPO/App.css';
 
@@ -99,9 +98,6 @@ const AppRoutes = () => {
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </AnimatePresence>
-            
-            {/* Show Chatbot only on Car Comparison pages */}
-            {isCarComparison && <Chatbot />}
             
             {/* Show floating Feedback Button only on RPO pages */}
             {isRPO && <FeedbackButton variant="floating" />}

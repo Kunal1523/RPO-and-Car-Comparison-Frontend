@@ -6,10 +6,11 @@ import NewsButtonCards from './components/NewsButtonCards';
 import LoginPage from './components/LoginPage';
 import PricingComparisonPage from './components/PricingComparisonPage';
 import FeatureStackUpPage from './components/FeatureStackUpPage';
+import ChatbotDashboardPage from './components/ChatbotDashboardPage';
 import { ComparisonResponse, SelectionState, NewsResponse } from './types';
 import { fetchComparisonDetails, fetchCarNews } from './services/api';
 
-type PageView = 'comparison' | 'pricing' | 'stackup';
+type PageView = 'comparison' | 'pricing' | 'stackup' | 'chatbot';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -176,6 +177,15 @@ const App: React.FC = () => {
       <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
         <Header currentPage={currentPage} onPageChange={handlePageChange} />
         <FeatureStackUpPage />
+      </div>
+    );
+  }
+
+  if (currentPage === 'chatbot') {
+    return (
+      <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
+        <Header currentPage={currentPage} onPageChange={handlePageChange} />
+        <ChatbotDashboardPage />
       </div>
     );
   }
