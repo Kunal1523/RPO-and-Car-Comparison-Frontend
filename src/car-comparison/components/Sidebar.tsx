@@ -168,64 +168,50 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
     if (!modelData) return;
 
     selections.forEach((sel, idx) => {
-      if (sel.brand && sel.model) {
+      if (sel.brand && sel.model && sel.brand !== 'CUSTOM_PLAN') {
         const bmKey = `${sel.brand}__${sel.model}`;
         const carId = modelData.carIds[bmKey];
 
-        // If we have a carId and we haven't fetched classes for this specific selection yet
-        // OR the classes we have don't match the current selection's brand/model
-        if (carId) {
+        if (carId && !variantClassesMap[idx]) {
           const fetchClasses = async () => {
             try {
               const classes = await fetchVariantClasses(carId);
               setVariantClassesMap(prev => ({ ...prev, [idx]: classes }));
+              
+              // Auto-select first variant if none selected
+              if (!sel.variant && classes.length > 0) {
+                const firstClass = classes[0];
+                const firstVariantId = firstClass.variants.length > 0 ? firstClass.variants[0].id : '';
+                
+                setSelections(prevSelections => {
+                  const next = [...prevSelections];
+                  if (next[idx] && !next[idx].variant) {
+                    next[idx] = { ...next[idx], variant: firstClass.variant_class, variant_id: firstVariantId };
+                  }
+                  return next;
+                });
+              }
             } catch (err) {
               console.error(`Failed to fetch classes for ${bmKey}:`, err);
             }
           };
-
-          // Check if we need to fetch
-          const existingClasses = variantClassesMap[idx];
-
-          // Actually, just compare carId if we can. 
-          // Simplified: fetch if not present. Clear on model change.
-          if (!existingClasses) {
-            fetchClasses();
-          } else if (existingClasses.length > 0 && !sel.variant) {
-            // Auto-select first variant class
-            const firstClass = existingClasses[0];
-            const firstVariantId = firstClass.variants.length > 0 ? firstClass.variants[0].id : '';
-
-            // Wrap in setTimeout to avoid updating state during another state's render cycle if any
-            setTimeout(() => {
-              setSelections(prev => {
-                const next = [...prev];
-                if (next[idx].brand === sel.brand && next[idx].model === sel.model && !next[idx].variant) {
-                  next[idx] = { ...next[idx], variant: firstClass.variant_class, variant_id: firstVariantId };
-                }
-                return next;
-              });
-            }, 0);
-          }
+          fetchClasses();
         }
       }
     });
 
     // Clean up classes for indices that no longer exist
-    if (Object.keys(variantClassesMap).length > selections.length) {
+    const currentKeys = Object.keys(variantClassesMap).map(Number);
+    if (currentKeys.some(key => key >= selections.length)) {
       setVariantClassesMap(prev => {
         const next = { ...prev };
-        Object.keys(next).forEach(key => {
-          if (parseInt(key) >= selections.length) delete next[parseInt(key)];
+        currentKeys.forEach(key => {
+          if (key >= selections.length) delete next[key];
         });
         return next;
       });
     }
-  }, [selections, modelData, variantClassesMap]);
-
-  useEffect(() => {
-    if (isOpen && hasData) setContentKey((k) => k + 1);
-  }, [isOpen, hasData]);
+  }, [selections.length, modelData]); // Only re-run when selections length or modelData changes
 
   const MAX_VEHICLES = 20;
   const CHUNK_SIZE = 5;
@@ -261,7 +247,26 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
         // Find first available version for this car
         const bmKeyStr = `${current.brand}__${value}`;
         const firstVer = modelData?.versions[bmKeyStr]?.[0]?.value || '';
-        next[idx] = { ...current, model: value, version: firstVer, variant: '' };
+        
+        if (current.brand === 'CUSTOM_PLAN') {
+          // For plans, model and variant are the same (the plan name)
+          // We also auto-calculate the plan_id
+          const variantKey = `${current.brand}__${value}__${firstVer}__${value}`;
+          const variantId = modelData?.variantIds?.[variantKey] || '';
+          const cleanId = variantId.replace('plan_', '');
+          
+          next[idx] = { 
+            ...current, 
+            model: value, 
+            version: firstVer, 
+            variant: value, 
+            variant_id: '', 
+            plan_id: cleanId 
+          };
+        } else {
+          next[idx] = { ...current, model: value, version: firstVer, variant: '' };
+        }
+        
         // Clear classes for this index to trigger re-fetch
         setVariantClassesMap(prev => {
           const nextVal = { ...prev };
@@ -285,7 +290,12 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
         const variantKey = `${bmvKey}__${current.variant}`;
         const variantId = modelData?.variantIds?.[variantKey] || '';
 
-        next[idx] = { ...current, version: value, variant_id: variantId };
+        if (current.brand === 'CUSTOM_PLAN' || variantId.startsWith('plan_')) {
+          const cleanId = variantId.replace('plan_', '');
+          next[idx] = { ...current, version: value, variant_id: '', plan_id: cleanId };
+        } else {
+          next[idx] = { ...current, version: value, variant_id: variantId, plan_id: undefined };
+        }
       }
 
       return next;
@@ -309,6 +319,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
   const bmKey = (s: SelectionState) => (s.brand && s.model ? `${s.brand}__${s.model}` : '');
 
   const getVersionOptions = (s: SelectionState): DropdownOption[] => {
+    if (s.brand === 'CUSTOM_PLAN') return [{ value: 'plan', label: 'Draft Plan' }];
     if (!modelData || !s.variant) return [];
     const key = bmKey(s);
     const versions = key ? modelData.versions[key] || [] : [];
@@ -319,7 +330,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
   };
 
   const getVariantOptions = (idx: number, s: SelectionState): string[] => {
-    if (s.brand === 'CUSTOM_PLAN') return [];
+    if (s.brand === 'CUSTOM_PLAN') return [s.model];
     if (!modelData || !s.model) return [];
 
     // Check if we have variant classes for this selection
@@ -508,10 +519,10 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
                               <td className="p-1 px-2 text-[9px] font-extrabold text-slate-900 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Brand</td>
                               {chunkSelections.map((sel, ci) => {
                                 const idx = start + ci;
-                                const brandOptions = [
-                                  { value: 'CUSTOM_PLAN', label: '⭐ New Model Plan' },
-                                  ...modelData.brands.map(b => ({ value: b, label: b }))
-                                ];
+                                const brandOptions = modelData.brands.map(b => ({ 
+                                  value: b, 
+                                  label: b === "CUSTOM_PLAN" ? "⭐ New Model Plan" : b 
+                                }));
                                 return (
                                   <td key={`brand-${idx}`} className="p-0.5 border-l border-slate-50">
                                     {renderCellDropdown(sel.brand, brandOptions, (v) => handleSelectionChange(idx, 'brand', v), false, "Brand")}
@@ -542,7 +553,14 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
                                           if (p) {
                                             setSelections(prev => {
                                               const n = [...prev];
-                                              n[idx] = { brand: 'CUSTOM_PLAN', model: 'Plan', variant: p.name, plan_id: v, version: 'v1' };
+                                              n[idx] = { 
+                                                brand: 'CUSTOM_PLAN', 
+                                                model: p.name, 
+                                                variant: p.name, 
+                                                plan_id: v, 
+                                                version: 'plan',
+                                                variant_id: '' 
+                                              };
                                               return n;
                                             });
                                           }
@@ -586,9 +604,9 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
                                   <td key={`ver-${idx}`} className="p-0.5 border-l border-slate-50">
                                     {renderCellDropdown(
                                       sel.version,
-                                      sel.brand === 'CUSTOM_PLAN' ? [{ value: 'v1', label: 'Latest' }] : getVersionOptions(sel),
+                                      getVersionOptions(sel),
                                       (v) => handleSelectionChange(idx, 'version', v),
-                                      !sel.variant || sel.brand === 'CUSTOM_PLAN',
+                                      !sel.variant,
                                       "Date"
                                     )}
                                   </td>

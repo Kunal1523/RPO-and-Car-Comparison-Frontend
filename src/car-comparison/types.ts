@@ -85,11 +85,18 @@ export interface ComparisonResponse {
   columns: string[];
   data: Record<string, any>[];
   variant_pricing?: Record<string, VariantPriceData>;
+  base_variant_classes?: Record<string, string>;
 }
 
 export interface GroupedFeature {
   featureName: string;
-  values: Record<string, string>;
+  values: Record<string, any>;
+  cost_deltas?: Record<string, number>;
+  price_deltas?: Record<string, number>;
+  plan_feature_ids?: Record<string, string>;
+  is_deleted?: Record<string, boolean>;
+  original_values?: Record<string, string>;
+  tags?: Record<string, string>;
 }
 
 export interface FeatureGroup {
@@ -160,6 +167,7 @@ export interface PlanFeature {
   is_inherited: boolean;
   is_deleted: boolean;
   cost_delta: number;
+  price_delta: number;
   tag?: string;
   available_options?: string[];
 }

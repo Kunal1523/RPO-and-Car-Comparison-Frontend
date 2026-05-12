@@ -306,76 +306,93 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
     const variants: Record<string, string[]> = {};
     const variantIds: Record<string, string> = {}; // ✅ NEW: Store variant IDs
     const carIds: Record<string, string> = {}; // ✅ NEW: Store car IDs
+    
+    // Always include the Custom Plan brand
+    brandsSet.add("CUSTOM_PLAN");
+    models["CUSTOM_PLAN"] = [];
 
-    // Step 2: For each car, fetch variants
-    for (const brand of brands) {
-      brandsSet.add(brand.brand_name);
-
-      if (!models[brand.brand_name]) {
-        models[brand.brand_name] = [];
-      }
-
-      for (const car of brand.cars) {
-        if (!models[brand.brand_name].includes(car.car_name)) {
-          models[brand.brand_name].push(car.car_name);
-        }
-
-        const bmKey = `${brand.brand_name}__${car.car_name}`;
-        carIds[bmKey] = car.car_id; // ✅ Store car_id
-
-        // Fetch variants for this car
+    // Step 2: For each car, fetch variants in parallel
+    const carPromises = brands.flatMap(brand => 
+      brand.cars.map(async car => {
         try {
           const variantsRes = await fetch(`${BASE_API}/api/cars/${car.car_id}/variants`);
-          if (!variantsRes.ok) continue;
+          if (!variantsRes.ok) return null;
+          const variantsData = await variantsRes.json();
+          if (!variantsData.success) return null;
+          return { brandName: brand.brand_name, carName: car.car_name, carId: car.car_id, variants: variantsData.variants };
+        } catch (e) {
+          console.error(`Error fetching variants for ${car.car_name}:`, e);
+          return null;
+        }
+      })
+    );
 
-          const variantsData: {
-            success: boolean;
-            brand_name: string;
-            car_name: string;
-            variants: Variant[];
-          } = await variantsRes.json();
+    const allCarData = await Promise.all(carPromises);
 
-          if (!variantsData.success) continue;
+    allCarData.forEach(data => {
+      if (!data) return;
+      const { brandName, carName, carId, variants: carVariants } = data;
 
-          const carVariants = variantsData.variants || [];
+      brandsSet.add(brandName);
+      if (!models[brandName]) models[brandName] = [];
+      if (!models[brandName].includes(carName)) {
+        models[brandName].push(carName);
+      }
 
-          // Group by version
-          const versionMap = new Map<number, Variant[]>();
-          carVariants.forEach(v => {
-            if (!versionMap.has(v.version)) {
-              versionMap.set(v.version, []);
+      const bmKey = `${brandName}__${carName}`;
+      carIds[bmKey] = carId;
+
+      const versionMap = new Map<number, Variant[]>();
+      carVariants.forEach(v => {
+        if (!versionMap.has(v.version)) versionMap.set(v.version, []);
+        versionMap.get(v.version)!.push(v);
+      });
+
+      const versionOptions: DropdownOption[] = Array.from(versionMap.keys())
+        .sort((a, b) => b - a)
+        .map(versionNum => ({
+          value: `v${versionNum}`,
+          label: `Version ${versionNum}`,
+        }));
+
+      versions[bmKey] = versionOptions;
+
+      versionMap.forEach((variantList, versionNum) => {
+        const bmvKey = `${brandName}__${carName}__v${versionNum}`;
+        variants[bmvKey] = variantList.map(v => v.variant_name);
+        variantList.forEach(v => {
+          const variantKey = `${bmvKey}__${v.variant_name}`;
+          variantIds[variantKey] = v.variant_id;
+        });
+      });
+    });
+
+    // Step 3: Fetch plans and group them under "New Model Plan"
+    try {
+      const plansRes = await fetch(`${BASE_API}/api/model-plans`);
+      if (plansRes.ok) {
+        const plans = await plansRes.json();
+        const planBrand = "CUSTOM_PLAN";
+        
+        if (plans && plans.length > 0) {
+          plans.forEach((plan: any) => {
+            const planModelName = plan.name;
+            if (!models[planBrand].includes(planModelName)) {
+              models[planBrand].push(planModelName);
             }
-            versionMap.get(v.version)!.push(v);
+            
+            // For plans, we use a special version 'plan'
+            const bmKey = `${planBrand}__${planModelName}`;
+            versions[bmKey] = [{ value: 'plan', label: 'Draft Plan' }];
+            
+            // Map the plan ID
+            const variantKey = `${planBrand}__${planModelName}__plan__${planModelName}`;
+            variantIds[variantKey] = `plan_${plan.plan_id}`;
           });
-
-          const bmKey = `${brand.brand_name}__${car.car_name}`;
-
-          // Build versions dropdown
-          const versionOptions: DropdownOption[] = Array.from(versionMap.keys())
-            .sort((a, b) => b - a) // Latest first
-            .map(versionNum => ({
-              value: `v${versionNum}`,
-              label: `Version ${versionNum}`,
-            }));
-
-          versions[bmKey] = versionOptions;
-
-          // Build variants for each version
-          versionMap.forEach((variantList, versionNum) => {
-            const bmvKey = `${brand.brand_name}__${car.car_name}__v${versionNum}`;
-            variants[bmvKey] = variantList.map(v => v.variant_name);
-
-            // Store variant IDs for lookup
-            variantList.forEach(v => {
-              const variantKey = `${bmvKey}__${v.variant_name}`;
-              variantIds[variantKey] = v.variant_id;
-            });
-          });
-
-        } catch (error) {
-          console.error(`Error fetching variants for car ${car.car_id}:`, error);
         }
       }
+    } catch (err) {
+      console.error("Error fetching plans for sidebar:", err);
     }
 
     return {
@@ -470,7 +487,31 @@ export const fetchComparisonDetails = async (
       }
       
       const row = featureMap.get(featureKey)!;
-      row[className] = feat.sub_variant_values || {};
+      row[className] = feat.sub_variant_values || { "Value": feat.value };
+      if (feat.cost_delta !== undefined) {
+        if (!row.cost_deltas) row.cost_deltas = {};
+        row.cost_deltas[className] = feat.cost_delta;
+      }
+      if (feat.price_delta !== undefined) {
+        if (!row.price_deltas) row.price_deltas = {};
+        row.price_deltas[className] = feat.price_delta;
+      }
+      if (feat.tag) {
+        if (!row.tags) row.tags = {};
+        row.tags[className] = feat.tag;
+      }
+      if (feat.is_deleted !== undefined) {
+        if (!row.is_deleted) row.is_deleted = {};
+        row.is_deleted[className] = feat.is_deleted;
+      }
+      if (feat.original_value !== undefined) {
+        if (!row.original_values) row.original_values = {};
+        row.original_values[className] = feat.original_value;
+      }
+      if (feat.plan_feature_id) {
+        if (!row.plan_feature_ids) row.plan_feature_ids = {};
+        row.plan_feature_ids[className] = feat.plan_feature_id;
+      }
     });
 
     const priceKey = 'Price & Basic Info__Price Value';
@@ -493,6 +534,12 @@ export const fetchComparisonDetails = async (
   return {
     columns,
     data: Array.from(featureMap.values()),
+    base_variant_classes: sortedClassData.reduce((acc: any, cls: any) => {
+      if (cls.base_variant_class) {
+        acc[cls.variant_class] = cls.base_variant_class;
+      }
+      return acc;
+    }, {})
   };
 };
 
@@ -552,22 +599,24 @@ export const fetchModelPlanById = async (planId: string): Promise<ModelPlan> => 
   return json.data;
 };
 
-export const updatePlanFeature = async (planId: string, planFeatureId: string, payload: { value?: string | null, cost_delta?: number }): Promise<any> => {
-  const res = await fetch(`${BASE_API}/api/model-plans/${planId}/features/${planFeatureId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  return await res.json();
-};
-
-export const addPlanFeature = async (planId: string, payload: { feature_name: string, category: string, value?: string | null, cost_delta: number }): Promise<any> => {
+export const addPlanFeature = async (planId: string, feature: { feature_name: string, category: string, value: string, cost_delta: number, price_delta: number, after_feature?: string }) => {
   const res = await fetch(`${BASE_API}/api/model-plans/${planId}/features`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(feature)
   });
-  return await res.json();
+  if (!res.ok) throw new Error('Failed to add plan feature');
+  return res.json();
+};
+
+export const updatePlanFeature = async (planId: string, planFeatureId: string, updates: { value?: string, cost_delta?: number, price_delta?: number, is_deleted?: boolean }) => {
+  const res = await fetch(`${BASE_API}/api/model-plans/${planId}/features/${planFeatureId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates)
+  });
+  if (!res.ok) throw new Error('Failed to update plan feature');
+  return res.json();
 };
 
 export const deletePlanFeature = async (planId: string, planFeatureId: string): Promise<any> => {
