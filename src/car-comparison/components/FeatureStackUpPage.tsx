@@ -335,9 +335,19 @@ const FeatureStackUpPage: React.FC = () => {
   }, [groupedFeatures]);
 
   const totalDelta = useMemo(() => {
-
     if (!currentPlan || !currentPlan.features) return 0;
     return currentPlan.features.reduce((sum, f) => sum + (f.cost_delta || 0), 0);
+  }, [currentPlan]);
+
+  const totalDeltaItems = useMemo(() => {
+    if (!currentPlan || !currentPlan.features) return [];
+    return currentPlan.features
+      .filter(f => (f.cost_delta || 0) !== 0)
+      .map(f => ({
+        category: f.category,
+        featureName: f.feature_name,
+        amount: f.cost_delta || 0
+      }));
   }, [currentPlan]);
 
   const getVersionLabel = (v: string) => {
@@ -538,10 +548,13 @@ const FeatureStackUpPage: React.FC = () => {
                 </div>
 
                 {/* Net BOM Delta Box */}
-                <div className="px-4 py-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3 group hover:border-slate-300 transition-colors">
-                  <div className="text-right">
-                    <p className="text-[8px] uppercase font-black text-slate-400 leading-none mb-1">Delta Cost</p>
-                    <p className={`text-sm font-black leading-none ${totalDelta >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                <div className="px-4 py-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3 group/delta hover:border-slate-300 transition-colors relative">
+                  <div className="text-right flex flex-col items-end">
+                    <div className="flex items-center gap-1">
+                      <Info size={10} className="text-slate-400" />
+                      <p className="text-[8px] uppercase font-black text-slate-400 leading-none">Delta Cost</p>
+                    </div>
+                    <p className={`text-sm font-black leading-none mt-1 ${totalDelta >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                       {totalDelta >= 0 ? '+' : '-'} ₹{Math.abs(totalDelta).toLocaleString()}
                     </p>
                   </div>
@@ -550,6 +563,33 @@ const FeatureStackUpPage: React.FC = () => {
                       : 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white'
                     }`}>
                     {totalDelta >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                  </div>
+
+                  {/* Tooltip */}
+                  <div className="invisible group-hover/delta:visible absolute right-0 top-full pt-2 z-[100] transition-all">
+                    <div className="w-80 bg-white text-slate-800 rounded-2xl shadow-2xl border border-slate-200 p-4 flex flex-col gap-3 cursor-default">
+                      <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Cost Delta Breakdown</span>
+                        <span className={`text-xs font-black ${totalDelta >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                          Net: {totalDelta >= 0 ? '+' : '-'} ₹{Math.abs(totalDelta).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="max-h-[300px] overflow-y-auto custom-scrollbar flex flex-col gap-2 pr-1">
+                        {totalDeltaItems.length > 0 ? totalDeltaItems.map((item, i) => (
+                          <div key={i} className="flex flex-col gap-1 border-b border-slate-50 pb-2 last:border-0">
+                            <div className="text-[8px] text-slate-400 font-bold uppercase leading-none">{item.category}</div>
+                            <div className="flex justify-between items-start gap-3">
+                              <span className="text-[10px] font-bold text-slate-700 break-words flex-1">{item.featureName}</span>
+                              <span className={`text-[10px] font-black whitespace-nowrap ${item.amount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                {item.amount > 0 ? '+' : ''}₹{item.amount.toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                        )) : (
+                          <div className="text-xs text-slate-400 italic py-4 text-center">No cost changes in this plan</div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

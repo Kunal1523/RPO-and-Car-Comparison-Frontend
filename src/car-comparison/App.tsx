@@ -7,7 +7,15 @@ import LoginPage from './components/LoginPage';
 import PricingComparisonPage from './components/PricingComparisonPage';
 import FeatureStackUpPage from './components/FeatureStackUpPage';
 import { ComparisonResponse, SelectionState, NewsResponse } from './types';
-import { fetchComparisonDetails, fetchCarNews } from './services/api';
+import { 
+  fetchComparisonDetails, 
+  fetchCarNews, 
+  createModelPlan, 
+  fetchModelPlanById, 
+  updatePlanFeature,
+  addPlanFeature,
+  deletePlanFeature 
+} from './services/api';
 
 type PageView = 'comparison' | 'pricing' | 'stackup';
 
@@ -38,6 +46,7 @@ const App: React.FC = () => {
 
   // Track the variant IDs currently shown in comparisonData
   const lastFetchedVariantIds = React.useRef<string[]>([]);
+  const [sidebarKey, setSidebarKey] = useState(0);
 
   // ✅ Instant Updates Logic: Reflect sidebar changes (reorder/remove) in the table immediately
   useEffect(() => {
@@ -129,17 +138,14 @@ const App: React.FC = () => {
         alert(`Please complete all fields for Vehicle ${i + 1}.`);
         return;
       }
-      // Note: We don't need variant_id because the backend now expects variant_classes or plan_ids
     }
 
     setIsLoading(true);
     setComparisonData(null);
 
     try {
-      // ✅ NEW: Pass entire selections array to API
       const data = await fetchComparisonDetails(selections);
       setComparisonData(data);
-      // Store IDs for future local reordering
       lastFetchedVariantIds.current = selections.map(s => s.plan_id || s.variant).filter(Boolean) as string[];
     } catch (error) {
       console.error('Error fetching comparison details:', error);
@@ -148,6 +154,142 @@ const App: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  const refreshComparison = async () => {
+    try {
+      const data = await fetchComparisonDetails(currentSelections);
+      setComparisonData(data);
+    } catch (error) {
+      console.error('Failed to refresh comparison:', error);
+    }
+  };
+
+  // ✅ NEW: Plan Management Handlers
+  const handlePlanNewModel = async (variantName: string) => {
+    const baseSelection = currentSelections.find(s => s.variant === variantName);
+    if (!baseSelection) return;
+
+    const planName = `New ${variantName}`;
+    setIsLoading(true);
+    try {
+      const plan = await createModelPlan(planName, variantName, 1);
+      const baseIdx = currentSelections.findIndex(s => s.variant === variantName);
+      const newSelections = [...currentSelections];
+      newSelections.splice(baseIdx + 1, 0, {
+        ...baseSelection,
+        brand: 'CUSTOM_PLAN',
+        model: planName,
+        variant: planName,
+        plan_id: plan.plan_id,
+        version: 'plan',
+        variant_id: ''
+      });
+      setSidebarKey(prev => prev + 1);
+      await handleCompare(newSelections);
+    } catch (err) {
+      console.error('Failed to create plan:', err);
+      alert('Error creating plan');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdatePlanFeature = async (planId: string, featureName: string, category: string, updates: { value?: string, cost_delta?: number, price_delta?: number, is_deleted?: boolean }) => {
+    try {
+      // Find the specific feature in the comparison data to get its plan_feature_id
+      const featureRow = comparisonData?.data.find(row => 
+        row.feature === featureName && row.category === category
+      );
+      if (!featureRow) {
+        console.error("Feature row not found for", featureName, category);
+        return;
+      }
+      
+      // Get the correct variant name (column name) for this plan
+      const selection = currentSelections.find(s => s.plan_id === planId);
+      if (!selection) {
+        console.error("Selection not found for plan", planId);
+        return;
+      }
+      
+      const planFeatureId = featureRow.plan_feature_ids?.[selection.variant];
+      if (!planFeatureId) {
+        console.error("Plan feature ID not found for", featureName, "in variant", selection.variant);
+        return;
+      }
+
+      await updatePlanFeature(planId, planFeatureId, updates);
+      await refreshComparison();
+    } catch (error) {
+      console.error("Failed to update plan feature:", error);
+    }
+  };
+
+  const handleAddPlanFeature = async (planId: string, feature: { feature_name: string, category: string, value: string, cost_delta: number, price_delta: number, after_feature?: string }) => {
+    try {
+      await addPlanFeature(planId, feature);
+      await refreshComparison();
+    } catch (error) {
+      console.error("Failed to add plan feature:", error);
+    }
+  };
+
+  const handleDeletePlanFeature = async (planId: string, featureName: string) => {
+    try {
+      const plan = await fetchModelPlanById(planId);
+      const feature = plan.features?.find(f => f.feature_name === featureName);
+      if (feature) {
+        await deletePlanFeature(planId, feature.plan_feature_id);
+        const updatedData = await fetchComparisonDetails(currentSelections);
+        setComparisonData(updatedData);
+      }
+    } catch (err) {
+      console.error('Delete failed:', err);
+    }
+  };
+
+  const handleFinalizePlan = (planId: string) => {
+    alert(`Plan ${planId} has been finalized and updated in the database.`);
+  };
+
+  const handleRenamePlan = async (planId: string, newName: string) => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/api/model-plans/${planId}/rename`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName })
+      });
+      if (res.ok) {
+        const newSelections = currentSelections.map(s => 
+          s.plan_id === planId ? { ...s, variant: newName, model: newName } : s
+        );
+        setCurrentSelections(newSelections);
+        handleCompare(newSelections);
+        setSidebarKey(prev => prev + 1);
+      }
+    } catch (err) {
+      console.error("Failed to rename plan:", err);
+    }
+  };
+
+  const handleDeletePlan = async (planId: string) => {
+    if (!window.confirm("Are you sure you want to delete this plan permanently?")) return;
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/api/model-plans/${planId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        const newSelections = currentSelections.filter(s => s.plan_id !== planId);
+        setCurrentSelections(newSelections);
+        handleCompare(newSelections);
+        setSidebarKey(prev => prev + 1);
+      }
+    } catch (err) {
+      console.error("Failed to delete plan:", err);
+    }
+  };
+
+
 
   const handleLoginSuccess = () => {
     setIsAuthenticated(true);
@@ -185,6 +327,7 @@ const App: React.FC = () => {
       <Header currentPage={currentPage} onPageChange={handlePageChange} />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
+          key={sidebarKey}
           onCompare={handleCompare}
           isLoading={isLoading}
           selections={currentSelections}
@@ -220,7 +363,17 @@ const App: React.FC = () => {
 
             {/* Table Container - Takes remaining height */}
             <div className="flex-1 overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white relative">
-              <ComparisonTable data={comparisonData} />
+              <ComparisonTable 
+                data={comparisonData} 
+                onPlanNewModel={handlePlanNewModel}
+                onUpdatePlanFeature={handleUpdatePlanFeature}
+                onAddPlanFeature={handleAddPlanFeature}
+                onDeletePlanFeature={handleDeletePlanFeature}
+                onFinalizePlan={handleFinalizePlan}
+                onDeletePlan={handleDeletePlan}
+                onRenamePlan={handleRenamePlan}
+                selections={currentSelections}
+              />
             </div>
           </div>
         </main>

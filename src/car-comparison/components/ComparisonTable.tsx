@@ -816,8 +816,8 @@
 
 
 
-import React, { useMemo, useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp, AlertCircle, Download, Plus, Minus, Loader2, Edit2 } from 'lucide-react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { ChevronDown, ChevronUp, AlertCircle, Download, Plus, Minus, Loader2, Edit2, Trash2, Check, X, Save, PlusCircle, Undo2, Filter, Info } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import TableSearch from './TableSearch';
@@ -826,6 +826,14 @@ import { ComparisonResponse, FeatureGroup, GroupedFeature, VariantPriceData, Pri
 
 interface ComparisonTableProps {
   data: ComparisonResponse | null;
+  selections: any[];
+  onAddPlanFeature?: (planId: string, feature: any) => void;
+  onUpdatePlanFeature?: (planId: string, featureName: string, category: string, updates: { value?: string, cost_delta?: number, price_delta?: number, is_deleted?: boolean }) => void;
+  onDeletePlanFeature?: (planId: string, featureName: string) => void;
+  onRenamePlan?: (planId: string, newName: string) => void;
+  onDeletePlan?: (planId: string) => void;
+  onFinalizePlan?: (planId: string) => void;
+  onPlanNewModel?: (variantName: string) => void;
 }
 
 const HighlightText = ({ text, highlight }: { text: string; highlight: string }) => {
@@ -846,19 +854,232 @@ const HighlightText = ({ text, highlight }: { text: string; highlight: string })
   );
 };
 
-const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
+const ComparisonTable: React.FC<ComparisonTableProps> = ({ 
+  data, 
+  selections,
+  onAddPlanFeature,
+  onUpdatePlanFeature,
+  onDeletePlanFeature,
+  onRenamePlan,
+  onDeletePlan,
+  onFinalizePlan,
+  onPlanNewModel
+}) => {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [showDiffOnly, setShowDiffOnly] = useState(false);
   const [expandAll, setExpandAll] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [hiddenVehicles, setHiddenVehicles] = useState<Set<number>>(new Set());
   const [isEditingEnabled, setIsEditingEnabled] = useState(false);
+  const [draftRows, setDraftRows] = useState<Record<string, { name: string, value: string, cost: number, price: number, afterFeature?: string }>>({});
+  const [editingPlanName, setEditingPlanName] = useState<{ id: string, name: string } | null>(null);
+  const [isFeatureFilterOpen, setIsFeatureFilterOpen] = useState(false);
+  const [hiddenFeatures, setHiddenFeatures] = useState<Set<string>>(new Set());
+
+  // Debounced input component for plan features
+  const PlanFeatureInput = ({ planId, featureName, category, initialValue, onUpdate, isNewFeature, baselineValue, isDeleted, originalValue }: any) => {
+    const [value, setValue] = useState(initialValue);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [lastSyncedValue, setLastSyncedValue] = useState(initialValue);
+
+    useEffect(() => {
+      setValue(initialValue);
+      setLastSyncedValue(initialValue);
+    }, [initialValue]);
+
+    const handleSync = useCallback(() => {
+      if (value === lastSyncedValue) return;
+      setIsSyncing(true);
+      onUpdate(planId, featureName, category, { value })
+        .then(() => {
+          setLastSyncedValue(value);
+          setIsSyncing(false);
+        })
+        .catch(() => setIsSyncing(false));
+    }, [value, planId, featureName, category, onUpdate, lastSyncedValue]);
+
+    useEffect(() => {
+      if (value === lastSyncedValue) return;
+
+      const timer = setTimeout(() => {
+        handleSync();
+      }, 5000);
+
+      return () => clearTimeout(timer);
+    }, [value, lastSyncedValue, handleSync]);
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        handleSync();
+      }
+    };
+
+    // Edited if current value differs from original_value (from plan_features table)
+    const isEdited = originalValue !== undefined && originalValue !== null && value !== originalValue;
+
+    return (
+      <div className="flex flex-col gap-1 w-full">
+        <div className="flex items-center gap-1.5">
+          <input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Enter value..."
+            disabled={isDeleted}
+            className={`text-[10px] px-1.5 py-0.5 rounded border border-transparent hover:border-indigo-300 focus:border-indigo-500 focus:bg-white outline-none transition-all flex-1 font-medium ${
+              isDeleted ? 'bg-slate-100 text-slate-400 line-through cursor-not-allowed' :
+              !value ? 'bg-orange-50 text-orange-600 italic placeholder:text-orange-300 border-dashed border-orange-200' : 'bg-indigo-50/30'
+            }`}
+          />
+          {isSyncing && (
+            <div className="animate-spin h-2 w-2 border border-indigo-500 border-t-transparent rounded-full" />
+          )}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {isNewFeature && (
+            <span className="text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-sm">Added</span>
+          )}
+          {isEdited && !isDeleted && (
+            <span className="text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-sm">Edited</span>
+          )}
+          {isDeleted && (
+            <span className="text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 bg-red-100 text-red-700 rounded-sm">Deleted</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+
+  const renderDraftRow = (draftKey: string, draft: any, category: string, planId: string, variant: string, itemIdx: number, totalItems: number) => {
+    const proposedNum = draft.afterFeature === '__TOP__' ? 1 : itemIdx + 2;
+    
+    return (
+      <div key={`draft-${draftKey}`} className="grid bg-emerald-50/50 border-b border-emerald-100" style={gridColsStyle}>
+        {/* Feature Name Input */}
+        <div className="p-2 pl-6 pr-2 border-r border-slate-200 flex items-start gap-1.5">
+          <span className="text-emerald-500 inline-block min-w-[30px] text-right font-bold text-[10px]">
+            {(displayGroups.find(g => g.groupName === category) as any)?.originalGroupIndex + 1}.{proposedNum}
+          </span>
+          <div className="flex-1">
+            <input
+              autoFocus
+              placeholder="Feature Name..."
+              value={draft.name}
+              onChange={(e) => setDraftRows(prev => ({
+                ...prev,
+                [draftKey]: { ...draft, name: e.target.value }
+              }))}
+              className="w-full bg-white border border-emerald-200 rounded px-2 py-1 text-[10px] font-bold outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+          </div>
+        </div>
+
+        {/* Columns */}
+        {variants.map((v2, vIdx2) => {
+          if (hiddenVehicles.has(vIdx2)) return null;
+          const isThisPlan = v2 === variant;
+
+          return (
+            <div key={vIdx2} className="p-2 border-l border-slate-200 relative">
+              {isThisPlan ? (
+                <div className="space-y-2">
+                  <input
+                    placeholder="Value..."
+                    value={draft.value}
+                    onChange={(e) => setDraftRows(prev => ({
+                      ...prev,
+                      [draftKey]: { ...draft, value: e.target.value }
+                    }))}
+                    className="w-full bg-white border border-emerald-200 rounded px-2 py-1 text-[10px] font-bold outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <div className="grid grid-cols-2 gap-1">
+                    <div className="flex flex-col">
+                      <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Cost</span>
+                      <input
+                        type="number"
+                        value={draft.cost}
+                        onChange={(e) => setDraftRows(prev => ({
+                          ...prev,
+                          [draftKey]: { ...draft, cost: Number(e.target.value) }
+                        }))}
+                        className="w-full bg-white border border-emerald-200 rounded px-1.5 py-0.5 text-[9px] font-bold"
+                      />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Price</span>
+                      <input
+                        type="number"
+                        value={draft.price}
+                        onChange={(e) => setDraftRows(prev => ({
+                          ...prev,
+                          [draftKey]: { ...draft, price: Number(e.target.value) }
+                        }))}
+                        className="w-full bg-white border border-emerald-200 rounded px-1.5 py-0.5 text-[9px] font-bold"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <button
+                      onClick={() => {
+                        if (draft.name && draft.value) {
+                          onAddPlanFeature?.(planId, {
+                            feature_name: draft.name,
+                            category: category,
+                            value: draft.value,
+                            cost_delta: draft.cost,
+                            price_delta: draft.price,
+                            after_feature: draft.afterFeature === '__TOP__' ? undefined : draft.afterFeature
+                          });
+                          setDraftRows(prev => {
+                            const next = { ...prev };
+                            delete next[draftKey];
+                            return next;
+                          });
+                        } else {
+                          alert("Please enter both Feature Name and Value");
+                        }
+                      }}
+                      className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors flex items-center justify-center shadow-sm"
+                      title="Add Feature"
+                    >
+                      <Check size={14} />
+                    </button>
+                    <button
+                      onClick={() => setDraftRows(prev => {
+                        const next = { ...prev };
+                        delete next[draftKey];
+                        return next;
+                      })}
+                      className="p-1 bg-white text-slate-400 hover:text-red-500 rounded border border-slate-200 transition-colors shadow-sm"
+                      title="Cancel"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-full flex items-center justify-center text-slate-300 text-[8px] italic">
+                  -
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
 
   // Mock Edit Handler
   const handleEditClick = (featureName: string, variant: string, currentValue: string) => {
     // TODO: Replace with actual API call
     console.log(`[MOCK API] Edit requested for Feature: "${featureName}", Variant: "${variant}", Current Value: "${currentValue}"`);
-    alert(`Edit Feature: ${featureName}\nVariant: ${variant}\nCurrent Value: ${currentValue}\n\n(Backend functionality under construction)`);
+    alert(`Edit Feature: ${featureName}
+Variant: ${variant}
+Current Value: ${currentValue}
+
+(Backend functionality under construction)`);
   };
 
   const NO_INFO = 'No information Available';
@@ -906,15 +1127,46 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
       if (!hasAnyInfo) return;
 
       if (isPriceRow || ftLower.startsWith('variant launched')) {
-        priceGroup.push({ featureName: featureText, values });
+        priceGroup.push({ 
+          featureName: featureText, 
+          values, 
+          is_deleted: row.is_deleted, 
+          original_values: row.original_values,
+          cost_deltas: row.cost_deltas,
+          price_deltas: row.price_deltas,
+          plan_feature_ids: row.plan_feature_ids,
+          tags: row.tags
+        });
         return;
       }
 
       if (category && category !== 'Additional Features') {
         if (!groupMap[category]) groupMap[category] = [];
-        groupMap[category].push({ featureName: featureText, values });
+        let featureName = featureText;
+        if (featureName.startsWith(`${category} - `)) {
+          featureName = featureName.substring(category.length + 3);
+        }
+        groupMap[category].push({ 
+          featureName, 
+          values, 
+          is_deleted: row.is_deleted, 
+          original_values: row.original_values,
+          cost_deltas: row.cost_deltas,
+          price_deltas: row.price_deltas,
+          plan_feature_ids: row.plan_feature_ids,
+          tags: row.tags
+        });
       } else {
-        additionalGroup.push({ featureName: featureText, values });
+        additionalGroup.push({ 
+          featureName: featureText, 
+          values, 
+          is_deleted: row.is_deleted, 
+          original_values: row.original_values,
+          cost_deltas: row.cost_deltas,
+          price_deltas: row.price_deltas,
+          plan_feature_ids: row.plan_feature_ids,
+          tags: row.tags
+        });
       }
     });
 
@@ -1003,13 +1255,18 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
     if (!data) return [];
     const variants = data.columns.slice(1);
 
-    // If no search and no hidden vehicles, return original groups
-    if (!searchTerm.trim() && hiddenVehicles.size === 0) return groupsWithIndices;
+    // If no search and no hidden vehicles and no hidden features, return original groups
+    if (!searchTerm.trim() && hiddenVehicles.size === 0 && hiddenFeatures.size === 0) return groupsWithIndices;
 
     const lowerTerm = searchTerm.toLowerCase();
 
     return groupsWithIndices.map(group => {
       let filteredItems = group.items;
+
+      // 0. Filter hidden features
+      if (hiddenFeatures.size > 0) {
+        filteredItems = filteredItems.filter(item => !hiddenFeatures.has(`${group.groupName}__${item.featureName}`));
+      }
 
       // 1. Search Filter
       if (searchTerm.trim()) {
@@ -1036,13 +1293,26 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
 
       return { ...group, items: filteredItems, hasDifferences };
     }).filter(Boolean) as any[];
-  }, [groupsWithIndices, searchTerm, data, hiddenVehicles]);
+  }, [groupsWithIndices, searchTerm, data, hiddenVehicles, hiddenFeatures]);
 
-  // Apply "Differs Only" filter to groups
+  // Apply "Differs Only" filter to groups and items
   const displayGroups = useMemo(() => {
-    if (!showDiffOnly) return filteredGroups;
-    return filteredGroups.filter(g => g.hasDifferences);
-  }, [filteredGroups, showDiffOnly]);
+    return filteredGroups.map(group => {
+      let items = group.items;
+      if (showDiffOnly) {
+        items = items.filter(item => {
+          const variantValues = data!.columns.slice(1)
+            .filter((_, idx) => !hiddenVehicles.has(idx))
+            .map(v => item.values[v]);
+          const nonNoInfoValues = variantValues.filter(v => v !== NO_INFO);
+          const uniqueVals = new Set(nonNoInfoValues);
+          return uniqueVals.size > 1;
+        });
+      }
+      if (items.length === 0) return null;
+      return { ...group, items };
+    }).filter(Boolean) as any[];
+  }, [filteredGroups, showDiffOnly, data, hiddenVehicles]);
 
   // When search is active, default to expanded view
   useEffect(() => {
@@ -1051,12 +1321,27 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
     }
   }, [searchTerm]);
 
-  // Sync openGroups with displayGroups and expandAll state
+  // Only initialize new groups, don't overwrite existing ones on data refresh
+  useEffect(() => {
+    setOpenGroups(prev => {
+      const next = { ...prev };
+      let changed = false;
+      displayGroups.forEach(g => {
+        if (next[g.groupName] === undefined) {
+          next[g.groupName] = expandAll;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [displayGroups]);
+
+  // Master toggle for expandAll
   useEffect(() => {
     const s: Record<string, boolean> = {};
     displayGroups.forEach(g => s[g.groupName] = expandAll);
     setOpenGroups(s);
-  }, [displayGroups, expandAll]);
+  }, [expandAll]);
 
   const toggleGroup = (groupName: string) =>
     setOpenGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
@@ -1078,7 +1363,11 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
       // Feature column + 1 column per visible variant
       const columns = [
         { header: 'Feature', key: 'feature', width: 40 },
-        ...exportVariants.map(v => ({ header: v, key: v, width: 30 }))
+        ...exportVariants.map(v => {
+          const selection = selections.find(s => s.variant === v || (s.plan_id && v.includes(s.variant)));
+          const isPlan = !!selection?.plan_id;
+          return { header: `${isPlan ? '[PLAN] ' : ''}${v}`, key: v, width: 30 };
+        })
       ];
       ws.columns = columns;
 
@@ -1374,8 +1663,16 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                 <span>{hiddenVehicles.size} Hidden</span>
               </button>
 
-              <div className="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 min-w-[200px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30">
-                <div className="text-xs font-bold text-slate-600 mb-2 px-2">Hidden Vehicles</div>
+              <div className="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 min-w-[200px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[100]">
+                <div className="flex justify-between items-center mb-2 px-2">
+                  <div className="text-xs font-bold text-slate-600">Hidden Vehicles</div>
+                  <button 
+                    onClick={() => setHiddenVehicles(new Set())}
+                    className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-semibold transition-colors"
+                  >
+                    Clear All
+                  </button>
+                </div>
                 <div className="space-y-1">
                   {variants.map((v, idx) => {
                     if (!hiddenVehicles.has(idx)) return null;
@@ -1385,7 +1682,12 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                         onClick={() => toggleVehicleVisibility(idx)}
                         className="w-full text-left px-2 py-1.5 text-xs hover:bg-slate-50 rounded flex items-center justify-between group/item"
                       >
-                        <span className="truncate flex-1">Veh {idx + 1}: {v}</span>
+                        <span className="truncate flex-1">
+                          {(() => {
+                            const selection = selections.find(s => s.variant === v || (s.plan_id && v.includes(s.variant)));
+                            return selection?.plan_id ? 'Plan' : 'Veh';
+                          })()} {idx + 1}: {v}
+                        </span>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-0 group-hover/item:opacity-100 transition-opacity flex-shrink-0 ml-2">
                           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                           <circle cx="12" cy="12" r="3"></circle>
@@ -1415,37 +1717,291 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
       >
         <div style={{ minWidth: tableMinWidth ? `${tableMinWidth}px` : '100%' }}>
 
-        <div className="grid border-b border-slate-200 sticky top-0 z-20 shadow-md backdrop-blur-md bg-white/90" style={gridColsStyle}>
-          <div className="p-3 font-bold uppercase tracking-wider text-[10px] md:text-xs flex items-center bg-gradient-to-br from-slate-800 to-slate-900 text-white border-r border-slate-700 shadow-inner">
-            <span className="opacity-90">Comparison Feature</span>
+        <div className="grid border-b border-slate-200 sticky top-0 z-50 shadow-md backdrop-blur-md bg-white/90" style={gridColsStyle}>
+          <div className="p-3 font-bold uppercase tracking-wider text-[10px] md:text-xs flex items-center bg-gradient-to-br from-slate-800 to-slate-900 text-white border-r border-slate-700 shadow-inner relative">
+            <span className="opacity-90 flex-1">Comparison Feature</span>
+            <div className="relative" onMouseLeave={() => setIsFeatureFilterOpen(false)}>
+              <button
+                onClick={() => setIsFeatureFilterOpen(prev => !prev)}
+                className={`p-1.5 rounded-full transition-colors ml-2 ${isFeatureFilterOpen || hiddenFeatures.size > 0 ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
+                title="Filter Features"
+              >
+                <Filter size={14} />
+              </button>
+              
+              {isFeatureFilterOpen && (
+                <div className="absolute top-full left-0 mt-0 pt-2 w-64 bg-transparent z-[100] text-slate-800 flex flex-col font-normal max-h-[60vh]">
+                  <div className="bg-white rounded-lg shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+                  <div className="p-2 border-b border-slate-100 flex justify-between gap-2 bg-slate-50">
+                    <button 
+                      onClick={() => setHiddenFeatures(new Set())} 
+                      className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 font-semibold flex-1 transition-colors"
+                    >
+                      Select All
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const allFeatures = new Set<string>();
+                        groups.forEach(g => g.items.forEach(i => allFeatures.add(`${g.groupName}__${i.featureName}`)));
+                        setHiddenFeatures(allFeatures);
+                      }} 
+                      className="text-[10px] bg-slate-200 text-slate-700 px-2 py-1 rounded hover:bg-slate-300 font-semibold flex-1 transition-colors"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                  <div className="overflow-y-auto flex-1 p-3 space-y-4">
+                    {groups.map(group => {
+                      const groupKeyPrefix = `${group.groupName}__`;
+                      const groupItemKeys = group.items.map(i => `${groupKeyPrefix}${i.featureName}`);
+                      const allHidden = groupItemKeys.every(k => hiddenFeatures.has(k));
+                      const someHidden = groupItemKeys.some(k => hiddenFeatures.has(k));
+                      
+                      return (
+                        <div key={group.groupName} className="flex flex-col gap-1.5">
+                          <label className="flex items-center gap-2 cursor-pointer font-bold text-[11px] text-slate-800">
+                            <input 
+                              type="checkbox" 
+                              checked={!allHidden}
+                              ref={(el) => { if (el) el.indeterminate = someHidden && !allHidden; }}
+                              onChange={(e) => {
+                                const next = new Set(hiddenFeatures);
+                                if (e.target.checked) {
+                                  groupItemKeys.forEach(k => next.delete(k));
+                                } else {
+                                  groupItemKeys.forEach(k => next.add(k));
+                                }
+                                setHiddenFeatures(next);
+                              }}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3 h-3 cursor-pointer"
+                            />
+                            {group.groupName}
+                          </label>
+                          <div className="pl-5 flex flex-col gap-1">
+                            {group.items.map(item => {
+                              const itemKey = `${groupKeyPrefix}${item.featureName}`;
+                              const isHidden = hiddenFeatures.has(itemKey);
+                              return (
+                                <label key={itemKey} className="flex items-center gap-2 cursor-pointer text-[10px] text-slate-600 hover:text-slate-900">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={!isHidden}
+                                    onChange={(e) => {
+                                      const next = new Set(hiddenFeatures);
+                                      if (e.target.checked) next.delete(itemKey);
+                                      else next.add(itemKey);
+                                      setHiddenFeatures(next);
+                                    }}
+                                    className="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-2.5 h-2.5 cursor-pointer"
+                                  />
+                                  <span className="truncate" title={item.featureName}>{item.featureName}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+            </div>
           </div>
 
           {variants.map((v, idx) => {
-            const isHidden = hiddenVehicles.has(idx);
-            if (isHidden) return null;
+            if (hiddenVehicles.has(idx)) return null;
+            const selection = selections.find(s => s.variant === v || (s.plan_id && v.includes(s.variant)));
+            const isPlan = selection?.plan_id ? true : false;
+            const planId = selection?.plan_id;
+
+            // Calculate delta for this plan column
+            let totalDelta = 0;
+            let totalPriceDelta = 0;
+            const costItems: { category: string, featureName: string, amount: number }[] = [];
+            const priceItems: { category: string, featureName: string, amount: number }[] = [];
+
+            if (isPlan && data) {
+              data.data.forEach(row => {
+                if (!row.is_deleted?.[v]) {
+                  const costVal = Number(row.cost_deltas?.[v] || 0);
+                  const priceVal = Number(row.price_deltas?.[v] || 0);
+                  
+                  if (costVal !== 0) {
+                    totalDelta += costVal;
+                    const cat = row.category || 'General';
+                    let fName = row.feature;
+                    if (fName.startsWith(`${cat} - `)) {
+                      fName = fName.substring(cat.length + 3);
+                    }
+                    costItems.push({ category: cat, featureName: fName, amount: costVal });
+                  }
+                  
+                  if (priceVal !== 0) {
+                    totalPriceDelta += priceVal;
+                    const cat = row.category || 'General';
+                    let fName = row.feature;
+                    if (fName.startsWith(`${cat} - `)) {
+                      fName = fName.substring(cat.length + 3);
+                    }
+                    priceItems.push({ category: cat, featureName: fName, amount: priceVal });
+                  }
+                }
+              });
+            }
 
             return (
               <div
                 key={idx}
-                className={`p-3 font-bold text-[11px] md:text-sm border-l border-white/20 flex flex-col items-start justify-center relative group ${variantBg(idx)} transition-all duration-300 hover:brightness-110`}
+                className={`p-3 font-bold text-[11px] md:text-sm border-l border-white/20 flex flex-col items-start justify-center relative group ${isPlan ? 'bg-indigo-700 text-white' : variantBg(idx)} min-w-0`}
                 title={v}
               >
-                <button
-                  onClick={() => toggleVehicleVisibility(idx)}
-                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-all bg-black/20 hover:bg-black/40 rounded-full p-1 text-white shadow-sm"
-                  title="Hide this vehicle"
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <line x1="1" y1="1" x2="23" y2="23"></line>
-                  </svg>
-                </button>
+                <div className="absolute top-1 right-1 flex items-center gap-1">
+                  <button
+                    onClick={() => toggleVehicleVisibility(idx)}
+                    className="transition-all bg-black/10 hover:bg-black/30 rounded-full p-1 text-white shadow-sm"
+                    title="Hide this column"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                      <circle cx="12" cy="12" r="3"></circle>
+                      <line x1="1" y1="1" x2="23" y2="23"></line>
+                    </svg>
+                  </button>
+                  
+                  {isPlan && (
+                    <>
+                      <button
+                        onClick={() => onDeletePlan?.(planId!)}
+                        className="bg-red-500/80 hover:bg-red-600 text-white p-1 rounded-full shadow-sm transition-all"
+                        title="Delete Plan Permanently"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </>
+                  )}
+                </div>
+
                 <div className="flex items-center gap-1.5 mb-1">
                   <span className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px] font-black">{idx + 1}</span>
-                  <div className="text-[9px] opacity-70 uppercase tracking-widest font-black">Vehicle</div>
+                  <div className="text-[9px] opacity-70 uppercase tracking-widest font-black">{isPlan ? 'Plan' : 'Vehicle'}</div>
                 </div>
-                <span className="truncate w-full leading-tight drop-shadow-sm">{v}</span>
+
+                {editingPlanName && editingPlanName.id === planId ? (
+                  <input
+                    autoFocus
+                    className="bg-white/20 border border-white/40 rounded px-1.5 py-0.5 text-white w-full text-[11px] font-bold outline-none placeholder:text-white/50 shadow-inner"
+                    value={editingPlanName.name}
+                    onChange={(e) => setEditingPlanName({ ...editingPlanName, name: e.target.value })}
+                    onBlur={() => {
+                      if (editingPlanName.name.trim() && editingPlanName.name !== v) {
+                        onRenamePlan?.(planId!, editingPlanName.name);
+                      }
+                      setEditingPlanName(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') setEditingPlanName(null);
+                    }}
+                  />
+                ) : (
+                  <div className="flex flex-col w-full min-w-0">
+                    <span 
+                      className={`truncate w-full leading-tight drop-shadow-sm ${isPlan ? 'cursor-text hover:underline decoration-white/40' : ''}`}
+                      onClick={() => isPlan && setEditingPlanName({ id: planId!, name: v })}
+                    >
+                      {isPlan && data?.base_variant_classes?.[v] ? `${v} (${data.base_variant_classes[v]})` : v}
+                    </span>
+                    {isPlan && (
+                      <div className="flex flex-col gap-0.5 mt-1">
+                        {/* COST DELTA */}
+                        <div className="relative group/tooltip-cost flex items-center gap-1 w-full min-w-0">
+                          <div className="flex items-center gap-1 cursor-help">
+                            <Info size={10} className="text-white/60 hover:text-white transition-colors" />
+                            <span className={`text-[8px] font-black flex items-center gap-1 ${totalDelta <= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                              <div className="w-1 h-1 rounded-full bg-current" /> COST: {totalDelta > 0 ? '+' : ''}₹{totalDelta.toLocaleString()}
+                            </span>
+                          </div>
+                          
+                          <div className="invisible group-hover/tooltip-cost:visible absolute left-0 top-full pt-1 z-[100] transition-all">
+                            <div className="w-72 bg-white text-slate-800 rounded-xl shadow-2xl border border-slate-200 p-3 flex flex-col gap-2 cursor-default">
+                              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Cost Delta Breakdown</span>
+                                <span className={`text-[10px] font-black ${totalDelta >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                  Net: {totalDelta > 0 ? '+' : ''}₹{totalDelta.toLocaleString()}
+                                </span>
+                              </div>
+                              <div className="max-h-[250px] overflow-y-auto custom-scrollbar flex flex-col gap-1.5 pr-1">
+                                {costItems.length > 0 ? costItems.map((item, i) => (
+                                  <div key={i} className="flex flex-col gap-0.5 border-b border-slate-50 pb-1 last:border-0">
+                                    <div className="text-[7px] text-slate-400 font-bold uppercase leading-none">{item.category}</div>
+                                    <div className="flex justify-between items-start gap-2">
+                                      <span className="text-[9px] font-medium text-slate-700 break-words flex-1">{item.featureName}</span>
+                                      <span className={`text-[9px] font-bold whitespace-nowrap ${item.amount > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                        {item.amount > 0 ? '+' : ''}₹{item.amount.toLocaleString()}
+                                      </span>
+                                    </div>
+                                  </div>
+                                )) : (
+                                  <div className="text-[9px] text-slate-400 italic py-2 text-center">No cost deltas added</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* PRICE DELTA */}
+                        <div className="relative group/tooltip-price flex items-center gap-1 w-full min-w-0">
+                          <div className="flex items-center gap-1 cursor-help">
+                            <Info size={10} className="text-white/60 hover:text-white transition-colors" />
+                            <span className={`text-[8px] font-black flex items-center gap-1 ${totalPriceDelta >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                              <div className="w-1 h-1 rounded-full bg-current" /> PRICE: {totalPriceDelta > 0 ? '+' : ''}₹{totalPriceDelta.toLocaleString()}
+                            </span>
+                          </div>
+
+                          <div className="invisible group-hover/tooltip-price:visible absolute left-0 top-full pt-1 z-[100] transition-all">
+                            <div className="w-72 bg-white text-slate-800 rounded-xl shadow-2xl border border-slate-200 p-3 flex flex-col gap-2 cursor-default">
+                              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Price Delta Breakdown</span>
+                                <span className={`text-[10px] font-black ${totalPriceDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                  Net: {totalPriceDelta > 0 ? '+' : ''}₹{totalPriceDelta.toLocaleString()}
+                                </span>
+                              </div>
+                              <div className="max-h-[250px] overflow-y-auto custom-scrollbar flex flex-col gap-1.5 pr-1">
+                                {priceItems.length > 0 ? priceItems.map((item, i) => (
+                                  <div key={i} className="flex flex-col gap-0.5 border-b border-slate-50 pb-1 last:border-0">
+                                    <div className="text-[7px] text-slate-400 font-bold uppercase leading-none">{item.category}</div>
+                                    <div className="flex justify-between items-start gap-2">
+                                      <span className="text-[9px] font-medium text-slate-700 break-words flex-1">{item.featureName}</span>
+                                      <span className={`text-[9px] font-bold whitespace-nowrap ${item.amount > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                        {item.amount > 0 ? '+' : ''}₹{item.amount.toLocaleString()}
+                                      </span>
+                                    </div>
+                                  </div>
+                                )) : (
+                                  <div className="text-[9px] text-slate-400 italic py-2 text-center">No price deltas added</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!isPlan && onPlanNewModel && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPlanNewModel(v);
+                    }}
+                    className="mt-2 w-full py-1 bg-white/20 hover:bg-white/40 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1"
+                  >
+                    <PlusCircle size={10} />
+                    Plan New Model
+                  </button>
+                )}
               </div>
             );
           })}
@@ -1465,36 +2021,74 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
             return (
               <div key={group.groupName} className="bg-white">
 
-                <button
-                  onClick={() => toggleGroup(group.groupName)}
-                  disabled={showDiffOnly && !group.hasDifferences}
-                  className={`w-full flex items-center justify-between px-3 py-1.5 transition-colors text-left border-b border-slate-100 ${showDiffOnly && !group.hasDifferences
+                <div 
+                  onClick={() => !(showDiffOnly && !group.hasDifferences) && toggleGroup(group.groupName)}
+                  className={`grid sticky top-[33px] z-30 border-b border-slate-100 transition-colors ${showDiffOnly && !group.hasDifferences
                     ? 'bg-slate-50 text-slate-400 cursor-default'
-                    : 'bg-sky-50 hover:bg-sky-100 text-slate-900 sticky top-[33px] z-10'  // Sticky group header
+                    : 'bg-sky-50 hover:bg-sky-100 text-slate-900 cursor-pointer'
                     }`}
+                  style={gridColsStyle}
                 >
-                  <span className="font-semibold flex items-center gap-2 text-[11px]">
-
-                    {/* Toggle Icon instead of Blue Bar */}
-                    <span className="mr-1 text-blue-600">
-                      {isOpen && !(showDiffOnly && !group.hasDifferences) ? <Minus size={12} /> : <Plus size={12} />}
-                    </span>
-
-                    {/* Numbering 1, 2, 3... - Use original index */}
-                    <span>{(group as any).originalGroupIndex + 1}. {group.groupName}</span>
-
-                    {showDiffOnly && !group.hasDifferences && (
-                      <span className="ml-2 text-[9px] font-medium bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full uppercase tracking-wider">
-                        No Differences
+                  <div className="w-full flex items-center px-3 py-1.5 text-left border-r border-slate-200">
+                    <span className="font-semibold flex items-center gap-2 text-[11px]">
+                      <span className="mr-1 text-blue-600">
+                        {isOpen && !(showDiffOnly && !group.hasDifferences) ? <Minus size={12} /> : <Plus size={12} />}
                       </span>
-                    )}
-                  </span>
+                      <span>{(group as any).originalGroupIndex + 1}. {group.groupName}</span>
+                      {showDiffOnly && !group.hasDifferences && (
+                        <span className="ml-2 text-[9px] font-medium bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                          No Differences
+                        </span>
+                      )}
+                    </span>
+                  </div>
 
-                  {/* Removed end Chevron as requested to use start icon */}
-                </button>
+                  {/* Category Header Planning Columns */}
+                  {variants.map((v, vIdx) => {
+                    if (hiddenVehicles.has(vIdx)) return null;
+                    const selection = selections.find(s => s.variant === v || (s.plan_id && v.includes(s.variant)));
+                    const isPlan = selection?.plan_id ? true : false;
+                    const planId = selection?.plan_id;
+
+                    return (
+                      <div key={vIdx} className="p-1 px-2 border-l border-slate-100 flex items-center justify-center relative group/cat-edge">
+                        {isOpen && isPlan && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const draftKey = `${group.groupName}__${planId}`;
+                              setDraftRows(prev => ({
+                                ...prev,
+                                [draftKey]: { name: '', value: 'Standard', cost: 0, price: 0, afterFeature: '__TOP__' }
+                              }));
+                            }}
+                            className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 z-20 w-5 h-5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full flex items-center justify-center shadow-md transition-all"
+                            title={`Add feature to ${group.groupName}`}
+                          >
+                            <Plus size={12} strokeWidth={3} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
 
                 {isOpen && (
                   <div className="divide-y divide-slate-100 max-h-[50vh] overflow-y-auto custom-scrollbar">
+                    {/* TOP-LEVEL DRAFT ROWS (from category header) */}
+                    {variants.map((v, vIdx) => {
+                      if (hiddenVehicles.has(vIdx)) return null;
+                      const selection = selections.find(s => s.variant === v || (s.plan_id && v.includes(s.variant)));
+                      const planId = selection?.plan_id;
+                      if (!planId) return null;
+
+                      const draftKey = `${group.groupName}__${planId}`;
+                      const draft = draftRows[draftKey];
+                      if (!draft || draft.afterFeature !== '__TOP__') return null;
+
+                      return renderDraftRow(draftKey, draft, group.groupName, planId, v, -1, group.items.length);
+                    })}
+
                     {group.items.map((item: any, idx: number) => {
 
                       const ftLower = item.featureName.toLowerCase().trim();
@@ -1509,8 +2103,14 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                         .map(v => item.values[v]);
 
                       const nonNoInfoValues = variantValues.filter(v => v !== NO_INFO);
-                      const uniqueVals = Array.from(new Set(nonNoInfoValues));
-                      const isDifferent = uniqueVals.length > 1;
+                      const uniqueVals = Array.from(new Set(nonNoInfoValues.map(v => typeof v === 'object' ? JSON.stringify(v) : v)));
+                      
+                      // Row is considered "different" if there's more than one unique value OR if it has info in a plan column
+                      const hasPlanInfo = variants.some(v => {
+                        const selection = selections.find(s => s.variant === v || (s.plan_id && v.includes(s.variant)));
+                        return selection?.plan_id && item.values[v] !== NO_INFO;
+                      });
+                      const isDifferent = uniqueVals.length > 1 || hasPlanInfo;
 
                       if (showDiffOnly && !isDifferent && !isPriceRow && !isBrand && !isCar && !isVar && !isDate) return null;
 
@@ -1521,146 +2121,290 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data }) => {
                       else if (isVar) rowBg = 'bg-violet-50 hover:bg-violet-100/80';
                       else if (isDate) rowBg = 'bg-emerald-50 hover:bg-emerald-100/80';
                       else if (isPriceRow) rowBg = 'bg-slate-50';
-                      else if (isDifferent) rowBg = 'bg-amber-100 hover:bg-amber-300/80'; // Increased strength and removed diff tag logic below
+                      else if (isDifferent) rowBg = 'bg-amber-100 hover:bg-amber-300/80';
 
                       return (
-                        <div
-                          key={idx}
-                          className={`grid transition-colors ${rowBg}`}
-                          style={gridColsStyle}
-                        >
+                        <React.Fragment key={idx}>
+                          <div className={`grid transition-colors ${rowBg}`} style={gridColsStyle}>
 
-                          <div className={`p-1 pl-6 pr-2 text-[10px] font-medium border-r border-slate-200 flex items-start justify-start text-left gap-1.5 ${isBrand || isCar || isVar || isDate ? 'text-blue-900 font-bold' : 'text-slate-700'}`}>
-                            <span className="text-slate-500 inline-block min-w-[30px] text-right">
-                              {(group as any).originalGroupIndex + 1}.{(item as any).originalItemIndex + 1}
-                            </span>
-                            <span className={`flex-1 break-words ${isBrand || isCar || isVar || isDate ? 'uppercase tracking-tight text-[9px]' : ''}`}>
-                              <HighlightText text={item.featureName} highlight={searchTerm} />
-                            </span>
-                          </div>
+                            <div className={`p-1 pl-6 pr-2 text-[10px] font-medium border-r border-slate-200 flex items-start justify-start text-left gap-1.5 ${isBrand || isCar || isVar || isDate ? 'text-blue-900 font-bold' : 'text-slate-700'}`}>
+                              <span className="text-slate-500 inline-block min-w-[30px] text-right">
+                                {(group as any).originalGroupIndex + 1}.{(item as any).originalItemIndex + 1}
+                              </span>
+                              <span className={`flex-1 break-words ${isBrand || isCar || isVar || isDate ? 'uppercase tracking-tight text-[9px]' : ''}`}>
+                                <HighlightText text={item.featureName} highlight={searchTerm} />
+                              </span>
+                            </div>
 
-                          {variants.map((v, vIdx) => {
-                            // Skip hidden vehicles
-                            if (hiddenVehicles.has(vIdx)) return null;
+                            {variants.map((v, vIdx) => {
+                              if (hiddenVehicles.has(vIdx)) return null;
 
-                            const value = item.values[v];
-                            const isPriceCell = isPriceRow && value && typeof value === 'object' && (value as any).is_price_class;
+                              const selection = selections.find(s => s.variant === v || (s.plan_id && v.includes(s.variant)));
+                              const isPlan = selection?.plan_id ? true : false;
+                              const planId = selection?.plan_id;
 
-                            return (
-                              <div
-                                key={vIdx}
-                                className={`relative p-1 px-2 text-[10px] border-l border-slate-200 overflow-hidden ${
-                                  item.values[v] === NO_INFO ? 'text-slate-400 italic' : 'text-slate-900'
-                                }`}
-                                style={{ wordBreak: 'break-word', minWidth: 0 }}
-                              >
-                                {isPriceCell ? (
-                                  <div className="space-y-1.5 overflow-y-auto" style={{ maxHeight: '240px' }}>
-                                    {(value as any).sub_variants.map((sv: any, svIdx: number) => (
-                                      <div key={svIdx} className="border-b border-slate-200 last:border-0 pb-1 last:pb-0">
-                                        <div className="text-[7px] text-slate-400 font-bold uppercase tracking-tight mb-0.5 truncate" title={sv.name}>
-                                          {sv.name}
-                                        </div>
-                                        <div className="space-y-0.5">
-                                          {(sv.pricing || []).map((price: any, pIdx: number) => {
-                                            const parts = [
-                                              price.fuel_type,
-                                              price.engine_type,
-                                              price.transmission_type,
-                                              price.paint_type,
-                                              price.edition
-                                            ].filter(Boolean);
-                                            const label = parts.join(' / ') || 'Standard';
-                                            const formattedPrice = new Intl.NumberFormat('en-IN', {
-                                              style: 'currency',
-                                              currency: price.currency || 'INR',
-                                              maximumFractionDigits: 0
-                                            }).format(price.ex_showroom_price);
+                              const value = item.values[v];
+                              const isPriceCell = isPriceRow && value && typeof value === 'object' && (value as any).is_price_class;
 
-                                            return (
-                                              <div key={pIdx} className="flex flex-col gap-0">
-                                                <span className="text-[7px] text-slate-500 font-medium leading-tight break-words whitespace-normal">
-                                                  <HighlightText text={label} highlight={searchTerm} />
-                                                </span>
-                                                <span className="text-[9px] font-bold text-green-700 whitespace-nowrap">
-                                                  <HighlightText text={formattedPrice} highlight={searchTerm} />
-                                                </span>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-col gap-1 w-full py-1">
-                                    {typeof value === 'string' ? (
-                                      <div className="text-slate-400 italic text-[9px]">{value}</div>
-                                    ) : (
-                                      (() => {
-                                        const grouped: Record<string, string[]> = {};
-                                        Object.entries(value as object).forEach(([name, val]) => {
-                                          const dVal = String(val || NO_INFO);
-                                          if (!grouped[dVal]) grouped[dVal] = [];
-                                          grouped[dVal].push(name);
-                                        });
+                              return (
+                                <React.Fragment key={vIdx}>
+                                  <div
+                                    className={`relative p-1 px-2 text-[10px] border-l border-slate-200 ${
+                                      item.values[v] === NO_INFO ? 'text-slate-400 italic' : 'text-slate-900'
+                                    }`}
+                                    style={{ wordBreak: 'break-word', minWidth: 0, overflow: 'visible' }}
+                                  >
+                                    {isPlan && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const draftKey = `${group.groupName}__${planId}`;
+                                          setDraftRows(prev => ({
+                                            ...prev,
+                                            [draftKey]: { name: '', value: 'Standard', cost: 0, price: 0, afterFeature: item.featureName, variant: v }
+                                          }));
+                                        }}
+                                        className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 z-20 w-5 h-5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full flex items-center justify-center shadow-md transition-all"
+                                        title="Insert feature below"
+                                      >
+                                        <Plus size={12} strokeWidth={3} />
+                                      </button>
+                                    )}
 
-                                        const groupEntries = Object.entries(grouped);
-                                        // If only 1 unique value across all sub-variants → show value only, no "Name →" prefix
-                                        const isSingleValue = groupEntries.length === 1;
+                                    {isPriceCell ? (
+                                      <div className="space-y-1.5 overflow-y-auto" style={{ maxHeight: '240px' }}>
+                                        {(value as any).sub_variants.map((sv: any, svIdx: number) => (
+                                          <div key={svIdx} className="border-b border-slate-200 last:border-0 pb-1 last:pb-0">
+                                            <div className="text-[7px] text-slate-400 font-bold uppercase tracking-tight mb-0.5 truncate" title={sv.name}>
+                                              {sv.name}
+                                            </div>
+                                            <div className="space-y-0.5">
+                                              {(sv.pricing || []).map((price: any, pIdx: number) => {
+                                                const label = [
+                                                  price.fuel_type,
+                                                  price.engine_type,
+                                                  price.transmission_type,
+                                                  price.paint_type,
+                                                  price.edition
+                                                ].filter(Boolean).join(' / ') || 'Standard';
+                                                const formattedPrice = new Intl.NumberFormat('en-IN', {
+                                                  style: 'currency',
+                                                  currency: price.currency || 'INR',
+                                                  maximumFractionDigits: 0
+                                                }).format(price.ex_showroom_price);
 
-                                        return groupEntries.map(([displayVal, names], gIdx) => {
-                                          const isNoInfo = displayVal === NO_INFO;
-                                          const cleanNames = names.map(name => {
-                                            let clean = name;
-                                            if (v && clean.toLowerCase().startsWith(v.toLowerCase())) {
-                                              clean = clean.substring(v.length).trim();
-                                              if (clean.startsWith('-')) clean = clean.substring(1).trim();
-                                            }
-                                            return clean || name;
-                                          });
-                                          const combinedNames = cleanNames.join(' / ');
-
-                                          return (
-                                            <div key={gIdx} className={`flex items-start gap-1.5 ${isNoInfo ? 'text-slate-400 italic' : 'text-slate-900'}`}>
-                                              {!isNoInfo && !isSingleValue && <span className="text-blue-500 mt-0.5 whitespace-nowrap">•</span>}
-                                              <div className="flex-1 flex flex-wrap items-center gap-1 min-h-[16px]">
-                                                {/* Only show "Name →" when there are multiple different values */}
-                                                {!isNoInfo && !isSingleValue && (
-                                                  <>
-                                                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight whitespace-nowrap">
-                                                      <HighlightText text={combinedNames} highlight={searchTerm} />
+                                                return (
+                                                  <div key={pIdx} className="flex flex-col gap-0">
+                                                    <span className="text-[7px] text-slate-500 font-medium leading-tight break-words whitespace-normal">
+                                                      <HighlightText text={label} highlight={searchTerm} />
                                                     </span>
-                                                    <span className="text-slate-600">→</span>
-                                                  </>
-                                                )}
-                                                <span className={isNoInfo ? 'text-[9px]' : 'font-medium'}>
-                                                  <HighlightText text={displayVal} highlight={searchTerm} />
-                                                </span>
-                                                {isEditingEnabled && !isNoInfo && (
-                                                  <button
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      handleEditClick(item.featureName, `${v} (${combinedNames})`, displayVal);
+                                                    <span className="text-[9px] font-bold text-green-700 whitespace-nowrap">
+                                                      <HighlightText text={formattedPrice} highlight={searchTerm} />
+                                                    </span>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="flex flex-col gap-1 w-full py-1">
+                                        {isPlan ? (
+                                          <div className="flex flex-col gap-1 w-full relative">
+                                            <PlanFeatureInput 
+                                              planId={planId!}
+                                              featureName={item.featureName}
+                                              category={group.groupName}
+                                              initialValue={(() => {
+                                                if (typeof value === 'string') return value === NO_INFO ? '' : value;
+                                                if (value && typeof value === 'object') return value[v] || '';
+                                                return '';
+                                              })()}
+                                              onUpdate={onUpdatePlanFeature!}
+                                              isDeleted={item.is_deleted?.[v]}
+                                              originalValue={(() => {
+                                                const orig = item.original_values?.[v];
+                                                if (typeof orig === 'string') return orig === NO_INFO ? '' : orig;
+                                                if (orig && typeof orig === 'object') return (orig as any)[v] || '';
+                                                return '';
+                                              })()}
+                                              isNewFeature={!variants.some(variant => {
+                                                const sel = selections.find(s => s.variant === variant);
+                                                return !sel?.plan_id && item.values[variant] !== NO_INFO;
+                                              })}
+                                              baselineValue={(() => {
+                                                const firstVar = variants.find(variant => {
+                                                  const sel = selections.find(s => s.variant === variant);
+                                                  return !sel?.plan_id;
+                                                });
+                                                return firstVar ? item.values[firstVar] : null;
+                                              })()}
+                                            />
+                                            {item.is_deleted?.[v] ? (
+                                              <button 
+                                                onClick={() => onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { is_deleted: false })}
+                                                className="absolute top-1 right-1 text-emerald-500 hover:text-emerald-600 transition-colors bg-white/80 rounded-full p-0.5 shadow-sm"
+                                                title="Restore Feature"
+                                              >
+                                                <Undo2 size={10} />
+                                              </button>
+                                            ) : (
+                                              <button 
+                                                onClick={() => onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { is_deleted: true })}
+                                                className="absolute top-1 right-1 text-slate-300 hover:text-red-500 transition-colors bg-white/80 rounded-full p-0.5"
+                                                title="Remove Feature"
+                                              >
+                                                <Trash2 size={10} />
+                                              </button>
+                                            )}
+                                            
+                                            <div className="flex items-center justify-between gap-1">
+                                              <div className="flex flex-col items-end gap-0.5 ml-auto">
+                                                <div className="flex items-center gap-0.5 group/cost" title="Cost Delta">
+                                                  <span className="text-[7px] text-slate-400 uppercase font-black">C:</span>
+                                                  <input 
+                                                    key={`cost_${item.cost_deltas?.[v] ?? 0}`}
+                                                    type="number"
+                                                    defaultValue={item.cost_deltas?.[v] ?? 0}
+                                                    onBlur={(e) => {
+                                                      const val = parseFloat(e.target.value);
+                                                      if (!isNaN(val)) {
+                                                        if (val !== (item.cost_deltas?.[v] ?? 0)) {
+                                                          onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { cost_delta: val });
+                                                        }
+                                                      } else {
+                                                        e.target.value = String(item.cost_deltas?.[v] ?? 0);
+                                                      }
                                                     }}
-                                                    className="p-0.5 text-slate-400 hover:text-blue-600 rounded-full hover:bg-slate-100 transition-colors opacity-0 group-hover/edit:opacity-100 focus:opacity-100 ml-auto"
-                                                    title="Edit Value"
-                                                  >
-                                                    <Edit2 size={10} />
-                                                  </button>
-                                                )}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') e.currentTarget.blur();
+                                                      // Allow only numbers, dot, minus, and control keys
+                                                      if (!/[0-9.\-]/.test(e.key) && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+                                                        e.preventDefault();
+                                                      }
+                                                    }}
+                                                    className={`text-[8px] font-bold w-12 bg-white/50 border border-slate-200 rounded px-1 outline-none text-right transition-all focus:border-blue-400 focus:bg-white ${
+                                                      Number(item.cost_deltas?.[v] || 0) > 0 ? 'text-red-500' : Number(item.cost_deltas?.[v] || 0) < 0 ? 'text-emerald-500' : 'text-slate-400'
+                                                    }`}
+                                                  />
+                                                  {(item.cost_deltas?.[v] || 0) !== 0 && (
+                                                    <button 
+                                                      onClick={() => onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { cost_delta: 0 })}
+                                                      className="text-[6px] text-slate-300 hover:text-blue-500 font-bold ml-0.5"
+                                                      title="Reset to 0"
+                                                    >
+                                                      ↺
+                                                    </button>
+                                                  )}
+                                                </div>
+                                                <div className="flex items-center gap-0.5 group/price" title="Price Delta">
+                                                  <span className="text-[7px] text-slate-400 uppercase font-black">P:</span>
+                                                  <input 
+                                                    key={`price_${item.price_deltas?.[v] ?? 0}`}
+                                                    type="number"
+                                                    defaultValue={item.price_deltas?.[v] ?? 0}
+                                                    onBlur={(e) => {
+                                                      const val = parseFloat(e.target.value);
+                                                      if (!isNaN(val)) {
+                                                        if (val !== (item.price_deltas?.[v] ?? 0)) {
+                                                          onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { price_delta: val });
+                                                        }
+                                                      } else {
+                                                        e.target.value = String(item.price_deltas?.[v] ?? 0);
+                                                      }
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') e.currentTarget.blur();
+                                                      if (!/[0-9.\-]/.test(e.key) && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+                                                        e.preventDefault();
+                                                      }
+                                                    }}
+                                                    className={`text-[8px] font-bold w-12 bg-white/50 border border-slate-200 rounded px-1 outline-none text-right transition-all focus:border-blue-400 focus:bg-white ${
+                                                      Number(item.price_deltas?.[v] || 0) > 0 ? 'text-emerald-500' : Number(item.price_deltas?.[v] || 0) < 0 ? 'text-red-500' : 'text-slate-400'
+                                                    }`}
+                                                  />
+                                                  {(item.price_deltas?.[v] || 0) !== 0 && (
+                                                    <button 
+                                                      onClick={() => onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { price_delta: 0 })}
+                                                      className="text-[6px] text-slate-300 hover:text-blue-500 font-bold ml-0.5"
+                                                      title="Reset to 0"
+                                                    >
+                                                      ↺
+                                                    </button>
+                                                  )}
+                                                </div>
                                               </div>
                                             </div>
-                                          );
-                                        });
-                                      })()
+                                          </div>
+                                        ) : typeof value === 'string' ? (
+                                          <div className="text-slate-400 italic text-[9px]">{value}</div>
+                                        ) : (
+                                          (() => {
+                                            const grouped = {};
+                                            Object.entries(value).forEach(([name, val]) => {
+                                              const dVal = String(val || 'No information Available');
+                                              if (!grouped[dVal]) grouped[dVal] = [];
+                                              grouped[dVal].push(name);
+                                            });
+
+                                            const groupEntries = Object.entries(grouped);
+                                            const isSingleValue = groupEntries.length === 1;
+
+                                            return groupEntries.map(([displayVal, names], gIdx) => {
+                                              const isNoInfo = displayVal === 'No information Available';
+                                              const cleanNames = names.map(name => {
+                                                let clean = name;
+                                                if (v && clean.toLowerCase().startsWith(v.toLowerCase())) {
+                                                  clean = clean.substring(v.length).trim();
+                                                  if (clean.startsWith('-')) clean = clean.substring(1).trim();
+                                                }
+                                                return clean || name;
+                                              });
+                                              const combinedNames = cleanNames.join(' / ');
+
+                                              return (
+                                                <div key={gIdx} className="flex items-start gap-1.5 group/plan-cell">
+                                                  {!isNoInfo && !isSingleValue && <span className="text-blue-500 mt-0.5 whitespace-nowrap">\u2022</span>}
+                                                  <div className="flex-1 flex flex-wrap items-center gap-1 min-h-[16px]">
+                                                    {!isNoInfo && !isSingleValue && (
+                                                      <>
+                                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight whitespace-nowrap">
+                                                          <HighlightText text={combinedNames} highlight={searchTerm} />
+                                                        </span>
+                                                        <span className="text-slate-600">\u2192</span>
+                                                      </>
+                                                    )}
+                                                    <span className={isNoInfo ? 'text-[9px] text-slate-400 italic' : 'font-medium'}>
+                                                      <HighlightText text={displayVal} highlight={searchTerm} />
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                              );
+                                            });
+                                          })()
+                                        )}
+                                      </div>
                                     )}
                                   </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
+                                </React.Fragment>
+                              );
+                            })}
+                          </div>
+
+                            {/* RENDER DRAFT ROWS IF ANY PLAN HAS ONE FOR THIS ITEM */}
+                            {variants.map((v, vIdx) => {
+                              if (hiddenVehicles.has(vIdx)) return null;
+                              const selection = selections.find(s => s.variant === v || (s.plan_id && v.includes(s.variant)));
+                              if (!selection?.plan_id) return null;
+                              const planId = selection.plan_id;
+                              const draftKey = `${group.groupName}__${planId}`;
+                              const draft = draftRows[draftKey];
+                              if (!draft || draft.afterFeature !== item.featureName) return null;
+
+                              return renderDraftRow(draftKey, draft, group.groupName, planId, v, idx, group.items.length);
+                            })}
+                          </React.Fragment>
                       );
                     })}
                   </div>
