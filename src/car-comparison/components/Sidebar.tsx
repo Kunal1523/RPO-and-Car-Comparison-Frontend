@@ -1,7 +1,7 @@
 // src/components/Sidebar.tsx
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { ModelDetails, SelectionState, DropdownOption, VariantClassData, ModelPlan } from '../types';
-import { fetchModelDetails, fetchVariantClasses, fetchModelPlans } from '../services/api';
+import { ModelDetails, SelectionState, DropdownOption, ModelPlan } from '../types';
+import { fetchModelDetails, fetchModelPlans } from '../services/api';
 import { ChevronDown, CarFront, ChevronLeft, ChevronRight, X, Plus, GripVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -56,8 +56,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
   const [isOpen, setIsOpen] = useState<boolean>(true);
   const [contentKey, setContentKey] = useState(0);
 
-  // ✅ Track variant classes for each selection index
-  const [variantClassesMap, setVariantClassesMap] = useState<Record<number, VariantClassData[]>>({});
 
   // Resize state
   const [sidebarWidth, setSidebarWidth] = useState(480);
@@ -163,55 +161,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
     }
   }, [modelData]);
 
-  // ✅ FETCH Variant Classes when brand/model changes
-  useEffect(() => {
-    if (!modelData) return;
-
-    selections.forEach((sel, idx) => {
-      if (sel.brand && sel.model && sel.brand !== 'CUSTOM_PLAN') {
-        const bmKey = `${sel.brand}__${sel.model}`;
-        const carId = modelData.carIds[bmKey];
-
-        if (carId && !variantClassesMap[idx]) {
-          const fetchClasses = async () => {
-            try {
-              const classes = await fetchVariantClasses(carId);
-              setVariantClassesMap(prev => ({ ...prev, [idx]: classes }));
-              
-              // Auto-select first variant if none selected
-              if (!sel.variant && classes.length > 0) {
-                const firstClass = classes[0];
-                const firstVariantId = firstClass.variants.length > 0 ? firstClass.variants[0].id : '';
-                
-                setSelections(prevSelections => {
-                  const next = [...prevSelections];
-                  if (next[idx] && !next[idx].variant) {
-                    next[idx] = { ...next[idx], variant: firstClass.variant_class, variant_id: firstVariantId };
-                  }
-                  return next;
-                });
-              }
-            } catch (err) {
-              console.error(`Failed to fetch classes for ${bmKey}:`, err);
-            }
-          };
-          fetchClasses();
-        }
-      }
-    });
-
-    // Clean up classes for indices that no longer exist
-    const currentKeys = Object.keys(variantClassesMap).map(Number);
-    if (currentKeys.some(key => key >= selections.length)) {
-      setVariantClassesMap(prev => {
-        const next = { ...prev };
-        currentKeys.forEach(key => {
-          if (key >= selections.length) delete next[key];
-        });
-        return next;
-      });
-    }
-  }, [selections.length, modelData]); // Only re-run when selections length or modelData changes
 
   const MAX_VEHICLES = 20;
   const CHUNK_SIZE = 5;
@@ -237,12 +186,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
 
       if (field === 'brand') {
         next[idx] = { brand: value, model: '', version: '', variant: '', plan_id: undefined };
-        // Clear classes for this index
-        setVariantClassesMap(prev => {
-          const nextVal = { ...prev };
-          delete nextVal[idx];
-          return nextVal;
-        });
       } else if (field === 'model') {
         // Find first available version for this car
         const bmKeyStr = `${current.brand}__${value}`;
@@ -266,25 +209,12 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
         } else {
           next[idx] = { ...current, model: value, version: firstVer, variant: '' };
         }
-        
-        // Clear classes for this index to trigger re-fetch
-        setVariantClassesMap(prev => {
-          const nextVal = { ...prev };
-          delete nextVal[idx];
-          return nextVal;
-        });
       } else if (field === 'variant') {
         // value here is actually variant_class name
-        const classes = variantClassesMap[idx] || [];
-        const selectedClass = classes.find(c => c.variant_class === value);
-
-        if (selectedClass && selectedClass.variants.length > 0) {
-          // Pick the first variant's ID from the class
-          const firstVariant = selectedClass.variants[0];
-          next[idx] = { ...current, variant: value, variant_id: firstVariant.id };
-        } else {
-          next[idx] = { ...current, variant: value, variant_id: '' };
-        }
+        const bmvKey = `${current.brand}__${current.model}__${current.version}`;
+        const variantKey = `${bmvKey}__${value}`;
+        const variantId = modelData?.variantIds?.[variantKey] || '';
+        next[idx] = { ...current, variant: value, variant_id: variantId };
       } else if (field === 'version') {
         const bmvKey = `${current.brand}__${current.model}__${value}`;
         const variantKey = `${bmvKey}__${current.variant}`;
@@ -331,20 +261,10 @@ const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, set
 
   const getVariantOptions = (idx: number, s: SelectionState): string[] => {
     if (s.brand === 'CUSTOM_PLAN') return [s.model];
-    if (!modelData || !s.model) return [];
+    if (!modelData || !s.model || !s.version) return [];
 
-    // Check if we have variant classes for this selection
-    const classes = variantClassesMap[idx];
-    if (classes && classes.length > 0) {
-      return classes.map(c => c.variant_class);
-    }
-
-    // Fallback to regular variants if classes are still loading or unavailable
-    const key = bmKey(s);
-    const versions = key ? modelData.versions[key] || [] : [];
-    if (versions.length === 0) return [];
-    const firstVersionKey = `${s.brand}__${s.model}__${versions[0].value}`;
-    return modelData.variants[firstVersionKey] || [];
+    const key = `${s.brand}__${s.model}__${s.version}`;
+    return modelData.variants[key] || [];
   };
 
   const isCompareDisabled =

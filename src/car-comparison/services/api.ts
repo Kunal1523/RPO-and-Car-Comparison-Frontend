@@ -311,17 +311,23 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
     brandsSet.add("CUSTOM_PLAN");
     models["CUSTOM_PLAN"] = [];
 
-    // Step 2: For each car, fetch variants in parallel
+    // Step 2: For each car, fetch variant classes in parallel
     const carPromises = brands.flatMap(brand => 
       brand.cars.map(async car => {
         try {
-          const variantsRes = await fetch(`${BASE_API}/api/cars/${car.car_id}/variants`);
-          if (!variantsRes.ok) return null;
-          const variantsData = await variantsRes.json();
-          if (!variantsData.success) return null;
-          return { brandName: brand.brand_name, carName: car.car_name, carId: car.car_id, variants: variantsData.variants };
+          // ✅ Use classes API instead of variants API
+          const classesRes = await fetch(`${BASE_API}/variants/classes/${car.car_id}`);
+          if (!classesRes.ok) return null;
+          const classesData = await classesRes.json();
+          if (!classesData.success) return null;
+          return { 
+            brandName: brand.brand_name, 
+            carName: car.car_name, 
+            carId: car.car_id, 
+            classes: classesData.data as VariantClassData[] 
+          };
         } catch (e) {
-          console.error(`Error fetching variants for ${car.car_name}:`, e);
+          console.error(`Error fetching variant classes for ${car.car_name}:`, e);
           return null;
         }
       })
@@ -331,7 +337,7 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
 
     allCarData.forEach(data => {
       if (!data) return;
-      const { brandName, carName, carId, variants: carVariants } = data;
+      const { brandName, carName, carId, classes } = data;
 
       brandsSet.add(brandName);
       if (!models[brandName]) models[brandName] = [];
@@ -342,10 +348,17 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
       const bmKey = `${brandName}__${carName}`;
       carIds[bmKey] = carId;
 
-      const versionMap = new Map<number, Variant[]>();
-      carVariants.forEach(v => {
-        if (!versionMap.has(v.version)) versionMap.set(v.version, []);
-        versionMap.get(v.version)!.push(v);
+      // Group by version
+      const versionMap = new Map<number, { className: string, variantId: string }[]>();
+      
+      classes.forEach(cls => {
+        cls.variants.forEach(v => {
+          if (!versionMap.has(v.version)) versionMap.set(v.version, []);
+          versionMap.get(v.version)!.push({
+            className: cls.variant_class,
+            variantId: v.id
+          });
+        });
       });
 
       const versionOptions: DropdownOption[] = Array.from(versionMap.keys())
@@ -357,12 +370,18 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
 
       versions[bmKey] = versionOptions;
 
-      versionMap.forEach((variantList, versionNum) => {
+      versionMap.forEach((classList, versionNum) => {
         const bmvKey = `${brandName}__${carName}__v${versionNum}`;
-        variants[bmvKey] = variantList.map(v => v.variant_name);
-        variantList.forEach(v => {
-          const variantKey = `${bmvKey}__${v.variant_name}`;
-          variantIds[variantKey] = v.variant_id;
+        // Store class names as the selectable "variants"
+        variants[bmvKey] = Array.from(new Set(classList.map(c => c.className)));
+        
+        // Map the class name to its first variant ID for that version
+        classList.forEach(c => {
+          const variantKey = `${bmvKey}__${c.className}`;
+          // Only set if not already set (to pick the first variant in the class)
+          if (!variantIds[variantKey]) {
+            variantIds[variantKey] = c.variantId;
+          }
         });
       });
     });

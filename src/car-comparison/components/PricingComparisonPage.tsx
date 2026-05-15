@@ -846,8 +846,12 @@ import { X, TrendingUp, List, LayoutGrid, ChevronDown, Upload, Plus, RotateCcw, 
 import ChartView from '../components/ChartView';
 import TableView from '../components/TableView';
 import DownloadExcelButton from '../components/DownloadExcelButton';
+import { SelectionState } from '../types';
 
 /* ================= TYPES & HELPERS ================= */
+interface PriceComparisonPageProps {
+  initialSelections?: SelectionState[];
+}
 interface CatalogBrand { brand_id: string; brand_name: string; cars: { car_id: string; car_name: string }[]; }
 interface PricingData {
   variant_id: string;
@@ -1001,7 +1005,7 @@ const VariantModal = ({
 
 /* ================= MAIN COMPONENT ================= */
 
-const PriceComparisonPage = () => {
+const PriceComparisonPage = ({ initialSelections }: PriceComparisonPageProps) => {
   const [catalog, setCatalog] = useState<CatalogBrand[]>([]);
 
   // State with sessionStorage persistence
@@ -1011,6 +1015,22 @@ const PriceComparisonPage = () => {
   });
 
   const [cars, setCars] = useState<SelectedCar[]>(() => {
+    // Priority 1: initialSelections from props (Feature Comparison)
+    if (initialSelections && initialSelections.length > 0) {
+      const uniqueModels = Array.from(new Set(initialSelections.filter((s: SelectionState) => s.brand !== 'CUSTOM_PLAN').map((s: SelectionState) => `${s.brand}|${s.model}`)));
+      if (uniqueModels.length > 0) {
+        const initialCars = uniqueModels.slice(0, 5).map((m: string, idx) => {
+          const [brand, model] = m.split('|');
+          return { id: (idx + 1).toString(), brand, model };
+        });
+        
+        while (initialCars.length < 2) {
+          initialCars.push({ id: (initialCars.length + 1).toString(), brand: '', model: '' });
+        }
+        return initialCars;
+      }
+    }
+
     const saved = sessionStorage.getItem('pricingCars');
     if (saved) {
       try {
@@ -1171,12 +1191,48 @@ const PriceComparisonPage = () => {
     }));
   };
 
-  // 1. Restore state from sessionStorage on component mount (once)
+  const initialSelectionsAppliedRef = React.useRef(false);
+
+  // 0. Sync cars when initialSelections change (from Feature Comparison)
+  useEffect(() => {
+    if (initialSelections && initialSelections.length > 0) {
+      const uniqueModels = Array.from(new Set(initialSelections.filter((s: SelectionState) => s.brand !== 'CUSTOM_PLAN').map((s: SelectionState) => `${s.brand}|${s.model}`)));
+      if (uniqueModels.length > 0) {
+        const initialCars = uniqueModels.slice(0, 5).map((m: string, idx) => {
+          const [brand, model] = m.split('|');
+          return { id: (idx + 1).toString(), brand, model };
+        });
+        
+        while (initialCars.length < 2) {
+          initialCars.push({ id: (initialCars.length + 1).toString(), brand: '', model: '' });
+        }
+        setCars(initialCars);
+      }
+    }
+  }, [initialSelections]);
+
+  // 1. Restore state from sessionStorage on component mount
   useEffect(() => {
     const savedFilters = sessionStorage.getItem('pricingFilters');
     const savedOptions = sessionStorage.getItem('pricingAvailableOptions');
 
-    if (savedFilters) {
+    if (initialSelections && initialSelections.length > 0) {
+      // Clear filters to ensure fresh sync from Feature Comparison
+      setCommonFilters({
+        selectedFuelTypes: new Set(),
+        selectedTransmissions: new Set(),
+        selectedVariants: new Set(),
+        selectedPaintTypes: new Set(),
+        selectedEditions: new Set()
+      });
+      setAllAvailableOptions({
+        allFuelTypes: [],
+        allTransmissions: [],
+        allVariants: [],
+        allPaintTypes: [],
+        allEditions: []
+      });
+    } else if (savedFilters) {
       try {
         const parsed = JSON.parse(savedFilters);
         setCommonFilters({
@@ -1187,17 +1243,17 @@ const PriceComparisonPage = () => {
           selectedEditions: new Set(parsed.selectedEditions || [])
         });
       } catch (e) { console.error('Error parsing saved filters', e); }
-    }
 
-    if (savedOptions) {
-      try {
-        const parsed = JSON.parse(savedOptions);
-        setAllAvailableOptions(parsed);
-      } catch (e) { console.error('Error parsing saved options', e); }
+      if (savedOptions) {
+        try {
+          const parsed = JSON.parse(savedOptions);
+          setAllAvailableOptions(parsed);
+        } catch (e) { console.error('Error parsing saved options', e); }
+      }
     }
 
     setFiltersInitialized(true);
-  }, []);
+  }, [initialSelections]);
 
   // 2. Additive logic for filters: select new options by default when pricing data loads
   useEffect(() => {
@@ -1214,12 +1270,12 @@ const PriceComparisonPage = () => {
       const next = { ...prev };
       let changed = false;
 
-      const updateSet = (currentSet: Set<string>, allValues: string[], alreadySeenValues: string[]) => {
+      const updateSet = (currentSet: Set<string>, allValues: string[], alreadySeenValues: string[], type: string = '') => {
         const newSet = new Set(currentSet);
         let setChanged = false;
         allValues.forEach(val => {
-          // If this is a brand new value we haven't seen across all cars in this session
-          if (!alreadySeenValues.includes(val)) {
+          // Force select variants OR if it's a new value OR if we are doing a fresh sync from Feature Comparison
+          if (type === 'variant' || !alreadySeenValues.includes(val) || (initialSelections && initialSelections.length > 0 && !initialSelectionsAppliedRef.current)) {
             newSet.add(val);
             setChanged = true;
           }
@@ -1233,7 +1289,7 @@ const PriceComparisonPage = () => {
       const trans = updateSet(prev.selectedTransmissions, uniqueTransmissions, allAvailableOptions.allTransmissions);
       if (trans.setChanged) { next.selectedTransmissions = trans.newSet; changed = true; }
 
-      const variants = updateSet(prev.selectedVariants, uniqueVariants, allAvailableOptions.allVariants);
+      const variants = updateSet(prev.selectedVariants, uniqueVariants, allAvailableOptions.allVariants, 'variant');
       if (variants.setChanged) { next.selectedVariants = variants.newSet; changed = true; }
 
       const paints = updateSet(prev.selectedPaintTypes, uniquePaintTypes, allAvailableOptions.allPaintTypes);
@@ -1241,6 +1297,11 @@ const PriceComparisonPage = () => {
 
       const editions = updateSet(prev.selectedEditions, uniqueEditions, allAvailableOptions.allEditions);
       if (editions.setChanged) { next.selectedEditions = editions.newSet; changed = true; }
+
+      if (changed && initialSelections && !initialSelectionsAppliedRef.current) {
+        // Mark as applied once we've processed the first batch of pricing
+        initialSelectionsAppliedRef.current = true;
+      }
 
       return changed ? next : prev;
     });
@@ -1258,6 +1319,17 @@ const PriceComparisonPage = () => {
     });
 
   }, [cars.map(c => c.pricing?.length || 0).join(','), filtersInitialized]);
+
+  // Reset all filters - select everything
+  const resetAllFilters = () => {
+    setCommonFilters({
+      selectedFuelTypes: new Set(allAvailableOptions.allFuelTypes),
+      selectedTransmissions: new Set(allAvailableOptions.allTransmissions),
+      selectedVariants: new Set(allAvailableOptions.allVariants),
+      selectedPaintTypes: new Set(allAvailableOptions.allPaintTypes),
+      selectedEditions: new Set(allAvailableOptions.allEditions)
+    });
+  };
 
   // 3. Save all state to sessionStorage whenever it changes
   useEffect(() => {
@@ -1296,17 +1368,6 @@ const PriceComparisonPage = () => {
   };
 
 
-
-  // Reset all filters - select everything
-  const resetAllFilters = () => {
-    setCommonFilters({
-      selectedFuelTypes: new Set(allAvailableOptions.allFuelTypes),
-      selectedTransmissions: new Set(allAvailableOptions.allTransmissions),
-      selectedVariants: new Set(allAvailableOptions.allVariants),
-      selectedPaintTypes: new Set(allAvailableOptions.allPaintTypes),
-      selectedEditions: new Set(allAvailableOptions.allEditions)
-    });
-  };
 
   const getFilteredPricingForCar = (carId: string): PricingData[] => {
     const car = cars.find(c => c.id === carId);
@@ -1369,7 +1430,15 @@ const PriceComparisonPage = () => {
       <div className="flex-1 flex overflow-hidden">
         <div className="w-96 bg-white border-r p-4 space-y-4 overflow-y-auto">
           <div className="space-y-3">
-            <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-3">Vehicle Selection</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Vehicle Selection</p>
+            <button
+              onClick={resetAllFilters}
+              className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-700 uppercase tracking-wider transition-colors"
+            >
+              <RotateCcw size={10} /> Reset
+            </button>
+          </div>
 
             {cars.map((c, idx) => {
               const brand = catalog.find(b => b.brand_name === c.brand);
@@ -1386,25 +1455,8 @@ const PriceComparisonPage = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <select
-                        className="w-full bg-white border rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                        value={c.brand}
-                        onChange={e => updateCar(c.id, 'brand', e.target.value)}
-                      >
-                        <option value="">Brand</option>
-                        {catalog.map(b => <option key={b.brand_id} value={b.brand_name}>{b.brand_name}</option>)}
-                      </select>
-
-                      <select
-                        className="w-full bg-white border rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
-                        value={c.model}
-                        disabled={!c.brand}
-                        onChange={e => updateCar(c.id, 'model', e.target.value)}
-                      >
-                        <option value="">Model</option>
-                        {brand?.cars.map(m => <option key={m.car_id} value={m.car_name}>{m.car_name}</option>)}
-                      </select>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-bold text-slate-800">{c.brand} {c.model}</span>
                     </div>
 
                     <div className="relative w-full" onMouseEnter={cancelCloseDropdown} onMouseLeave={() => closeDropdown(variantDetailsRefs.current.get(c.id) || null)}>
@@ -1484,13 +1536,15 @@ const PriceComparisonPage = () => {
               );
             })}
 
-            <button
-              onClick={() => alert("Coming Soon")}
-              className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl border border-dashed border-slate-300 flex items-center justify-center gap-2 text-xs font-bold transition-all"
-              title="Add New Vehicle"
-            >
-              <Plus size={14} /> Add New Vehicle (Max 5)
-            </button>
+            <div className="hidden">
+              <button
+                onClick={() => alert("Coming Soon")}
+                className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl border border-dashed border-slate-300 flex items-center justify-center gap-2 text-xs font-bold transition-all"
+                title="Add New Vehicle"
+              >
+                <Plus size={14} /> Add New Vehicle (Max 5)
+              </button>
+            </div>
           </div>
 
           {carsWithPricing.length > 0 && (() => {

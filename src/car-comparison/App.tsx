@@ -8,14 +8,14 @@ import PricingComparisonPage from './components/PricingComparisonPage';
 import FeatureStackUpPage from './components/FeatureStackUpPage';
 import ChatbotDashboardPage from './components/ChatbotDashboardPage';
 import { ComparisonResponse, SelectionState, NewsResponse } from './types';
-import { 
-  fetchComparisonDetails, 
-  fetchCarNews, 
-  createModelPlan, 
-  fetchModelPlanById, 
+import {
+  fetchComparisonDetails,
+  fetchCarNews,
+  createModelPlan,
+  fetchModelPlanById,
   updatePlanFeature,
   addPlanFeature,
-  deletePlanFeature 
+  deletePlanFeature
 } from './services/api';
 
 type PageView = 'comparison' | 'pricing' | 'stackup' | 'chatbot';
@@ -41,8 +41,8 @@ const App: React.FC = () => {
 
   const [currentSelections, setCurrentSelections] = useState<SelectionState[]>([
     { brand: 'Hyundai', model: 'Creta', version: 'v1', variant: 'E' },
-    { brand: 'Hyundai', model: 'Creta', version: 'v1', variant: 'EX' },
-    { brand: 'Hyundai', model: 'Creta', version: 'v1', variant: 'EX(O)' },
+    { brand: 'Maruti', model: 'Grand Vitara', version: 'v1', variant: 'Sigma' },
+    { brand: 'Maruti', model: 'Grand Vitara', version: 'v1', variant: 'Delta' },
   ]);
 
   // Track the variant IDs currently shown in comparisonData
@@ -198,21 +198,21 @@ const App: React.FC = () => {
   const handleUpdatePlanFeature = async (planId: string, featureName: string, category: string, updates: { value?: string, cost_delta?: number, price_delta?: number, is_deleted?: boolean }) => {
     try {
       // Find the specific feature in the comparison data to get its plan_feature_id
-      const featureRow = comparisonData?.data.find(row => 
+      const featureRow = comparisonData?.data.find(row =>
         row.feature === featureName && row.category === category
       );
       if (!featureRow) {
         console.error("Feature row not found for", featureName, category);
         return;
       }
-      
+
       // Get the correct variant name (column name) for this plan
       const selection = currentSelections.find(s => s.plan_id === planId);
       if (!selection) {
         console.error("Selection not found for plan", planId);
         return;
       }
-      
+
       const planFeatureId = featureRow.plan_feature_ids?.[selection.variant];
       if (!planFeatureId) {
         console.error("Plan feature ID not found for", featureName, "in variant", selection.variant);
@@ -261,7 +261,7 @@ const App: React.FC = () => {
         body: JSON.stringify({ name: newName })
       });
       if (res.ok) {
-        const newSelections = currentSelections.map(s => 
+        const newSelections = currentSelections.map(s =>
           s.plan_id === planId ? { ...s, variant: newName, model: newName } : s
         );
         setCurrentSelections(newSelections);
@@ -309,7 +309,7 @@ const App: React.FC = () => {
     return (
       <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
         <Header currentPage={currentPage} onPageChange={handlePageChange} />
-        <PricingComparisonPage />
+        <PricingComparisonPage initialSelections={currentSelections} />
       </div>
     );
   }
@@ -373,8 +373,8 @@ const App: React.FC = () => {
 
             {/* Table Container - Takes remaining height */}
             <div className="flex-1 overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white relative">
-              <ComparisonTable 
-                data={comparisonData} 
+              <ComparisonTable
+                data={comparisonData}
                 onPlanNewModel={handlePlanNewModel}
                 onUpdatePlanFeature={handleUpdatePlanFeature}
                 onAddPlanFeature={handleAddPlanFeature}
