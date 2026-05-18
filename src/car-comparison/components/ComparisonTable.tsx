@@ -1957,14 +1957,50 @@ Current Value: ${currentValue}
                   {/* Main Header Content */}
                   <div className="flex flex-col w-full min-w-0 pr-6">
                     <div className="flex items-center justify-between gap-2 w-full">
-                      <div className="flex items-center gap-1 min-w-0">
+                      <div className="flex items-center gap-1 min-w-0 font-bold">
                         <span className="w-3.5 h-3.5 rounded-full bg-white/20 flex items-center justify-center text-[7px] font-black shrink-0">{idx + 1}</span>
-                        <span
-                          className={`truncate font-black text-[10px] md:text-xs leading-tight drop-shadow-sm ${isPlan ? 'cursor-text hover:underline decoration-white/40' : ''}`}
-                          onClick={() => isPlan && setEditingPlanName({ id: planId!, name: v })}
-                        >
-                          {isPlan && data?.base_variant_classes?.[v] ? `${v} (${data.base_variant_classes[v]})` : v}
-                        </span>
+                        {(() => {
+                          const currentEditing = editingPlanName;
+                          const isEditingThis = currentEditing !== null && currentEditing.id === planId;
+
+                          if (isEditingThis && currentEditing) {
+                            return (
+                              <input
+                                type="text"
+                                value={currentEditing.name}
+                                onChange={(e) => setEditingPlanName({ id: currentEditing.id, name: e.target.value })}
+                                onBlur={() => {
+                                  if (currentEditing.name.trim() && currentEditing.name.trim() !== v) {
+                                    onRenamePlan?.(planId!, currentEditing.name.trim());
+                                  }
+                                  setEditingPlanName(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    if (currentEditing.name.trim() && currentEditing.name.trim() !== v) {
+                                      onRenamePlan?.(planId!, currentEditing.name.trim());
+                                    }
+                                    setEditingPlanName(null);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingPlanName(null);
+                                  }
+                                }}
+                                autoFocus
+                                onClick={(e) => e.stopPropagation()}
+                                className="bg-white text-slate-900 px-1 py-0.5 rounded text-[10px] font-bold outline-none ring-2 ring-indigo-500 w-full"
+                              />
+                            );
+                          }
+
+                          return (
+                            <span
+                              className={`truncate font-black text-[10px] md:text-xs leading-tight drop-shadow-sm ${isPlan ? 'cursor-text hover:underline decoration-white/40' : ''}`}
+                              onClick={() => isPlan && setEditingPlanName({ id: planId!, name: v })}
+                            >
+                              {isPlan && data?.base_variant_classes?.[v] ? `${v} (${data.base_variant_classes[v]})` : v}
+                            </span>
+                          );
+                        })()}
                       </div>
 
                       {!isPlan && onPlanNewModel && (() => {
