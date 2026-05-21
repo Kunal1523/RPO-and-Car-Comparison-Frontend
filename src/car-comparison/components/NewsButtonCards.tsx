@@ -125,7 +125,7 @@ const NewsButtonCards: React.FC<NewsButtonCardsProps> = ({ news1, news2, isLoadi
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setOpenCard(null)}
-                className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
+                className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[1000]"
               />
 
               {/* News Card Modal */}
@@ -135,7 +135,7 @@ const NewsButtonCards: React.FC<NewsButtonCardsProps> = ({ news1, news2, isLoadi
                 exit={{ opacity: 0, scale: 0.95, y: -20 }}
                 transition={{ duration: 0.2 }}
                 className="fixed top-[20%] left-[50%] -translate-x-[50%] -translate-y-[50%]
-                  w-[95%] max-w-2xl max-h-[85vh] bg-white rounded-2xl shadow-2xl z-50 
+                  w-[95%] max-w-2xl max-h-[85vh] bg-white rounded-2xl shadow-2xl z-[1001] 
                   overflow-hidden flex flex-col"
               >
                 {/* Header */}

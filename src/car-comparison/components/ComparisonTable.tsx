@@ -817,10 +817,10 @@
 
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronUp, AlertCircle, Download, Plus, Minus, Loader2, Edit2, Trash2, Check, X, Save, PlusCircle, Undo2, Filter, Info } from 'lucide-react';
+import { ChevronDown, ChevronUp, AlertCircle, Download, Plus, Minus, Loader2, Edit2, Trash2, Check, X, Save, PlusCircle, Undo2, Filter, Info, Search } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import TableSearch from './TableSearch';
+
 
 import { ComparisonResponse, FeatureGroup, GroupedFeature, VariantPriceData, PriceDetail } from '../types';
 
@@ -875,6 +875,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({
   const [editingPlanName, setEditingPlanName] = useState<{ id: string, name: string } | null>(null);
   const [isFeatureFilterOpen, setIsFeatureFilterOpen] = useState(false);
   const [hiddenFeatures, setHiddenFeatures] = useState<Set<string>>(new Set());
+  const [filterPanelSearch, setFilterPanelSearch] = useState('');
   const [activeBreakdown, setActiveBreakdown] = useState<{ planId: string, variant: string, type: 'cost' | 'price', items: any[], total: number } | null>(null);
 
   // Debounced input component for plan features
@@ -919,31 +920,29 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({
     const isEdited = originalValue !== undefined && originalValue !== null && value !== originalValue;
 
     return (
-      <div className="flex flex-col gap-1 w-full">
-        <div className="flex items-center gap-1.5">
-          <input
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Enter value..."
-            disabled={isDeleted}
-            className={`text-[10px] px-1.5 py-0.5 rounded border border-transparent hover:border-indigo-300 focus:border-indigo-500 focus:bg-white outline-none transition-all flex-1 font-medium ${isDeleted ? 'bg-slate-100 text-slate-400 line-through cursor-not-allowed' :
-                !value ? 'bg-orange-50 text-orange-600 italic placeholder:text-orange-300 border-dashed border-orange-200' : 'bg-indigo-50/30'
-              }`}
-          />
-          {isSyncing && (
-            <div className="animate-spin h-2 w-2 border border-indigo-500 border-t-transparent rounded-full" />
-          )}
-        </div>
-        <div className="flex flex-wrap gap-1">
+      <div className="flex items-center gap-1 w-full min-w-0">
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Enter value..."
+          disabled={isDeleted}
+          className={`text-[10px] px-1.5 py-0.5 rounded border border-transparent hover:border-indigo-300 focus:border-indigo-500 focus:bg-white outline-none transition-all flex-1 min-w-0 font-medium ${isDeleted ? 'bg-slate-100 text-slate-400 line-through cursor-not-allowed' :
+              !value ? 'bg-orange-50 text-orange-600 italic placeholder:text-orange-300 border-dashed border-orange-200' : 'bg-indigo-50/30'
+            }`}
+        />
+        {isSyncing && (
+          <div className="animate-spin h-2 w-2 border border-indigo-500 border-t-transparent rounded-full shrink-0" />
+        )}
+        <div className="flex gap-0.5 shrink-0">
           {isNewFeature && (
-            <span className="text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-sm">Added</span>
+            <span className="text-[6px] font-black uppercase tracking-wider px-1 py-0.5 bg-emerald-100 text-emerald-700 rounded-sm">Added</span>
           )}
           {isEdited && !isDeleted && (
-            <span className="text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-sm">Edited</span>
+            <span className="text-[6px] font-black uppercase tracking-wider px-1 py-0.5 bg-blue-100 text-blue-700 rounded-sm">Edited</span>
           )}
           {isDeleted && (
-            <span className="text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 bg-red-100 text-red-700 rounded-sm">Deleted</span>
+            <span className="text-[6px] font-black uppercase tracking-wider px-1 py-0.5 bg-red-100 text-red-700 rounded-sm">Deleted</span>
           )}
         </div>
       </div>
@@ -1689,7 +1688,6 @@ Current Value: ${currentValue}
 
       <div className="flex-shrink-0 flex items-center justify-between gap-4 px-4 py-2 border-b bg-gradient-to-r from-slate-50 to-blue-50">
         <div className="flex items-center gap-4">
-          <TableSearch searchTerm={searchTerm} onSearchChange={setSearchTerm} />
 
           <div className="hidden md:block h-6 w-px bg-slate-300" />
 
@@ -1805,30 +1803,65 @@ Current Value: ${currentValue}
                 {isFeatureFilterOpen && (
                   <div className="absolute top-full left-0 mt-0 pt-2 w-64 bg-transparent z-[100] text-slate-800 flex flex-col font-normal max-h-[60vh]">
                     <div className="bg-white rounded-lg shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
-                      <div className="p-2 border-b border-slate-100 flex justify-between gap-2 bg-slate-50">
-                        <button
-                          onClick={() => setHiddenFeatures(new Set())}
-                          className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 font-semibold flex-1 transition-colors"
-                        >
-                          Select All
-                        </button>
-                        <button
-                          onClick={() => {
-                            const allFeatures = new Set<string>();
-                            groups.forEach(g => g.items.forEach(i => allFeatures.add(`${g.groupName}__${i.featureName}`)));
-                            setHiddenFeatures(allFeatures);
-                          }}
-                          className="text-[10px] bg-slate-200 text-slate-700 px-2 py-1 rounded hover:bg-slate-300 font-semibold flex-1 transition-colors"
-                        >
-                          Clear All
-                        </button>
+                      <div className="p-2 border-b border-slate-100 flex flex-col gap-2 bg-slate-50">
+                        <div className="flex justify-between gap-2">
+                          <button
+                            onClick={() => setHiddenFeatures(new Set())}
+                            className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 font-semibold flex-1 transition-colors"
+                          >
+                            Select All
+                          </button>
+                          <button
+                            onClick={() => {
+                              const allFeatures = new Set<string>();
+                              groups.forEach(g => g.items.forEach(i => allFeatures.add(`${g.groupName}__${i.featureName}`)));
+                              setHiddenFeatures(allFeatures);
+                            }}
+                            className="text-[10px] bg-slate-200 text-slate-700 px-2 py-1 rounded hover:bg-slate-300 font-semibold flex-1 transition-colors"
+                          >
+                            Clear All
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                          <input
+                            type="text"
+                            placeholder="Search features..."
+                            value={filterPanelSearch}
+                            onChange={(e) => setFilterPanelSearch(e.target.value)}
+                            className="w-full pl-7 pr-7 py-1.5 text-[11px] border border-slate-200 rounded-md bg-white outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300 transition-all"
+                          />
+                          {filterPanelSearch && (
+                            <button
+                              onClick={() => setFilterPanelSearch('')}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                              title="Clear search"
+                            >
+                              <X size={11} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <div className="overflow-y-auto flex-1 p-3 space-y-4">
                         {groups.map(group => {
                           const groupKeyPrefix = `${group.groupName}__`;
                           const groupItemKeys = group.items.map(i => `${groupKeyPrefix}${i.featureName}`);
-                          const allHidden = groupItemKeys.every(k => hiddenFeatures.has(k));
-                          const someHidden = groupItemKeys.some(k => hiddenFeatures.has(k));
+
+                          // Filter items by filterPanelSearch
+                          const lowerFilter = filterPanelSearch.toLowerCase();
+                          const filteredItems = filterPanelSearch.trim()
+                            ? group.items.filter(i =>
+                                i.featureName.toLowerCase().includes(lowerFilter) ||
+                                group.groupName.toLowerCase().includes(lowerFilter)
+                              )
+                            : group.items;
+
+                          // Hide entire group if no items match
+                          if (filteredItems.length === 0) return null;
+
+                          const filteredItemKeys = filteredItems.map(i => `${groupKeyPrefix}${i.featureName}`);
+                          const allHidden = filteredItemKeys.every(k => hiddenFeatures.has(k));
+                          const someHidden = filteredItemKeys.some(k => hiddenFeatures.has(k));
 
                           return (
                             <div key={group.groupName} className="flex flex-col gap-1.5">
@@ -1840,9 +1873,9 @@ Current Value: ${currentValue}
                                   onChange={(e) => {
                                     const next = new Set(hiddenFeatures);
                                     if (e.target.checked) {
-                                      groupItemKeys.forEach(k => next.delete(k));
+                                      filteredItemKeys.forEach(k => next.delete(k));
                                     } else {
-                                      groupItemKeys.forEach(k => next.add(k));
+                                      filteredItemKeys.forEach(k => next.add(k));
                                     }
                                     setHiddenFeatures(next);
                                   }}
@@ -1851,7 +1884,7 @@ Current Value: ${currentValue}
                                 {group.groupName}
                               </label>
                               <div className="pl-5 flex flex-col gap-1">
-                                {group.items.map(item => {
+                                {filteredItems.map(item => {
                                   const itemKey = `${groupKeyPrefix}${item.featureName}`;
                                   const isHidden = hiddenFeatures.has(itemKey);
                                   return (
@@ -2310,40 +2343,117 @@ Current Value: ${currentValue}
                                       ) : (
                                         <div className="flex flex-col gap-1 w-full py-1">
                                           {isPlan ? (
-                                            <div className="flex flex-col gap-1 w-full relative">
-                                              <PlanFeatureInput
-                                                planId={planId!}
-                                                featureName={item.featureName}
-                                                category={group.groupName}
-                                                initialValue={(() => {
-                                                  if (typeof value === 'string') return value === NO_INFO ? '' : value;
-                                                  if (value && typeof value === 'object') return value[v] || '';
-                                                  return '';
-                                                })()}
-                                                onUpdate={onUpdatePlanFeature!}
-                                                isDeleted={item.is_deleted?.[v]}
-                                                originalValue={(() => {
-                                                  const orig = item.original_values?.[v];
-                                                  if (typeof orig === 'string') return orig === NO_INFO ? '' : orig;
-                                                  if (orig && typeof orig === 'object') return (orig as any)[v] || '';
-                                                  return '';
-                                                })()}
-                                                isNewFeature={!variants.some(variant => {
-                                                  const sel = selections.find(s => s.variant === variant);
-                                                  return !sel?.plan_id && item.values[variant] !== NO_INFO;
-                                                })}
-                                                baselineValue={(() => {
-                                                  const firstVar = variants.find(variant => {
+                                            <div className="flex flex-row items-center gap-1 w-full relative pr-5">
+                                              <div className="flex-1 min-w-0">
+                                                <PlanFeatureInput
+                                                  planId={planId!}
+                                                  featureName={item.featureName}
+                                                  category={group.groupName}
+                                                  initialValue={(() => {
+                                                    if (typeof value === 'string') return value === NO_INFO ? '' : value;
+                                                    if (value && typeof value === 'object') return value[v] || '';
+                                                    return '';
+                                                  })()}
+                                                  onUpdate={onUpdatePlanFeature!}
+                                                  isDeleted={item.is_deleted?.[v]}
+                                                  originalValue={(() => {
+                                                    const orig = item.original_values?.[v];
+                                                    if (typeof orig === 'string') return orig === NO_INFO ? '' : orig;
+                                                    if (orig && typeof orig === 'object') return (orig as any)[v] || '';
+                                                    return '';
+                                                  })()}
+                                                  isNewFeature={!variants.some(variant => {
                                                     const sel = selections.find(s => s.variant === variant);
-                                                    return !sel?.plan_id;
-                                                  });
-                                                  return firstVar ? item.values[firstVar] : null;
-                                                })()}
-                                              />
+                                                    return !sel?.plan_id && item.values[variant] !== NO_INFO;
+                                                  })}
+                                                  baselineValue={(() => {
+                                                    const firstVar = variants.find(variant => {
+                                                      const sel = selections.find(s => s.variant === variant);
+                                                      return !sel?.plan_id;
+                                                    });
+                                                    return firstVar ? item.values[firstVar] : null;
+                                                  })()}
+                                                />
+                                              </div>
+
+                                              <div className="flex items-center gap-1 shrink-0">
+                                                <div className="flex items-center gap-0.5 group/cost" title="Cost Delta">
+                                                  <span className="text-[7px] text-slate-400 uppercase font-black">C:</span>
+                                                  <input
+                                                    key={`cost_${item.cost_deltas?.[v] ?? 0}`}
+                                                    type="number"
+                                                    defaultValue={item.cost_deltas?.[v] ?? 0}
+                                                    onBlur={(e) => {
+                                                      const val = parseFloat(e.target.value);
+                                                      if (!isNaN(val)) {
+                                                        if (val !== (item.cost_deltas?.[v] ?? 0)) {
+                                                          onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { cost_delta: val });
+                                                        }
+                                                      } else {
+                                                        e.target.value = String(item.cost_deltas?.[v] ?? 0);
+                                                      }
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') e.currentTarget.blur();
+                                                      // Allow only numbers, dot, minus, and control keys
+                                                      if (!/[0-9.\-]/.test(e.key) && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+                                                        e.preventDefault();
+                                                      }
+                                                    }}
+                                                    className={`text-[8px] font-bold w-10 bg-white/50 border border-slate-200 rounded px-0.5 outline-none text-right transition-all focus:border-blue-400 focus:bg-white ${Number(item.cost_deltas?.[v] || 0) > 0 ? 'text-red-500' : Number(item.cost_deltas?.[v] || 0) < 0 ? 'text-emerald-500' : 'text-slate-400'
+                                                      }`}
+                                                  />
+                                                  {(item.cost_deltas?.[v] || 0) !== 0 && (
+                                                    <button
+                                                      onClick={() => onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { cost_delta: 0 })}
+                                                      className="text-[6px] text-slate-300 hover:text-blue-500 font-bold"
+                                                      title="Reset to 0"
+                                                    >
+                                                      ↺
+                                                    </button>
+                                                  )}
+                                                </div>
+                                                <div className="flex items-center gap-0.5 group/price" title="Price Delta">
+                                                  <span className="text-[7px] text-slate-400 uppercase font-black">P:</span>
+                                                  <input
+                                                    key={`price_${item.price_deltas?.[v] ?? 0}`}
+                                                    type="number"
+                                                    defaultValue={item.price_deltas?.[v] ?? 0}
+                                                    onBlur={(e) => {
+                                                      const val = parseFloat(e.target.value);
+                                                      if (!isNaN(val)) {
+                                                        if (val !== (item.price_deltas?.[v] ?? 0)) {
+                                                          onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { price_delta: val });
+                                                        }
+                                                      } else {
+                                                        e.target.value = String(item.price_deltas?.[v] ?? 0);
+                                                      }
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') e.currentTarget.blur();
+                                                      if (!/[0-9.\-]/.test(e.key) && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+                                                        e.preventDefault();
+                                                      }
+                                                    }}
+                                                    className={`text-[8px] font-bold w-10 bg-white/50 border border-slate-200 rounded px-0.5 outline-none text-right transition-all focus:border-blue-400 focus:bg-white ${Number(item.price_deltas?.[v] || 0) > 0 ? 'text-emerald-500' : Number(item.price_deltas?.[v] || 0) < 0 ? 'text-red-500' : 'text-slate-400'
+                                                      }`}
+                                                  />
+                                                  {(item.price_deltas?.[v] || 0) !== 0 && (
+                                                    <button
+                                                      onClick={() => onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { price_delta: 0 })}
+                                                      className="text-[6px] text-slate-300 hover:text-blue-500 font-bold"
+                                                      title="Reset to 0"
+                                                    >
+                                                      ↺
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              </div>
+
                                               {item.is_deleted?.[v] ? (
                                                 <button
                                                   onClick={() => onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { is_deleted: false })}
-                                                  className="absolute top-1 right-1 text-emerald-500 hover:text-emerald-600 transition-colors bg-white/80 rounded-full p-0.5 shadow-sm"
+                                                  className="absolute top-1/2 -translate-y-1/2 right-1 text-emerald-500 hover:text-emerald-600 transition-colors bg-white/80 rounded-full p-0.5 shadow-sm"
                                                   title="Restore Feature"
                                                 >
                                                   <Undo2 size={10} />
@@ -2351,88 +2461,12 @@ Current Value: ${currentValue}
                                               ) : (
                                                 <button
                                                   onClick={() => onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { is_deleted: true })}
-                                                  className="absolute top-1 right-1 text-slate-300 hover:text-red-500 transition-colors bg-white/80 rounded-full p-0.5"
+                                                  className="absolute top-1/2 -translate-y-1/2 right-1 text-slate-300 hover:text-red-500 transition-colors bg-white/80 rounded-full p-0.5"
                                                   title="Remove Feature"
                                                 >
                                                   <Trash2 size={10} />
                                                 </button>
                                               )}
-
-                                              <div className="flex items-center justify-between gap-1">
-                                                <div className="flex flex-col items-end gap-0.5 ml-auto">
-                                                  <div className="flex items-center gap-0.5 group/cost" title="Cost Delta">
-                                                    <span className="text-[7px] text-slate-400 uppercase font-black">C:</span>
-                                                    <input
-                                                      key={`cost_${item.cost_deltas?.[v] ?? 0}`}
-                                                      type="number"
-                                                      defaultValue={item.cost_deltas?.[v] ?? 0}
-                                                      onBlur={(e) => {
-                                                        const val = parseFloat(e.target.value);
-                                                        if (!isNaN(val)) {
-                                                          if (val !== (item.cost_deltas?.[v] ?? 0)) {
-                                                            onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { cost_delta: val });
-                                                          }
-                                                        } else {
-                                                          e.target.value = String(item.cost_deltas?.[v] ?? 0);
-                                                        }
-                                                      }}
-                                                      onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') e.currentTarget.blur();
-                                                        // Allow only numbers, dot, minus, and control keys
-                                                        if (!/[0-9.\-]/.test(e.key) && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-                                                          e.preventDefault();
-                                                        }
-                                                      }}
-                                                      className={`text-[8px] font-bold w-12 bg-white/50 border border-slate-200 rounded px-1 outline-none text-right transition-all focus:border-blue-400 focus:bg-white ${Number(item.cost_deltas?.[v] || 0) > 0 ? 'text-red-500' : Number(item.cost_deltas?.[v] || 0) < 0 ? 'text-emerald-500' : 'text-slate-400'
-                                                        }`}
-                                                    />
-                                                    {(item.cost_deltas?.[v] || 0) !== 0 && (
-                                                      <button
-                                                        onClick={() => onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { cost_delta: 0 })}
-                                                        className="text-[6px] text-slate-300 hover:text-blue-500 font-bold ml-0.5"
-                                                        title="Reset to 0"
-                                                      >
-                                                        ↺
-                                                      </button>
-                                                    )}
-                                                  </div>
-                                                  <div className="flex items-center gap-0.5 group/price" title="Price Delta">
-                                                    <span className="text-[7px] text-slate-400 uppercase font-black">P:</span>
-                                                    <input
-                                                      key={`price_${item.price_deltas?.[v] ?? 0}`}
-                                                      type="number"
-                                                      defaultValue={item.price_deltas?.[v] ?? 0}
-                                                      onBlur={(e) => {
-                                                        const val = parseFloat(e.target.value);
-                                                        if (!isNaN(val)) {
-                                                          if (val !== (item.price_deltas?.[v] ?? 0)) {
-                                                            onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { price_delta: val });
-                                                          }
-                                                        } else {
-                                                          e.target.value = String(item.price_deltas?.[v] ?? 0);
-                                                        }
-                                                      }}
-                                                      onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') e.currentTarget.blur();
-                                                        if (!/[0-9.\-]/.test(e.key) && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-                                                          e.preventDefault();
-                                                        }
-                                                      }}
-                                                      className={`text-[8px] font-bold w-12 bg-white/50 border border-slate-200 rounded px-1 outline-none text-right transition-all focus:border-blue-400 focus:bg-white ${Number(item.price_deltas?.[v] || 0) > 0 ? 'text-emerald-500' : Number(item.price_deltas?.[v] || 0) < 0 ? 'text-red-500' : 'text-slate-400'
-                                                        }`}
-                                                    />
-                                                    {(item.price_deltas?.[v] || 0) !== 0 && (
-                                                      <button
-                                                        onClick={() => onUpdatePlanFeature?.(planId!, item.featureName, group.groupName, { price_delta: 0 })}
-                                                        className="text-[6px] text-slate-300 hover:text-blue-500 font-bold ml-0.5"
-                                                        title="Reset to 0"
-                                                      >
-                                                        ↺
-                                                      </button>
-                                                    )}
-                                                  </div>
-                                                </div>
-                                              </div>
                                             </div>
                                           ) : typeof value === 'string' ? (
                                             <div className="text-slate-400 italic text-[9px]">{value}</div>
