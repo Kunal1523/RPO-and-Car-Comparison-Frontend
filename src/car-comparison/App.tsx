@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import ComparisonTable from './components/ComparisonTable';
-import NewsButtonCards from './components/NewsButtonCards';
+import RightNewsSidebar from './components/RightNewsSidebar';
 import LoginPage from './components/LoginPage';
+import { Newspaper } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
 import PricingComparisonPage from './components/PricingComparisonPage';
 import FeatureStackUpPage from './components/FeatureStackUpPage';
 import ChatbotDashboardPage from './components/ChatbotDashboardPage';
@@ -23,6 +25,7 @@ type PageView = 'comparison' | 'pricing' | 'stackup' | 'chatbot';
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentPage, setCurrentPage] = useState<PageView>('comparison');
+  const [isNewsSidebarOpen, setIsNewsSidebarOpen] = useState(false);
 
   useEffect(() => {
     const loggedIn = sessionStorage.getItem('isLoggedIn');
@@ -348,10 +351,8 @@ const App: React.FC = () => {
         <main className="flex-1 flex flex-col overflow-hidden relative bg-slate-100">
           <div className="flex-1 flex flex-col p-2 md:p-4 gap-2 h-full">
 
-            {/* Top Section: News & Heading - Compact */}
+            {/* Top Section: Heading & Toggle News */}
             <div className="flex-shrink-0 space-y-2">
-              <NewsButtonCards news1={news1} news2={news2} isLoading={isLoadingNews} />
-
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900 leading-tight">Comparison Result</h2>
@@ -359,6 +360,30 @@ const App: React.FC = () => {
                     Detailed specifications{currentSelections.length > 0 ? ` for ${currentSelections.length} vehicles` : ''}.
                   </p>
                 </div>
+                
+                {/* Sleek News Toggle Button */}
+                {(news1 || news2 || isLoadingNews) && (
+                  <button
+                    onClick={() => setIsNewsSidebarOpen(prev => !prev)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all shadow-sm ${
+                      isNewsSidebarOpen
+                        ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                    }`}
+                  >
+                    <Newspaper size={14} />
+                    <span>Latest News</span>
+                    {isLoadingNews ? (
+                      <span className="w-3 animate-spin rounded-full h-3 border-2 border-current border-t-transparent shrink-0 ml-0.5" />
+                    ) : (news1 || news2) ? (
+                      <span className={`inline-flex items-center justify-center min-w-[16px] h-4 text-[9px] font-black rounded-full px-1 ${
+                        isNewsSidebarOpen ? 'bg-white text-blue-600' : 'bg-blue-500 text-white'
+                      }`}>
+                        {((news1?.top5_news?.length || 0) + (news2?.top5_news?.length || 0))}
+                      </span>
+                    ) : null}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -388,6 +413,19 @@ const App: React.FC = () => {
             </div>
           </div>
         </main>
+
+        {/* Right Slidable News Sidebar */}
+        <AnimatePresence>
+          {isNewsSidebarOpen && (
+            <RightNewsSidebar
+              isOpen={isNewsSidebarOpen}
+              onClose={() => setIsNewsSidebarOpen(false)}
+              news1={news1}
+              news2={news2}
+              isLoading={isLoadingNews}
+            />
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -1074,6 +1074,72 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({
   const [filterPanelSearch, setFilterPanelSearch] = useState('');
   const [activeBreakdown, setActiveBreakdown] = useState<{ planId: string, variant: string, type: 'cost' | 'price', items: any[], total: number } | null>(null);
 
+  // States for Column Resizing
+  const [featureWidth, setFeatureWidth] = useState<number>(160);
+  const [widths, setWidths] = useState<Record<string, number>>({});
+  const [hasResizedFeature, setHasResizedFeature] = useState(false);
+
+  // Helper variables for column widths computed at top of component
+  const resizeVariants = useMemo(() => data?.columns.slice(1) || [], [data]);
+  const resizeVisibleVariants = useMemo(() => resizeVariants.filter((_, idx) => !hiddenVehicles.has(idx)), [resizeVariants, hiddenVehicles]);
+
+  const getColWidthAtTop = useCallback(() => {
+    const count = resizeVisibleVariants.length;
+    if (count <= 2) return 300;
+    if (count <= 3) return 260;
+    if (count <= 4) return 220;
+    if (count <= 5) return 190;
+    if (count <= 6) return 160;
+    if (count <= 8) return 140;
+    if (count <= 10) return 120;
+    if (count <= 13) return 110;
+    return 100;
+  }, [resizeVisibleVariants.length]);
+
+  const defaultColWidthAtTop = getColWidthAtTop();
+
+  // Sync initial feature width if it hasn't been manually resized
+  const initialFeatureWidth = useMemo(() => {
+    return resizeVisibleVariants.length <= 3 ? 200 : 160;
+  }, [resizeVisibleVariants.length]);
+
+  useEffect(() => {
+    if (!hasResizedFeature) {
+      setFeatureWidth(initialFeatureWidth);
+    }
+  }, [initialFeatureWidth, hasResizedFeature]);
+
+  // Drag-to-resize mouse handler
+  const handleMouseDown = useCallback((e: React.MouseEvent, colKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startWidth = colKey === 'feature' ? featureWidth : (widths[colKey] ?? defaultColWidthAtTop);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const newWidth = Math.max(60, startWidth + deltaX);
+
+      if (colKey === 'feature') {
+        setFeatureWidth(newWidth);
+        setHasResizedFeature(true);
+      } else {
+        setWidths(prev => ({
+          ...prev,
+          [colKey]: newWidth
+        }));
+      }
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [featureWidth, widths, defaultColWidthAtTop]);
   const handleDragEnd = async (event: any) => {
     const { active, over } = event;
     if (!over) return;
@@ -1845,8 +1911,6 @@ Current Value: ${currentValue}
   };
 
   // Compute a flexible or fixed per-column width.
-  const isLargeCount = visibleVariants.length > 5;
-
   const getColWidth = () => {
     const count = visibleVariants.length;
     if (count <= 2) return 300;
@@ -1860,22 +1924,15 @@ Current Value: ${currentValue}
     return 100;
   };
 
-  const COL_WIDTH = getColWidth();
-  const FEATURE_COL_WIDTH = visibleVariants.length <= 3 ? 200 : 160;
+  const defaultColWidth = getColWidth();
 
-  // Total min-width only matters when we want to force horizontal scroll (large counts)
-  const tableMinWidth = isLargeCount
-    ? (FEATURE_COL_WIDTH + COL_WIDTH * visibleVariants.length)
-    : 0;
+  const tableMinWidth = featureWidth + visibleVariants.reduce((sum, v) => sum + (widths[v] ?? defaultColWidth), 0);
 
   const gridColsStyle: React.CSSProperties = {
     display: 'grid',
-    // For small counts, we use minmax with a hard max to avoid "blown out" wide columns on ultra-wide screens
-    gridTemplateColumns: isLargeCount
-      ? `${FEATURE_COL_WIDTH}px repeat(${visibleVariants.length}, ${COL_WIDTH}px)`
-      : `${FEATURE_COL_WIDTH}px repeat(${visibleVariants.length}, minmax(${COL_WIDTH}px, ${visibleVariants.length <= 2 ? '400px' : '350px'}))`,
-    minWidth: tableMinWidth ? `${tableMinWidth}px` : 'fit-content',
-    width: isLargeCount ? 'auto' : '100%',
+    gridTemplateColumns: `${featureWidth}px ${visibleVariants.map(v => `${widths[v] ?? defaultColWidth}px`).join(' ')}`,
+    minWidth: `${tableMinWidth}px`,
+    width: 'fit-content',
   };
 
 
@@ -2007,14 +2064,24 @@ Current Value: ${currentValue}
       </div>
 
       <div
-        className="flex-1 overflow-x-auto w-full"
+        className="flex-1 overflow-auto w-full"
         style={{ minWidth: 0 }}
       >
         <div style={{ minWidth: tableMinWidth ? `${tableMinWidth}px` : '100%' }}>
 
           <div className="grid border-b border-slate-200 sticky top-0 z-50 shadow-md backdrop-blur-md bg-white/90" style={gridColsStyle}>
-            <div className="p-3 font-bold uppercase tracking-wider text-[10px] md:text-xs flex items-center bg-gradient-to-br from-slate-800 to-slate-900 text-white border-r border-slate-700 shadow-inner relative">
+            <div className="p-3 font-bold uppercase tracking-wider text-[10px] md:text-xs flex items-center bg-gradient-to-br from-slate-800 to-slate-900 text-white border-r border-slate-700 shadow-inner relative group/resizer">
               <span className="opacity-90 flex-1">Comparison Feature</span>
+              <div
+                onMouseDown={(e) => handleMouseDown(e, 'feature')}
+                onDoubleClick={() => {
+                  setFeatureWidth(visibleVariants.length <= 3 ? 200 : 160);
+                  setHasResizedFeature(false);
+                }}
+                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/80 active:bg-blue-600 z-50 transition-colors"
+                onClick={(e) => e.stopPropagation()}
+                title="Drag to resize, double-click to reset"
+              />
               <div className="relative" onMouseLeave={() => setIsFeatureFilterOpen(false)}>
                 <button
                   onClick={() => setIsFeatureFilterOpen(prev => !prev)}
@@ -2282,7 +2349,7 @@ Current Value: ${currentValue}
                       <div className="flex items-center gap-2 mt-0.5 pt-0.5 border-t border-white/10">
                         <div className="relative group/breakdown">
                           <span 
-                            className={`text-[8px] font-black cursor-help hover:bg-white/10 rounded px-0.5 transition-colors ${totalDelta <= 0 ? 'text-emerald-300' : 'text-red-300'}`}
+                            className={`text-[11px] font-black cursor-help hover:bg-white/10 rounded px-0.5 transition-colors ${totalDelta <= 0 ? 'text-emerald-300' : 'text-red-300'}`}
                           >
                             C: {totalDelta > 0 ? '+' : ''}₹{totalDelta.toLocaleString()}
                           </span>
@@ -2313,7 +2380,7 @@ Current Value: ${currentValue}
 
                         <div className="relative group/breakdown-p">
                           <span 
-                            className={`text-[8px] font-black cursor-help hover:bg-white/10 rounded px-0.5 transition-colors ${totalPriceDelta >= 0 ? 'text-emerald-300' : 'text-red-300'}`}
+                            className={`text-[11px] font-black cursor-help hover:bg-white/10 rounded px-0.5 transition-colors ${totalPriceDelta >= 0 ? 'text-emerald-300' : 'text-red-300'}`}
                           >
                             P: {totalPriceDelta > 0 ? '+' : ''}₹{totalPriceDelta.toLocaleString()}
                           </span>
@@ -2344,6 +2411,20 @@ Current Value: ${currentValue}
                       </div>
                     )}
                   </div>
+                  {/* Variant column resizer handle */}
+                  <div
+                    onMouseDown={(e) => handleMouseDown(e, v)}
+                    onDoubleClick={() => {
+                      setWidths(prev => {
+                        const next = { ...prev };
+                        delete next[v];
+                        return next;
+                      });
+                    }}
+                    className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/80 active:bg-blue-600 z-50 transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                    title="Drag to resize, double-click to reset"
+                  />
                 </div>
               );
             })}
@@ -2423,7 +2504,7 @@ Current Value: ${currentValue}
                   </DroppableCategoryHeader>
 
                   {isOpen && (
-                    <div className="max-h-[50vh] overflow-y-auto custom-scrollbar">
+                    <div>
                       {/* TOP-LEVEL DRAFT ROWS (from category header) */}
                       {variants.map((v, vIdx) => {
                         if (hiddenVehicles.has(vIdx)) return null;
