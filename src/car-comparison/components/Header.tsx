@@ -1,7 +1,7 @@
 // src/components/Header.tsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, BarChart3, GitCompare, ArrowLeft, Layers, Bot } from 'lucide-react';
+import { LogOut, BarChart3, GitCompare, ArrowLeft, Layers, Bot, Sliders } from 'lucide-react';
 import logo from '../Images/amlgolabslogowhite.png';
 import FeedbackButton from '../../shared/FeedbackButton';
 

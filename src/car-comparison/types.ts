@@ -91,6 +91,7 @@ export interface ComparisonResponse {
 export interface GroupedFeature {
   featureName: string;
   values: Record<string, any>;
+  feature_id?: string;
   cost_deltas?: Record<string, number>;
   price_deltas?: Record<string, number>;
   plan_feature_ids?: Record<string, string>;
