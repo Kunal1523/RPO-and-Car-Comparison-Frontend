@@ -382,6 +382,7 @@ const App: React.FC = () => {
                 onFinalizePlan={handleFinalizePlan}
                 onDeletePlan={handleDeletePlan}
                 onRenamePlan={handleRenamePlan}
+                onRefresh={refreshComparison}
                 selections={currentSelections}
               />
             </div>

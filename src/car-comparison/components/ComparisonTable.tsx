@@ -817,10 +817,11 @@
 
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronUp, AlertCircle, Download, Plus, Minus, Loader2, Edit2, Trash2, Check, X, Save, PlusCircle, Undo2, Filter, Info, Search } from 'lucide-react';
+import { ChevronDown, ChevronUp, AlertCircle, Download, Plus, Minus, Loader2, Edit2, Trash2, Check, X, Save, PlusCircle, Undo2, Filter, Info, Search, GripVertical } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-
+import { DndContext, useDraggable, useDroppable } from '@dnd-kit/core';
+import { renameFeatureMaster, moveFeatureMaster, deleteFeatureMaster } from '../services/api';
 
 import { ComparisonResponse, FeatureGroup, GroupedFeature, VariantPriceData, PriceDetail } from '../types';
 
@@ -834,6 +835,7 @@ interface ComparisonTableProps {
   onDeletePlan?: (planId: string) => void;
   onFinalizePlan?: (planId: string) => void;
   onPlanNewModel?: (variantName: string) => void;
+  onRefresh?: () => Promise<void>;
 }
 
 const HighlightText = ({ text, highlight }: { text: string; highlight: string }) => {
@@ -854,6 +856,197 @@ const HighlightText = ({ text, highlight }: { text: string; highlight: string })
   );
 };
 
+const DroppableCategoryHeader = ({ group, isOpen, showDiffOnly, toggleGroup, gridColsStyle, children }: any) => {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `category__${group.groupName}`,
+    data: {
+      category: group.groupName
+    }
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      onClick={() => !(showDiffOnly && !group.hasDifferences) && toggleGroup(group.groupName)}
+      className={`grid sticky top-[33px] z-30 border-b border-slate-100 transition-all duration-200 ${
+        isOver
+          ? 'bg-gradient-to-r from-indigo-100 to-sky-100 border-indigo-400 shadow-md ring-2 ring-indigo-500/30 text-indigo-900 scale-[1.002]'
+          : showDiffOnly && !group.hasDifferences
+          ? 'bg-slate-50 text-slate-400 cursor-default'
+          : 'bg-sky-50 hover:bg-sky-100 text-slate-900 cursor-pointer'
+      }`}
+      style={gridColsStyle}
+    >
+      {children}
+    </div>
+  );
+};
+
+const DraggableFeatureRow = ({ item, group, rowBg, gridColsStyle, children }: any) => {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `feature__${item.feature_id}`,
+    data: {
+      feature_id: item.feature_id,
+      feature_name: item.featureName,
+      category: group.groupName
+    },
+    disabled: !item.feature_id
+  });
+
+  const style: React.CSSProperties = {
+    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 60 : undefined,
+    position: 'relative',
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`grid transition-all duration-200 border-b border-slate-300 ${rowBg} ${isDragging ? 'shadow-lg border-indigo-300 bg-indigo-50/30' : ''}`}
+      style={{ ...gridColsStyle, ...style }}
+      {...attributes}
+    >
+      {React.Children.map(children, child => {
+        if (React.isValidElement(child) && (child.props as any).isRowHeader) {
+          return React.cloneElement(child as React.ReactElement<any>, { dragListeners: listeners });
+        }
+        return child;
+      })}
+    </div>
+  );
+};
+
+const RowHeaderCell = ({
+  item,
+  group,
+  isBrand,
+  isCar,
+  isVar,
+  isDate,
+  isPriceRow,
+  searchTerm,
+  dragListeners,
+  editingMasterFeatureId,
+  setEditingMasterFeatureId,
+  editingMasterFeatureName,
+  setEditingMasterFeatureName,
+  onRefresh
+}: any) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const isEditing = editingMasterFeatureId === item.feature_id && item.feature_id;
+
+  const handleRenameSave = async () => {
+    if (!editingMasterFeatureName.trim()) return;
+    try {
+      await renameFeatureMaster(item.feature_id, editingMasterFeatureName.trim());
+      setEditingMasterFeatureId(null);
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Failed to rename feature');
+    }
+  };
+
+  const handleDeleteClick = async () => {
+    if (!window.confirm(`Are you sure you want to delete "${item.featureName}" from the master list? This will remove it across all models.`)) {
+      return;
+    }
+    try {
+      await deleteFeatureMaster(item.feature_id);
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Failed to delete feature');
+    }
+  };
+
+  return (
+    <div
+      className={`p-1 pl-2 pr-2 text-[10px] font-medium border-r border-slate-300 flex items-center justify-start text-left gap-1.5 relative group/header-cell min-h-[32px] ${
+        isBrand || isCar || isVar || isDate ? 'text-blue-900 font-bold' : 'text-slate-700'
+      }`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* 1. Drag Grip Handle */}
+      {item.feature_id && !isBrand && !isCar && !isVar && !isDate && !isPriceRow ? (
+        <button
+          className="cursor-grab active:cursor-grabbing p-1 text-slate-400 hover:text-indigo-600 transition-colors shrink-0"
+          title="Drag to move category"
+          {...dragListeners}
+        >
+          <GripVertical size={12} />
+        </button>
+      ) : (
+        <div className="w-5 shrink-0" />
+      )}
+
+      {/* 2. Item Numbering */}
+      <span className="text-slate-500 inline-block min-w-[20px] text-right shrink-0">
+        {(group as any).originalGroupIndex + 1}.{(item as any).originalItemIndex + 1}
+      </span>
+
+      {/* 3. Feature Name (Editable inline) */}
+      <div className="flex-1 min-w-0 pr-12">
+        {isEditing ? (
+          <input
+            type="text"
+            value={editingMasterFeatureName}
+            onChange={(e) => setEditingMasterFeatureName(e.target.value)}
+            onBlur={handleRenameSave}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleRenameSave();
+              else if (e.key === 'Escape') setEditingMasterFeatureId(null);
+            }}
+            className="w-full bg-white border-2 border-indigo-500 rounded px-1.5 py-0.5 text-[10px] font-bold text-slate-900 outline-none shadow-sm focus:ring-1 focus:ring-indigo-300"
+            autoFocus
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span
+            className={`block truncate ${
+              isBrand || isCar || isVar || isDate ? 'uppercase tracking-tight text-[9px]' : ''
+            } ${item.feature_id ? 'cursor-pointer hover:text-indigo-600 hover:underline decoration-indigo-400/50' : ''}`}
+            onDoubleClick={() => {
+              if (item.feature_id && !isBrand && !isCar && !isVar && !isDate && !isPriceRow) {
+                setEditingMasterFeatureId(item.feature_id);
+                setEditingMasterFeatureName(item.featureName);
+              }
+            }}
+            title={item.feature_id ? "Double-click to rename master feature" : undefined}
+          >
+            <HighlightText text={item.featureName} highlight={searchTerm} />
+          </span>
+        )}
+      </div>
+
+      {/* 4. Action Buttons (Rename / Delete) */}
+      {item.feature_id && !isBrand && !isCar && !isVar && !isDate && !isPriceRow && !isEditing && isHovered && (
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center bg-slate-50/90 pl-1 py-0.5 rounded shadow-sm border border-slate-200/50 gap-0.5 z-10">
+          <button
+            onClick={() => {
+              setEditingMasterFeatureId(item.feature_id);
+              setEditingMasterFeatureName(item.featureName);
+            }}
+            className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded transition-colors"
+            title="Rename master feature"
+          >
+            <Edit2 size={10} />
+          </button>
+          <button
+            onClick={handleDeleteClick}
+            className="p-1 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded transition-colors"
+            title="Delete master feature"
+          >
+            <Trash2 size={10} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ComparisonTable: React.FC<ComparisonTableProps> = ({
   data,
   selections,
@@ -863,8 +1056,11 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({
   onRenamePlan,
   onDeletePlan,
   onFinalizePlan,
-  onPlanNewModel
+  onPlanNewModel,
+  onRefresh
 }) => {
+  const [editingMasterFeatureId, setEditingMasterFeatureId] = useState<string | null>(null);
+  const [editingMasterFeatureName, setEditingMasterFeatureName] = useState<string>('');
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [showDiffOnly, setShowDiffOnly] = useState(false);
   const [expandAll, setExpandAll] = useState(false);
@@ -877,6 +1073,30 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({
   const [hiddenFeatures, setHiddenFeatures] = useState<Set<string>>(new Set());
   const [filterPanelSearch, setFilterPanelSearch] = useState('');
   const [activeBreakdown, setActiveBreakdown] = useState<{ planId: string, variant: string, type: 'cost' | 'price', items: any[], total: number } | null>(null);
+
+  const handleDragEnd = async (event: any) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeIdStr = String(active.id);
+    const overIdStr = String(over.id);
+
+    if (activeIdStr.startsWith('feature__') && overIdStr.startsWith('category__')) {
+      const featureId = activeIdStr.replace('feature__', '');
+      const targetCategory = overIdStr.replace('category__', '');
+      const sourceCategory = active.data.current?.category;
+
+      if (sourceCategory === targetCategory) return;
+
+      try {
+        await moveFeatureMaster(featureId, targetCategory);
+        if (onRefresh) await onRefresh();
+      } catch (err) {
+        console.error(err);
+        alert(err instanceof Error ? err.message : 'Failed to move feature');
+      }
+    }
+  };
 
   // Debounced input component for plan features
   const PlanFeatureInput = ({ planId, featureName, category, initialValue, onUpdate, isNewFeature, baselineValue, isDeleted, originalValue }: any) => {
@@ -1129,6 +1349,7 @@ Current Value: ${currentValue}
         priceGroup.push({
           featureName: featureText,
           values,
+          feature_id: row.feature_id,
           is_deleted: row.is_deleted,
           original_values: row.original_values,
           cost_deltas: row.cost_deltas,
@@ -1148,6 +1369,7 @@ Current Value: ${currentValue}
         groupMap[category].push({
           featureName,
           values,
+          feature_id: row.feature_id,
           is_deleted: row.is_deleted,
           original_values: row.original_values,
           cost_deltas: row.cost_deltas,
@@ -1159,6 +1381,7 @@ Current Value: ${currentValue}
         additionalGroup.push({
           featureName: featureText,
           values,
+          feature_id: row.feature_id,
           is_deleted: row.is_deleted,
           original_values: row.original_values,
           cost_deltas: row.cost_deltas,
@@ -1684,7 +1907,8 @@ Current Value: ${currentValue}
   };
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <DndContext onDragEnd={handleDragEnd}>
+      <div className="h-full flex flex-col bg-white">
 
       <div className="flex-shrink-0 flex items-center justify-between gap-4 px-4 py-2 border-b bg-gradient-to-r from-slate-50 to-blue-50">
         <div className="flex items-center gap-4">
@@ -2139,13 +2363,12 @@ Current Value: ${currentValue}
               return (
                 <div key={group.groupName} className="bg-white">
 
-                  <div
-                    onClick={() => !(showDiffOnly && !group.hasDifferences) && toggleGroup(group.groupName)}
-                    className={`grid sticky top-[33px] z-30 border-b border-slate-100 transition-colors ${showDiffOnly && !group.hasDifferences
-                      ? 'bg-slate-50 text-slate-400 cursor-default'
-                      : 'bg-sky-50 hover:bg-sky-100 text-slate-900 cursor-pointer'
-                      }`}
-                    style={gridColsStyle}
+                  <DroppableCategoryHeader
+                    group={group}
+                    isOpen={isOpen}
+                    showDiffOnly={showDiffOnly}
+                    toggleGroup={toggleGroup}
+                    gridColsStyle={gridColsStyle}
                   >
                     <div className="w-full flex items-center px-3 py-1.5 text-left border-r border-slate-200 justify-between group/cat">
                       <span className="font-semibold flex items-center gap-2 text-[11px]">
@@ -2197,7 +2420,7 @@ Current Value: ${currentValue}
                         </div>
                       );
                     })}
-                  </div>
+                  </DroppableCategoryHeader>
 
                   {isOpen && (
                     <div className="max-h-[50vh] overflow-y-auto custom-scrollbar">
@@ -2274,16 +2497,23 @@ Current Value: ${currentValue}
 
                         return (
                           <React.Fragment key={idx}>
-                            <div className={`grid transition-colors border-b border-slate-300 ${rowBg}`} style={gridColsStyle}>
-
-                              <div className={`p-1 pl-6 pr-2 text-[10px] font-medium border-r border-slate-300 flex items-start justify-start text-left gap-1.5 ${isBrand || isCar || isVar || isDate ? 'text-blue-900 font-bold' : 'text-slate-700'}`}>
-                                <span className="text-slate-500 inline-block min-w-[30px] text-right">
-                                  {(group as any).originalGroupIndex + 1}.{(item as any).originalItemIndex + 1}
-                                </span>
-                                <span className={`flex-1 break-words ${isBrand || isCar || isVar || isDate ? 'uppercase tracking-tight text-[9px]' : ''}`}>
-                                  <HighlightText text={item.featureName} highlight={searchTerm} />
-                                </span>
-                              </div>
+                            <DraggableFeatureRow item={item} group={group} rowBg={rowBg} gridColsStyle={gridColsStyle}>
+                              <RowHeaderCell
+                                item={item}
+                                group={group}
+                                isBrand={isBrand}
+                                isCar={isCar}
+                                isVar={isVar}
+                                isDate={isDate}
+                                isPriceRow={isPriceRow}
+                                searchTerm={searchTerm}
+                                editingMasterFeatureId={editingMasterFeatureId}
+                                setEditingMasterFeatureId={setEditingMasterFeatureId}
+                                editingMasterFeatureName={editingMasterFeatureName}
+                                setEditingMasterFeatureName={setEditingMasterFeatureName}
+                                onRefresh={onRefresh}
+                                isRowHeader={true}
+                              />
 
                               {variants.map((v, vIdx) => {
                                 if (hiddenVehicles.has(vIdx)) return null;
@@ -2521,7 +2751,7 @@ Current Value: ${currentValue}
                                   </React.Fragment>
                                 );
                               })}
-                            </div>
+                            </DraggableFeatureRow>
 
                             {/* RENDER DRAFT ROWS IF ANY PLAN HAS ONE FOR THIS ITEM */}
                             {variants.map((v, vIdx) => {
@@ -2548,6 +2778,7 @@ Current Value: ${currentValue}
         </div>{/* end minWidth wrapper */}
       </div>{/* end overflow-x */}
     </div>
+    </DndContext>
   );
 };
 

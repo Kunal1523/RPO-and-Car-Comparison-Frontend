@@ -502,6 +502,7 @@ export const fetchComparisonDetails = async (
         featureMap.set(featureKey, {
           feature: feat.feature_name,
           category: feat.category,
+          feature_id: feat.feature_id,
         });
       }
       
@@ -642,5 +643,50 @@ export const deletePlanFeature = async (planId: string, planFeatureId: string): 
   const res = await fetch(`${BASE_API}/api/model-plans/${planId}/features/${planFeatureId}`, {
     method: 'DELETE',
   });
+  return await res.json();
+};
+
+// ============== FEATURE MASTER MANAGEMENT API ==============
+
+export const fetchFeatureMasterCategoryWise = async (): Promise<Record<string, { id: string, name: string }[]>> => {
+  const res = await fetch(`${BASE_API}/features/master/category-wise`);
+  if (!res.ok) throw new Error(`Failed to fetch master features: ${res.status}`);
+  return await res.json();
+};
+
+export const renameFeatureMaster = async (featureId: string, newName: string): Promise<any> => {
+  const res = await fetch(`${BASE_API}/features/master/${featureId}/rename`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_name: newName })
+  });
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || 'Failed to rename feature');
+  }
+  return await res.json();
+};
+
+export const moveFeatureMaster = async (featureId: string, newCategory: string): Promise<any> => {
+  const res = await fetch(`${BASE_API}/features/master/${featureId}/move`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_category: newCategory })
+  });
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || 'Failed to move feature');
+  }
+  return await res.json();
+};
+
+export const deleteFeatureMaster = async (featureId: string): Promise<any> => {
+  const res = await fetch(`${BASE_API}/features/master/${featureId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || 'Failed to delete feature');
+  }
   return await res.json();
 };
