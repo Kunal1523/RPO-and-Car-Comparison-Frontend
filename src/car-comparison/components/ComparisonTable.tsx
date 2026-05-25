@@ -869,10 +869,10 @@ const DroppableCategoryHeader = ({ group, isOpen, showDiffOnly, toggleGroup, gri
       ref={setNodeRef}
       onClick={() => !(showDiffOnly && !group.hasDifferences) && toggleGroup(group.groupName)}
       className={`grid sticky top-[33px] z-30 border-b border-slate-100 transition-all duration-200 ${isOver
-          ? 'bg-gradient-to-r from-indigo-100 to-sky-100 border-indigo-400 shadow-md ring-2 ring-indigo-500/30 text-indigo-900 scale-[1.002]'
-          : showDiffOnly && !group.hasDifferences
-            ? 'bg-slate-50 text-slate-400 cursor-default'
-            : 'bg-sky-50 hover:bg-sky-100 text-slate-900 cursor-pointer'
+        ? 'bg-gradient-to-r from-indigo-100 to-sky-100 border-indigo-400 shadow-md ring-2 ring-indigo-500/30 text-indigo-900 scale-[1.002]'
+        : showDiffOnly && !group.hasDifferences
+          ? 'bg-slate-50 text-slate-400 cursor-default'
+          : 'bg-sky-50 hover:bg-sky-100 text-slate-900 cursor-pointer'
         }`}
       style={gridColsStyle}
     >
@@ -1925,11 +1925,19 @@ Current Value: ${currentValue}
 
   const tableMinWidth = featureWidth + visibleVariants.reduce((sum, v) => sum + (widths[v] ?? defaultColWidth), 0);
 
+  // const gridColsStyle: React.CSSProperties = {
+  //   display: 'grid',
+  //   gridTemplateColumns: `${featureWidth}px ${visibleVariants.map(v => `${widths[v] ?? defaultColWidth}px`).join(' ')}`,
+  //   minWidth: `${tableMinWidth}px`,
+  //   width: '100%',
+  // };
   const gridColsStyle: React.CSSProperties = {
     display: 'grid',
-    gridTemplateColumns: `${featureWidth}px ${visibleVariants.map(v => `${widths[v] ?? defaultColWidth}px`).join(' ')}`,
+    gridTemplateColumns: `${featureWidth}px ${visibleVariants.map(v =>
+      widths[v] ? `${widths[v]}px` : '1fr'   // ← manually resized ho to px, warna 1fr
+    ).join(' ')}`,
     minWidth: `${tableMinWidth}px`,
-    width: 'fit-content',
+    width: '100%',
   };
 
 
@@ -2064,7 +2072,7 @@ Current Value: ${currentValue}
           className="flex-1 overflow-auto w-full"
           style={{ minWidth: 0 }}
         >
-          <div style={{ minWidth: tableMinWidth ? `${tableMinWidth}px` : '100%' }}>
+          <div style={{ minWidth: `${tableMinWidth}px`, width: '100%' }}>
 
             <div className="grid border-b border-slate-200 sticky top-0 z-50 shadow-md backdrop-blur-md bg-white/90" style={gridColsStyle}>
               <div className="p-3 font-bold uppercase tracking-wider text-[10px] md:text-xs flex items-center bg-gradient-to-br from-slate-800 to-slate-900 text-white border-r border-slate-700 shadow-inner relative group/resizer">
