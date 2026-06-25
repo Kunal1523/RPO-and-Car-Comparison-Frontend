@@ -1,1172 +1,1121 @@
 // // src/components/Sidebar.tsx
-// import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-// import { ModelDetails, SelectionState, DropdownOption, ModelPlan } from '../types';
-// import { fetchModelDetails, fetchModelPlans } from '../services/api';
-// import { ChevronDown, CarFront, ChevronLeft, ChevronRight, X, Plus, GripVertical } from 'lucide-react';
-// import { motion, AnimatePresence } from 'framer-motion';
+// import React, { useEffect, useMemo, useState } from 'react';
+// import { SelectionState } from '../types';
+// import { fetchSidebarFilters } from '../services/api';
+// import { ChevronRight, ChevronLeft, Filter, Search, X, Plus, Info, AlertCircle } from 'lucide-react';
 
+// // interface SidebarProps {
+// //   onCompare: (selections: SelectionState[], priceFilter?: { min: number; max: number }) => void;
+// //   isLoading: boolean;
+// //   selections: SelectionState[];
+// //   setSelections: React.Dispatch<React.SetStateAction<SelectionState[]>>;
+// // }
 // interface SidebarProps {
-//   onCompare: (selections: SelectionState[]) => void;
+//   onCompare: (selections: SelectionState[], priceFilter?: { min: number; max: number }) => void;
 //   isLoading: boolean;
 //   selections: SelectionState[];
 //   setSelections: React.Dispatch<React.SetStateAction<SelectionState[]>>;
+//   showCompareButton?: boolean;                                          // 👈 NEW
+//   onFiltersChange?: (priceFilter: { min: number; max: number }) => void; // 👈 NEW
 // }
 
-// // ---------------- Animations ----------------
-// const headerVariant = {
-//   hidden: { opacity: 0, y: -10 },
-//   visible: { opacity: 1, y: 0, transition: { duration: 0.35 } },
-// };
+// interface SidebarVariant {
+//   brand: string;
+//   model: string;
+//   body_type: string;
+//   version: string;
+//   variant: string;
+//   variant_id: string;
+//   price: number;
+//   engine_type?: string;
+//   transmission_type?: string;
+//   fuel_type?: string;
+//   drive_type?: string;
+//   is_new_model: boolean;
+// }
 
-// const matrixVariant = {
-//   hidden: { opacity: 0 },
-//   visible: { opacity: 1, transition: { duration: 0.5 } },
-// };
+// const BODY_TYPES = ['Hatch', 'Sedan', 'SUV', 'MPV', 'Van'];
 
-// const buttonVariant = {
-//   hidden: { opacity: 0, y: 40 },
-//   visible: {
-//     opacity: 1,
-//     y: 0,
-//     transition: {
-//       duration: 0.4,
-//       delay: 0.35,
-//       ease: [0.4, 0, 0.2, 1] as const
-//     }
-//   },
-// };
-
-// // ✅ HELPER: Map version numbers to display labels
-// const getVersionLabel = (versionValue: string): string => {
-//   const versionNum = parseInt(versionValue.replace('v', ''));
-//   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-//   const year = 2026;
-
-//   if (isNaN(versionNum) || versionNum < 1) return versionValue;
-
-//   const monthIndex = (versionNum - 1) % 12;
-//   const yearOffset = Math.floor((versionNum - 1) / 12);
-//   return `${months[monthIndex]} ${year + yearOffset}`;
-// };
-
-// const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, setSelections }) => {
-//   const [modelData, setModelData] = useState<ModelDetails | null>(null);
-//   const [plans, setPlans] = useState<ModelPlan[]>([]);
-
+// const Sidebar: React.FC<SidebarProps> = ({
+//   onCompare,
+//   isLoading,
+//   selections,
+//   setSelections,
+//   showCompareButton = true,   // 👈 NEW, default true (Feature Comparison page ke liye)
+//   onFiltersChange,            // 👈 NEW
+// }) => {
+//   const [allVariants, setAllVariants] = useState<SidebarVariant[]>([]);
+//   const [dataLoaded, setDataLoaded] = useState(false);
 //   const [isOpen, setIsOpen] = useState<boolean>(true);
-//   const [contentKey, setContentKey] = useState(0);
 
+//   // Filters state
+//   const [priceMin, setPriceMin] = useState<number>(0);
+//   const [priceMax, setPriceMax] = useState<number>(100); // Max 100 Lakhs initially
+//   const [selectedBodyTypes, setSelectedBodyTypes] = useState<string[]>([]);
+//   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
 
-//   // Resize state
-//   const [sidebarWidth, setSidebarWidth] = useState(480);
-//   const isResizingRef = useRef(false);
+//   // Modal state
+//   const [modalBrand, setModalBrand] = useState<string>('');
+//   const [modalModel, setModalModel] = useState<string>('');
+//   const [isModalOpen, setIsModalOpen] = useState(false);
 
-//   const hasData = useMemo(() => !!modelData, [modelData]);
-
-//   // Handle sidebar resizing
-//   useEffect(() => {
-//     const handleMouseMove = (e: MouseEvent) => {
-//       if (!isResizingRef.current) return;
-//       let newWidth = e.clientX;
-//       if (newWidth < 300) newWidth = 300; // Minimum width
-//       if (newWidth > 800) newWidth = 800; // Maximum width
-//       setSidebarWidth(newWidth);
-//     };
-
-//     const handleMouseUp = () => {
-//       if (isResizingRef.current) {
-//         isResizingRef.current = false;
-//         document.body.style.cursor = 'default';
-//         document.body.style.userSelect = 'auto';
-//       }
-//     };
-
-//     window.addEventListener('mousemove', handleMouseMove);
-//     window.addEventListener('mouseup', handleMouseUp);
-//     return () => {
-//       window.removeEventListener('mousemove', handleMouseMove);
-//       window.removeEventListener('mouseup', handleMouseUp);
-//     };
-//   }, []);
-
-//   const startResizing = (e: React.MouseEvent) => {
-//     e.preventDefault();
-//     isResizingRef.current = true;
-//     document.body.style.cursor = 'col-resize';
-//     document.body.style.userSelect = 'none'; // Prevent selection while dragging
-//   };
+//   // Model dropdown state
+//   const [openDropdownBrands, setOpenDropdownBrands] = useState<string[]>([]);
+//   const [selectedModels, setSelectedModels] = useState<Array<{ brand: string, model: string }>>([]);
 
 //   useEffect(() => {
 //     const loadData = async () => {
 //       try {
-//         const [data, planData] = await Promise.all([
-//           fetchModelDetails(),
-//           fetchModelPlans()
-//         ]);
-//         setModelData(data);
-//         setPlans(planData || []);
+//         const data = await fetchSidebarFilters();
+//         setAllVariants(data);
+//         setDataLoaded(true);
+
+//         // Find max price to set realistic slider bounds
+//         if (data.length > 0) {
+//           const maxP = Math.ceil(Math.max(...data.map((v: SidebarVariant) => v.price)));
+//           setPriceMax(maxP > 0 ? maxP : 100);
+//         }
+
+//         // Don't auto-select any brands or models. Wait for user interaction as requested.
+//         // Initialize based on price filter
+//         const maxP = Math.ceil(Math.max(...data.map((v: SidebarVariant) => v.price)));
+//         setPriceMax(maxP > 0 ? maxP : 100);
 //       } catch (err) {
-//         console.error('Failed to fetch data', err);
+//         console.error('Failed to fetch sidebar filters', err);
 //       }
 //     };
 //     loadData();
 //   }, []);
 
-//   // ✅ PREFILL Selections (Vehicle 1 & 2)
-//   useEffect(() => {
-//     if (!modelData || modelData.brands.length === 0) return;
+//   const toggleBodyType = (type: string) => {
+//     setSelectedBodyTypes(prev =>
+//       prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+//     );
+//   };
 
-//     // Skip prefill if we already have valid selections (from initialSelections or user edits)
-//     const hasExistingData = selections.some(s => s.brand !== '');
-//     if (hasExistingData) return;
+//   const toggleBrand = (brand: string) => {
+//     setSelectedBrands(prev =>
+//       prev.includes(brand) ? prev.filter(b => b !== brand) : [...prev, brand]
+//     );
+//   };
 
-//     const getFullSelection = (brandName: string, modelIdx: number): SelectionState | null => {
-//       const models = modelData.models[brandName] || [];
-//       const model = models[modelIdx];
-//       if (!model) return null;
+//   const openVariantModal = (brand: string, model: string) => {
+//     setModalBrand(brand);
+//     setModalModel(model);
+//     setIsModalOpen(true);
+//   };
 
-//       const bmKey = `${brandName}__${model}`;
-//       const versions = modelData.versions[bmKey] || [];
-//       if (versions.length === 0) return null;
+//   const closeVariantModal = () => {
+//     setIsModalOpen(false);
+//     setModalModel('');
+//     setModalBrand('');
+//   };
 
-//       const versionVal = versions[0].value;
+//   const isVariantSelected = (brand: string, model: string, variant: string, version: string, plan_id?: string) => {
+//     if (brand === 'NM') return selections.some(s => s.plan_id === plan_id);
+//     return selections.some(s => s.brand === brand && s.model === model && s.variant === variant && s.version === version);
+//   };
 
-//       return {
-//         brand: brandName,
-//         model,
-//         version: versionVal,
-//         variant: '',
-//         variant_id: ''
-//       };
-//     };
+//   const toggleVariantSelection = (brand: string, model: string, variant: string, version: string, variantId: string) => {
+//     const plan_id = brand === 'NM' ? variantId : undefined;
 
-//     const firstBrand = modelData.brands[0];
-//     const sel1 = getFullSelection(firstBrand, 0);
-
-//     let sel2: SelectionState | null = null;
-//     sel2 = getFullSelection(firstBrand, 1);
-//     if (!sel2 && modelData.brands.length > 1) {
-//       sel2 = getFullSelection(modelData.brands[1], 0);
+//     if (isVariantSelected(brand, model, variant, version, plan_id)) {
+//       setSelections(prev => prev.filter(s => {
+//         if (brand === 'NM') return s.plan_id !== plan_id;
+//         return !(s.brand === brand && s.model === model && s.variant === variant && s.version === version);
+//       }));
+//     } else {
+//       setSelections(prev => [
+//         ...prev,
+//         { brand, model, version, variant, variant_id: variantId, plan_id }
+//       ]);
 //     }
-//     if (!sel2) sel2 = sel1;
-
-//     if (sel1 && sel2) {
-//       setSelections(prev => {
-//         const next = [...prev];
-//         next[0] = sel1!;
-//         next[1] = sel2!;
-//         return next;
-//       });
-//       setContentKey(k => k + 1);
-//     }
-//   }, [modelData]);
-
-
-//   const MAX_VEHICLES = 20;
-//   const CHUNK_SIZE = 5;
-
-//   const addVehicleCard = () => {
-//     if (selections.length >= MAX_VEHICLES) {
-//       alert(`Maximum ${MAX_VEHICLES} vehicles can be compared`);
-//       return;
-//     }
-//     setSelections((prev) => [...prev, { brand: '', model: '', version: '', variant: '' }]);
-//     setContentKey((k) => k + 1);
 //   };
 
-//   const removeVehicleCard = (idx: number) => {
-//     setSelections((prev) => prev.filter((_, i) => i !== idx));
-//     setContentKey((k) => k + 1);
+//   const filteredVariants = useMemo(() => {
+//     return allVariants.filter(v =>
+//       v.price >= priceMin &&
+//       v.price <= priceMax &&
+//       (selectedBodyTypes.length === 0 || selectedBodyTypes.includes(v.body_type))
+//     );
+//   }, [allVariants, priceMin, priceMax, selectedBodyTypes]);
+
+//   const isModelSelectable = (brand: string, model: string) => {
+//     return filteredVariants.some(v => v.brand === brand && v.model === model);
 //   };
 
-//   const handleSelectionChange = (idx: number, field: keyof SelectionState, value: string) => {
-//     setSelections((prev) => {
-//       const next = [...prev];
-//       const current = next[idx];
+//   const variantsInPriceRange = useMemo(() => {
+//     return allVariants.filter(v => v.price >= priceMin && v.price <= priceMax);
+//   }, [allVariants, priceMin, priceMax]);
 
-//       if (field === 'brand') {
-//         next[idx] = { brand: value, model: '', version: '', variant: '', plan_id: undefined };
-//       } else if (field === 'model') {
-//         // Find first available version for this car
-//         const bmKeyStr = `${current.brand}__${value}`;
-//         const firstVer = modelData?.versions[bmKeyStr]?.[0]?.value || '';
+//   const availableBodyTypesInPrice = useMemo(() => {
+//     return Array.from(new Set(variantsInPriceRange.map(v => v.body_type)));
+//   }, [variantsInPriceRange]);
 
-//         if (current.brand === 'CUSTOM_PLAN') {
-//           // For plans, model and variant are the same (the plan name)
-//           // We also auto-calculate the plan_id
-//           const variantKey = `${current.brand}__${value}__${firstVer}__${value}`;
-//           const variantId = modelData?.variantIds?.[variantKey] || '';
-//           const cleanId = variantId.replace('plan_', '');
+//   const availableBrandsInFilter = useMemo(() => {
+//     return Array.from(new Set(filteredVariants.map(v => v.brand)));
+//   }, [filteredVariants]);
 
-//           next[idx] = {
-//             ...current,
-//             model: value,
-//             version: firstVer,
-//             variant: value,
-//             variant_id: '',
-//             plan_id: cleanId
-//           };
-//         } else {
-//           next[idx] = { ...current, model: value, version: firstVer, variant: '' };
-//         }
-//       } else if (field === 'variant') {
-//         // value here is actually variant_class name
-//         const bmvKey = `${current.brand}__${current.model}__${current.version}`;
-//         const variantKey = `${bmvKey}__${value}`;
-//         const variantId = modelData?.variantIds?.[variantKey] || '';
-//         next[idx] = { ...current, variant: value, variant_id: variantId };
-//       } else if (field === 'version') {
-//         const bmvKey = `${current.brand}__${current.model}__${value}`;
-//         const variantKey = `${bmvKey}__${current.variant}`;
-//         const variantId = modelData?.variantIds?.[variantKey] || '';
+//   const activeVariants = useMemo(() => {
+//     if (!dataLoaded || !modalBrand || !modalModel) return [];
 
-//         if (current.brand === 'CUSTOM_PLAN' || variantId.startsWith('plan_')) {
-//           const cleanId = variantId.replace('plan_', '');
-//           next[idx] = { ...current, version: value, variant_id: '', plan_id: cleanId };
-//         } else {
-//           next[idx] = { ...current, version: value, variant_id: variantId, plan_id: undefined };
-//         }
-//       }
+//     // ONLY SHOW VARIANTS IN FILTER! (Price + Body Type)
+//     // The user said: "jo variants bhi show honge na wo price k bsae pr honge bro"
+//     const modelVariantsInFilter = filteredVariants.filter(v => v.brand === modalBrand && v.model === modalModel);
 
-//       return next;
-//     });
-//   };
-
-//   const moveVehicle = (idx: number, direction: 'left' | 'right') => {
-//     setSelections((prev) => {
-//       const next = [...prev];
-//       const targetIdx = direction === 'left' ? idx - 1 : idx + 1;
-//       if (targetIdx < 0 || targetIdx >= next.length) return prev;
-
-//       const temp = next[idx];
-//       next[idx] = next[targetIdx];
-//       next[targetIdx] = temp;
-//       return next;
-//     });
-//     setContentKey((k) => k + 1);
-//   };
-
-//   const bmKey = (s: SelectionState) => (s.brand && s.model ? `${s.brand}__${s.model}` : '');
-
-//   const getVersionOptions = (s: SelectionState): DropdownOption[] => {
-//     if (s.brand === 'CUSTOM_PLAN') return [{ value: 'plan', label: 'Draft Plan' }];
-//     if (!modelData || !s.variant) return [];
-//     const key = bmKey(s);
-//     const versions = key ? modelData.versions[key] || [] : [];
-//     return versions.map(v => ({
-//       value: v.value,
-//       label: getVersionLabel(v.value)
+//     return modelVariantsInFilter.map(v => ({
+//       name: v.variant,
+//       version: v.version,
+//       variantId: v.variant_id,
+//       engine: v.engine_type || '',
+//       pt: v.transmission_type || '',
+//       fuel: v.fuel_type || '',
+//       drive: v.drive_type || '',
+//       price: v.price
 //     }));
-//   };
+//   }, [dataLoaded, filteredVariants, modalBrand, modalModel]);
 
-//   const getVariantOptions = (idx: number, s: SelectionState): string[] => {
-//     if (s.brand === 'CUSTOM_PLAN') return [s.model];
-//     if (!modelData || !s.model || !s.version) return [];
+//   const allBrands = useMemo(() => {
+//     const brands = Array.from(new Set(allVariants.map(v => v.brand)));
+//     return brands.sort((a, b) => {
+//       if (a === 'NM') return -1;
+//       if (b === 'NM') return 1;
+//       return a.localeCompare(b);
+//     });
+//   }, [allVariants]);
 
-//     const key = `${s.brand}__${s.model}__${s.version}`;
-//     return modelData.variants[key] || [];
-//   };
+//   const isCompareDisabled = isLoading || selections.length < 2;
 
-//   const isCompareDisabled =
-//     isLoading ||
-//     selections.some((s) => !s.brand || !s.model || !s.version || !s.variant);
-
-//   const renderCellDropdown = (
-//     value: string,
-//     options: (string | DropdownOption)[],
-//     onChange: (val: string) => void,
-//     disabled: boolean = false,
-//     placeholder: string = "Select"
-//   ) => (
-//     <div className="relative min-w-[85px]">
-//       <select
-//         value={value}
-//         onChange={(e) => onChange(e.target.value)}
-//         disabled={disabled || options.length === 0}
-//         className={`block w-full appearance-none bg-white border border-slate-300 text-slate-800 py-1.5 px-2 pr-6 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors ${disabled ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : 'cursor-pointer'
-//           }`}
-//       >
-//         <option value="" disabled hidden>{placeholder}</option>
-//         {options.map((opt) => {
-//           const o = typeof opt === 'string' ? { value: opt, label: opt } : opt;
-//           return (
-//             <option key={o.value} value={o.value}>
-//               {o.label}
-//             </option>
-//           );
-//         })}
-//       </select>
-//       <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1 text-slate-400">
-//         <ChevronDown size={14} />
-//       </div>
-//     </div>
-//   );
-
-//   // ---------- CLOSED STATE UI ----------
 //   if (!isOpen) {
 //     return (
 //       <aside className="w-10 md:w-12 lg:w-14 bg-blue-700 text-slate-900 flex-shrink-0 h-full border-r border-slate-200 flex items-center justify-center">
 //         <button
-//           type="button"
 //           onClick={() => setIsOpen(true)}
 //           className="h-[80%] w-full flex flex-col items-center justify-center gap-2 rounded-full bg-white/90 hover:bg-white shadow-md transition-colors"
-//           aria-label="Open car selection sidebar"
 //         >
-//           <ChevronRight size={18} className="text-black-700" />
-//           <span className="text-[11px] font-bold tracking-wide text-slate-700 transform -rotate-90">
-//             Select Cars Here
+//           <ChevronRight size={18} className="text-blue-700" />
+//           <span className="text-[11px] font-bold tracking-wide text-slate-700 transform -rotate-90 whitespace-nowrap">
+//             Open Filters
 //           </span>
 //         </button>
 //       </aside>
 //     );
 //   }
 
-//   // ---------- OPEN STATE UI (Matrix) ----------
 //   return (
-//     <AnimatePresence mode="wait">
-//       {isOpen && (
-//         <motion.aside
-//           key="sidebar-open"
-//           initial={{ opacity: 1 }}
-//           animate={{ opacity: 1 }}
-//           exit={{ opacity: 1 }}
-//           className="relative bg-slate-50 text-slate-900 flex-shrink-0 flex flex-col h-full border-r border-slate-200 shadow-xl z-30"
-//           style={{ width: sidebarWidth, maxWidth: '100vw' }}
-//         >
-//           {/* Resize Handle */}
-//           <div
-//             onMouseDown={startResizing}
-//             className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-50 opacity-0 hover:opacity-100"
-//             title="Drag to resize sidebar"
-//           />
+//     <>
+//       <aside className="w-[380px] bg-white flex-shrink-0 flex flex-col h-full border-r border-slate-300 shadow-xl z-30 font-sans">
 
-//           {/* Header */}
-//           <motion.div
-//             variants={headerVariant}
-//             initial="hidden"
-//             animate="visible"
-//             className="flex items-center justify-between p-3 border-b border-blue-600 bg-blue-600 text-white shadow-md"
-//           >
-//             <div>
-//               <h2 className="text-sm font-bold flex items-center gap-2">
-//                 <CarFront className="text-white" size={16} />
-//                 <span>Select Cars</span>
-//               </h2>
-//             </div>
+//         {/* Header / Compare Button Area */}
+//         <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+//           <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
 //             <button
-//               type="button"
 //               onClick={() => setIsOpen(false)}
-//               className="ml-2 inline-flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 p-1 transition-colors"
+//               className="p-1 -ml-2 rounded-full hover:bg-slate-200 text-slate-500 transition-colors"
+//               title="Collapse Sidebar"
 //             >
-//               <ChevronLeft size={16} className="text-white" />
+//               <ChevronLeft size={18} />
 //             </button>
-//           </motion.div>
-
-//           <div className="flex-1 overflow-hidden flex flex-col">
-//             {!modelData ? (
-//               <div className="p-5 text-xs text-slate-500">Loading details...</div>
-//             ) : (
-//               <motion.div
-//                 className="flex-1 flex flex-col overflow-hidden"
-//                 variants={matrixVariant}
-//                 initial="hidden"
-//                 animate="visible"
-//               >
-//                 {/* Matrix Container - Chunks of 5 vehicles per row */}
-//                 <div className="flex-1 overflow-auto p-1 space-y-2">
-//                   {Array.from({ length: Math.ceil(selections.length / CHUNK_SIZE) }, (_, chunkIdx) => {
-//                     const start = chunkIdx * CHUNK_SIZE;
-//                     const chunkSelections = selections.slice(start, start + CHUNK_SIZE);
-//                     const isLastChunk = start + CHUNK_SIZE >= selections.length;
-
-//                     return (
-//                       <div key={`chunk-${chunkIdx}`} className="inline-block min-w-full align-middle">
-//                         {chunkIdx > 0 && (
-//                           <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-2 pt-1 pb-0.5 border-t border-slate-200">
-//                             Vehicles {start + 1}–{Math.min(start + CHUNK_SIZE, selections.length)}
-//                           </div>
-//                         )}
-//                         <table className="min-w-full border-collapse">
-//                           <thead>
-//                             <tr>
-//                               <th className="p-1 w-12 sticky left-0 bg-slate-50 z-10 border-b border-slate-200" />
-//                               {chunkSelections.map((_, ci) => {
-//                                 const idx = start + ci;
-//                                 const colors = [
-//                                   'bg-blue-600',
-//                                   'bg-emerald-600',
-//                                   'bg-violet-600',
-//                                   'bg-orange-600',
-//                                   'bg-sky-600'
-//                                 ];
-//                                 const headerBg = colors[idx % colors.length];
-
-//                                 return (
-//                                   <th
-//                                     key={`head-${idx}`}
-//                                     className={`p-1 border-b border-slate-200 border-l border-white/20 ${headerBg}`}
-//                                     style={{ width: `${100 / chunkSelections.length}%` }}
-//                                   >
-//                                     <div className="flex items-center justify-between px-1 text-white">
-//                                       <div className="flex items-center gap-1">
-//                                         {idx > 0 && (
-//                                           <button onClick={() => moveVehicle(idx, 'left')} className="text-white/70 hover:text-white transition-colors" title="Move Left">
-//                                             <ChevronLeft size={10} />
-//                                           </button>
-//                                         )}
-//                                         <span className="text-[9px] font-bold whitespace-nowrap">Veh {idx + 1}</span>
-//                                         {idx < selections.length - 1 && (
-//                                           <button onClick={() => moveVehicle(idx, 'right')} className="text-white/70 hover:text-white transition-colors" title="Move Right">
-//                                             <ChevronRight size={10} />
-//                                           </button>
-//                                         )}
-//                                       </div>
-//                                       {selections.length > 1 && (
-//                                         <button onClick={() => removeVehicleCard(idx)} className="text-white/70 hover:text-red-300 transition-colors ml-1">
-//                                           <X size={10} />
-//                                         </button>
-//                                       )}
-//                                     </div>
-//                                   </th>
-//                                 );
-//                               })}
-//                             </tr>
-//                           </thead>
-//                           <tbody className="divide-y divide-slate-200 bg-white">
-
-//                             {/* Brand Row */}
-//                             <tr>
-//                               <td className="p-1 px-2 text-[9px] font-extrabold text-slate-900 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Brand</td>
-//                               {chunkSelections.map((sel, ci) => {
-//                                 const idx = start + ci;
-//                                 const brandOptions = modelData.brands.map(b => ({
-//                                   value: b,
-//                                   label: b === "CUSTOM_PLAN" ? "⭐ New Model Plan" : b
-//                                 }));
-//                                 return (
-//                                   <td key={`brand-${idx}`} className="p-0.5 border-l border-slate-50">
-//                                     {renderCellDropdown(sel.brand, brandOptions, (v) => handleSelectionChange(idx, 'brand', v), false, "Brand")}
-//                                   </td>
-//                                 );
-//                               })}
-//                             </tr>
-
-//                             {/* Car Row */}
-//                             <tr>
-//                               <td className="p-1 px-2 text-[9px] font-extrabold text-slate-900 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Car</td>
-//                               {chunkSelections.map((sel, ci) => {
-//                                 const idx = start + ci;
-//                                 let carOptions: any = [];
-//                                 if (sel.brand === 'CUSTOM_PLAN') {
-//                                   carOptions = plans.map(p => ({ value: p.plan_id, label: `${p.name} (${p.base_variant_class})` }));
-//                                 } else if (sel.brand) {
-//                                   carOptions = modelData.models[sel.brand] || [];
-//                                 }
-//                                 return (
-//                                   <td key={`car-${idx}`} className="p-0.5 border-l border-slate-50">
-//                                     {renderCellDropdown(
-//                                       sel.brand === 'CUSTOM_PLAN' ? sel.plan_id || '' : sel.model,
-//                                       carOptions,
-//                                       (v) => {
-//                                         if (sel.brand === 'CUSTOM_PLAN') {
-//                                           const p = plans.find(pl => pl.plan_id === v);
-//                                           if (p) {
-//                                             setSelections(prev => {
-//                                               const n = [...prev];
-//                                               n[idx] = {
-//                                                 brand: 'CUSTOM_PLAN',
-//                                                 model: p.name,
-//                                                 variant: p.name,
-//                                                 plan_id: v,
-//                                                 version: 'plan',
-//                                                 variant_id: ''
-//                                               };
-//                                               return n;
-//                                             });
-//                                           }
-//                                         } else {
-//                                           handleSelectionChange(idx, 'model', v);
-//                                         }
-//                                       },
-//                                       !sel.brand,
-//                                       sel.brand === 'CUSTOM_PLAN' ? "Plan" : "Car"
-//                                     )}
-//                                   </td>
-//                                 );
-//                               })}
-//                             </tr>
-
-//                             {/* Variant Row */}
-//                             <tr>
-//                               <td className="p-1 px-2 text-[9px] font-extrabold text-slate-900 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Var</td>
-//                               {chunkSelections.map((sel, ci) => {
-//                                 const idx = start + ci;
-//                                 return (
-//                                   <td key={`var-${idx}`} className="p-0.5 border-l border-slate-50">
-//                                     {renderCellDropdown(
-//                                       sel.variant,
-//                                       sel.brand === 'CUSTOM_PLAN' ? [{ value: sel.variant, label: sel.variant }] : getVariantOptions(idx, sel),
-//                                       (v) => handleSelectionChange(idx, 'variant', v),
-//                                       !sel.model || sel.brand === 'CUSTOM_PLAN',
-//                                       "Var"
-//                                     )}
-//                                   </td>
-//                                 );
-//                               })}
-//                             </tr>
-
-//                             {/* Date Row */}
-//                             <tr>
-//                               <td className="p-1 px-2 text-[9px] font-extrabold text-slate-900 uppercase w-12 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Date</td>
-//                               {chunkSelections.map((sel, ci) => {
-//                                 const idx = start + ci;
-//                                 return (
-//                                   <td key={`ver-${idx}`} className="p-0.5 border-l border-slate-50">
-//                                     {renderCellDropdown(
-//                                       sel.version,
-//                                       getVersionOptions(sel),
-//                                       (v) => handleSelectionChange(idx, 'version', v),
-//                                       !sel.variant,
-//                                       "Date"
-//                                     )}
-//                                   </td>
-//                                 );
-//                               })}
-//                             </tr>
-
-//                             {/* Add button only on the last chunk, and only if under limit */}
-//                             {isLastChunk && selections.length < MAX_VEHICLES && (
-//                               <tr>
-//                                 <td colSpan={chunkSelections.length + 1} className="p-2 bg-slate-50 border-t border-slate-200">
-//                                   <button
-//                                     onClick={addVehicleCard}
-//                                     className="w-full flex items-center justify-center py-2 px-3 text-xs font-semibold text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 border border-blue-300 border-dashed transition-all"
-//                                   >
-//                                     <Plus size={14} className="mr-1.5" />
-//                                     Add Another Vehicle ({selections.length}/{MAX_VEHICLES})
-//                                   </button>
-//                                 </td>
-//                               </tr>
-//                             )}
-
-//                           </tbody>
-//                         </table>
-//                       </div>
-//                     );
-//                   })}
-//                 </div>
-//               </motion.div>
-//             )}
+//             <Filter size={16} className="text-blue-600" />
+//             Vehicle Filters
 //           </div>
-
-//           {/* Footer with Compare Button */}
-//           <motion.div
-//             variants={buttonVariant}
-//             initial="hidden"
-//             animate="visible"
-//             className="p-4 border-t border-slate-200 bg-slate-50"
+//           <button
+//             onClick={() => onCompare(selections, { min: priceMin, max: priceMax })}
+//             disabled={isCompareDisabled}
+//             className={`px-4 py-1.5 rounded text-xs font-bold shadow-sm transition-all ${isCompareDisabled
+//               ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+//               : 'bg-blue-600 hover:bg-blue-700 text-white'
+//               }`}
 //           >
-//             <button
-//               onClick={() => onCompare(selections)}
-//               disabled={isCompareDisabled}
-//               className={`w-full py-3 px-4 rounded-xl font-bold text-sm shadow-lg transition-all duration-200 transform ${isCompareDisabled
-//                 ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-//                 : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white active:scale-[0.98]'
-//                 }`}
-//             >
-//               {isLoading ? 'Comparing...' : 'Compare Now'}
-//             </button>
-//           </motion.div>
-//         </motion.aside>
+//             {isLoading ? 'Comparing...' : `Compare (${selections.length})`}
+//           </button>
+//         </div>
+
+//         <div className="flex-1 overflow-y-auto custom-scrollbar">
+//           {!dataLoaded ? (
+//             <div className="p-8 text-center text-slate-500 text-sm">Loading catalog...</div>
+//           ) : (
+//             <div className="flex flex-col h-full bg-white">
+//               <div className="flex-1 overflow-y-auto custom-scrollbar border-b border-slate-300">
+//                 <div className="flex flex-col border-t border-slate-300">
+
+//                   {/* 1. Price Range Slicer */}
+//                   <div className="grid grid-cols-[85px_1fr] border-b border-blue-200">
+//                     <div className="border-r border-slate-300 bg-slate-50 p-2 text-[10px] font-bold flex items-center justify-center text-center text-slate-800">
+//                       Ex Showroom<br />Price
+//                     </div>
+//                     <div className="p-4 flex flex-col gap-2 justify-center bg-white">
+//                       <div className="relative px-2">
+//                         {/* Dual range slider */}
+//                         <div className="relative h-1.5 bg-slate-200 rounded-full">
+//                           <div
+//                             className="absolute h-full bg-slate-600 rounded-full"
+//                             style={{
+//                               left: `${(priceMin / (Math.ceil(Math.max(...allVariants.map(v => v.price), 100)))) * 100}%`,
+//                               right: `${100 - (priceMax / (Math.ceil(Math.max(...allVariants.map(v => v.price), 100)))) * 100}%`
+//                             }}
+//                           />
+//                         </div>
+//                         <input
+//                           type="range" min={0} max={Math.ceil(Math.max(...allVariants.map(v => v.price), 100))} step={0.5}
+//                           value={priceMin} onChange={e => { const v = parseFloat(e.target.value); if (v < priceMax) setPriceMin(v); }}
+//                           className="absolute top-0 left-0 w-full h-1.5 opacity-0 cursor-pointer"
+//                         />
+//                         <input
+//                           type="range" min={0} max={Math.ceil(Math.max(...allVariants.map(v => v.price), 100))} step={0.5}
+//                           value={priceMax} onChange={e => { const v = parseFloat(e.target.value); if (v > priceMin) setPriceMax(v); }}
+//                           className="absolute top-0 left-0 w-full h-1.5 opacity-0 cursor-pointer"
+//                         />
+//                         {/* Thumbs visual */}
+//                         <div className="absolute top-1/2 -translate-y-1/2 -ml-2 w-4 h-4 rounded-full bg-[#cc4400] border-2 border-white shadow pointer-events-none" style={{ left: `${(priceMin / (Math.ceil(Math.max(...allVariants.map(v => v.price), 100)))) * 100}%` }} />
+//                         <div className="absolute top-1/2 -translate-y-1/2 -mr-2 w-4 h-4 rounded-full bg-[#006600] border-2 border-white shadow pointer-events-none" style={{ left: `${(priceMax / (Math.ceil(Math.max(...allVariants.map(v => v.price), 100)))) * 100}%` }} />
+//                       </div>
+
+//                       <div className="flex justify-between items-center text-[10px] font-bold mt-2">
+//                         <div className="flex flex-col gap-1 items-center">
+//                           <span className="text-[9px] font-semibold text-slate-500">Min</span>
+//                           <div className="border border-slate-400 bg-slate-100 rounded px-1.5 py-0.5 flex items-center">
+//                             <input type="number" className="w-8 outline-none text-center bg-transparent" value={priceMin} onChange={e => { const val = parseFloat(e.target.value); if (!isNaN(val) && val < priceMax) setPriceMin(val); }} />
+//                             <span>L</span>
+//                           </div>
+//                         </div>
+//                         <div className="flex flex-col gap-1 items-center">
+//                           <span className="text-[9px] font-semibold text-slate-500">Max</span>
+//                           <div className="border border-slate-400 bg-slate-100 rounded px-1.5 py-0.5 flex items-center">
+//                             <input type="number" className="w-8 outline-none text-center bg-transparent" value={priceMax} onChange={e => { const val = parseFloat(e.target.value); if (!isNaN(val) && val > priceMin) setPriceMax(val); }} />
+//                             <span>L</span>
+//                           </div>
+//                         </div>
+//                       </div>
+//                     </div>
+//                   </div>
+
+//                   {/* 2. Body Type */}
+//                   <div className="grid grid-cols-[85px_1fr] border-b border-blue-200">
+//                     <div className="border-r border-slate-300 bg-slate-50 p-2 text-[10px] font-bold flex items-center justify-center text-slate-800">
+//                       Body Type
+//                     </div>
+//                     <div className="p-3 flex gap-2 flex-wrap items-center bg-white">
+//                       {BODY_TYPES.map(bt => {
+//                         const isSelected = selectedBodyTypes.includes(bt);
+//                         const hasInRange = availableBodyTypesInPrice.includes(bt);
+
+//                         let cls = '';
+//                         if (isSelected) {
+//                           cls = 'bg-blue-500 text-white border-blue-600 shadow-sm';
+//                         } else if (hasInRange) {
+//                           cls = 'bg-slate-700 text-white hover:bg-slate-800 shadow-sm'; // Dark grey
+//                         } else {
+//                           cls = 'bg-slate-200 text-slate-500 cursor-not-allowed'; // Light grey
+//                         }
+
+//                         return (
+//                           <button
+//                             key={bt}
+//                             disabled={!hasInRange && !isSelected}
+//                             onClick={() => {
+//                               if (hasInRange || isSelected) toggleBodyType(bt);
+//                             }}
+//                             className={`px-3 py-1 text-[10px] font-bold rounded-sm transition-all ${cls}`}
+//                           >
+//                             {bt}
+//                           </button>
+//                         );
+//                       })}
+//                     </div>
+//                   </div>
+
+//                   {/* 3. Brand */}
+//                   <div className="grid grid-cols-[85px_1fr] border-b border-blue-200">
+//                     <div className="border-r border-slate-300 bg-slate-50 p-2 text-[10px] font-bold flex items-center justify-center text-slate-800">
+//                       Brand
+//                     </div>
+//                     <div className="p-3 flex justify-center gap-1.5 items-center bg-white overflow-x-auto custom-scrollbar">
+//                       {allBrands.filter(b => b !== 'CUSTOM_PLAN').map(brand => {
+//                         const isSelected = selectedBrands.includes(brand);
+//                         const isSelectable = availableBrandsInFilter.includes(brand);
+
+//                         let bgColor = 'bg-slate-200 border-slate-300 opacity-50 cursor-not-allowed'; // Light grey
+//                         if (isSelected) bgColor = 'bg-blue-600 border-blue-700 shadow-sm'; // Blue
+//                         else if (isSelectable) bgColor = 'bg-slate-700 border-slate-800 hover:bg-slate-800 shadow-sm'; // Dark grey
+
+//                         return (
+//                           <div key={brand} className="w-[84px] shrink-0 flex justify-center">
+//                             <button
+//                               disabled={!isSelectable && !isSelected}
+//                               onClick={() => {
+//                                 if (isSelected) {
+//                                   setSelectedBrands(prev => prev.filter(b => b !== brand));
+//                                   setOpenDropdownBrands(prev => prev.filter(b => b !== brand));
+//                                 } else if (isSelectable) {
+//                                   setSelectedBrands(prev => [...prev, brand]);
+//                                   if (!openDropdownBrands.includes(brand)) {
+//                                     setOpenDropdownBrands(prev => [...prev, brand]);
+//                                   }
+//                                 }
+//                               }}
+//                               className={`w-12 h-8 shrink-0 flex items-center justify-center border rounded shadow-sm transition-all ${bgColor}`}
+//                             >
+//                               {brand === 'NM' ? <div className={`font-black text-[10px] tracking-wider ${isSelected || isSelectable ? 'text-white' : 'text-slate-500'}`}>NM</div> :
+//                                 brand.toLowerCase().includes('maruti') ? <img src="/maruti_logo.png" alt={brand} className="w-8 h-4 object-contain bg-white rounded-[2px] p-[2px] shadow-sm" /> :
+//                                   brand.toLowerCase().includes('hyundai') ? <img src="/hyundai_logo.png" alt={brand} className="w-8 h-4 object-contain bg-white rounded-[2px] p-[2px] shadow-sm" /> :
+//                                     <div className={`text-[8px] font-bold text-center leading-tight ${isSelected || isSelectable ? 'text-white' : 'text-slate-500'}`}>{brand}</div>}
+//                             </button>
+//                           </div>
+//                         );
+//                       })}
+//                     </div>
+//                   </div>
+
+//                   {/* 4. Model */}
+//                   <div className="grid grid-cols-[85px_1fr] border-b border-blue-200">
+//                     <div className="border-r border-slate-300 bg-slate-50 p-2 flex flex-col items-center justify-center text-center">
+//                       <span className="text-[10px] font-bold text-slate-800">Model</span>
+//                     </div>
+//                     <div className="p-3 flex justify-center gap-1.5 items-start bg-white min-h-[40px] overflow-x-auto custom-scrollbar">
+//                       {allBrands.filter(b => b !== 'CUSTOM_PLAN').map(brand => {
+//                         const brandModels = Array.from(new Set(allVariants.filter(v => v.brand === brand).map(v => v.model)));
+//                         return (
+//                           <div key={brand} className="w-[84px] shrink-0 flex flex-col items-center">
+//                             <button
+//                               onClick={() => {
+//                                 setOpenDropdownBrands(prev =>
+//                                   prev.includes(brand) ? prev.filter(b => b !== brand) : [...prev, brand]
+//                                 );
+//                               }}
+//                               className="w-10 h-5 border border-slate-300 bg-slate-50 rounded shadow-sm text-slate-600 hover:bg-slate-200 flex items-center justify-center transition-colors"
+//                             >
+//                               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M6 9l6 6 6-6" /></svg>
+//                             </button>
+
+//                             {openDropdownBrands.includes(brand) && (
+//                               <div className="mt-1.5 bg-white border border-slate-300 shadow-md flex flex-col w-[80px] rounded py-0.5 z-10">
+//                                 {brandModels.length === 0 && <div className="px-2 py-1 text-[9px] text-slate-400">No models</div>}
+//                                 {brandModels.map(model => {
+//                                   const isSelected = selectedModels.some(m => m.brand === brand && m.model === model);
+//                                   const isSelectable = isModelSelectable(brand, model);
+
+//                                   let bgColor = 'bg-slate-200 text-slate-500 cursor-not-allowed'; // Light grey - NON-Selectable
+//                                   if (isSelected) bgColor = 'bg-blue-600 text-white hover:bg-blue-700 shadow-inner'; // Blue - ONCE Selected
+//                                   else if (isSelectable) bgColor = 'bg-slate-700 text-white hover:bg-slate-800 shadow-sm'; // Dark grey - Selectable
+
+//                                   return (
+//                                     <button
+//                                       key={model}
+//                                       disabled={!isSelectable && !isSelected}
+//                                       onClick={() => {
+//                                         if (isSelected) {
+//                                           setSelectedModels(prev => prev.filter(m => !(m.brand === brand && m.model === model)));
+//                                           setSelections(prev => prev.filter(s => !(s.brand === brand && s.model === model)));
+//                                         } else if (isSelectable) {
+//                                           setSelectedModels(prev => [...prev, { brand, model }]);
+//                                         }
+//                                       }}
+//                                       className={`px-1 py-1 mx-0.5 my-0.5 text-[8.5px] font-bold text-center transition-all rounded ${bgColor} leading-[1.1]`}
+//                                     >
+//                                       {model}
+//                                     </button>
+//                                   );
+//                                 })}
+//                               </div>
+//                             )}
+//                           </div>
+//                         );
+//                       })}
+//                     </div>
+//                   </div>
+
+//                   {/* 5. Variant */}
+//                   <div className="grid grid-cols-[85px_1fr]">
+//                     <div className="border-r border-slate-300 bg-slate-50 p-2 flex flex-col items-center justify-start pt-4 text-center">
+//                       <span className="text-[10px] font-bold text-slate-800">Variant</span>
+//                       <span className="text-[7px] text-slate-400 font-bold uppercase tracking-tighter mt-1">CLICK HERE</span>
+//                     </div>
+//                     <div className="p-3 flex justify-center gap-1.5 items-start bg-slate-50/50 min-h-[100px] overflow-x-auto relative">
+//                       {allBrands.filter(b => b !== 'CUSTOM_PLAN').map(brand => {
+//                         const brandSelectedModels = selectedModels.filter(sm => sm.brand === brand);
+//                         return (
+//                           <div key={brand} className="w-[84px] shrink-0 flex flex-col items-center gap-1 px-0.5">
+//                             {brandSelectedModels.map((sm, idx) => {
+//                               const selectedCount = selections.filter(s => s.brand === sm.brand && s.model === sm.model).length;
+//                               return (
+//                                 <div key={idx} className="flex items-stretch bg-blue-500 text-white rounded shadow-sm w-full hover:shadow transition-shadow">
+//                                   <button
+//                                     onClick={() => openVariantModal(sm.brand, sm.model)}
+//                                     className="w-4 hover:bg-blue-600 rounded-l transition-colors border-r border-blue-400 flex items-center justify-center shrink-0"
+//                                     title={`Select variants for ${sm.model}`}
+//                                   >
+//                                     <Plus size={8} strokeWidth={3} className="text-white" />
+//                                   </button>
+//                                   <div className="flex-1 px-1 py-1 text-[8.5px] font-bold flex flex-col items-center justify-center bg-blue-500 rounded-r text-center leading-[1.1]">
+//                                     <span className="truncate w-full">{sm.model}</span>
+//                                     {selectedCount > 0 && <span className="bg-white text-blue-700 text-[7px] px-1 rounded-full shadow-sm mt-[1px]">{selectedCount}</span>}
+//                                   </div>
+//                                 </div>
+//                               );
+//                             })}
+//                           </div>
+//                         );
+//                       })}
+//                       {selectedModels.length === 0 && (
+//                         <div className="absolute left-[85px] right-0 text-[10px] text-slate-400 italic py-1 text-center pointer-events-none mt-2">
+//                           Select a model from the dropdowns above
+//                         </div>
+//                       )}
+//                     </div>
+//                   </div>
+
+//                 </div>
+//               </div>
+
+//               {/* Color Coding Legend matches image exactly */}
+//               <div className="p-4 bg-slate-100 flex-shrink-0 border-t border-slate-300">
+//                 <div className="bg-slate-200/50 p-3 rounded border border-slate-300 text-[10px] text-slate-700 space-y-1.5">
+//                   <div className="font-bold text-slate-800 mb-2 border-b border-slate-300 pb-1">Color Coding:</div>
+//                   <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 bg-slate-700 rounded-sm shadow-sm"></div> <span className="font-medium">1) Dark grey</span> — Selectable as it is falling in price range</div>
+//                   <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 bg-slate-200 border border-slate-300 rounded-sm"></div> <span className="font-medium text-slate-500">2) Light grey</span> <span className="text-slate-500">— NON-Selectable</span></div>
+//                   <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 bg-blue-600 rounded-sm shadow-sm"></div> <span className="font-medium text-blue-700">3) Blue</span> — ONCE Selected</div>
+//                 </div>
+//               </div>
+//             </div>
+//           )}
+//         </div>
+//       </aside>
+
+
+//       {/* POPUP WINDOW FOR VARIANTS */}
+//       {isModalOpen && (
+//         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+//           <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+
+//             <div className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between">
+//               <h3 className="font-bold text-sm flex items-center gap-2">
+//                 Select Variants: <span className="text-blue-300">{modalBrand} {modalModel}</span>
+//               </h3>
+//               <button onClick={closeVariantModal} className="text-slate-300 hover:text-white transition-colors">
+//                 <X size={18} />
+//               </button>
+//             </div>
+
+//             <div className="p-0 overflow-auto max-h-[60vh] custom-scrollbar">
+//               <table className="w-full text-left border-collapse text-xs">
+//                 <thead className="bg-slate-100 sticky top-0 shadow-sm z-10">
+//                   <tr>
+//                     <th className="p-2 border-b border-slate-200 w-10 text-center"></th>
+//                     <th className="p-2 border-b border-slate-200 border-l border-slate-200 font-bold text-slate-800">Variant</th>
+//                     <th className="p-2 border-b border-slate-200 border-l border-slate-200 font-bold text-slate-800">E/g Type</th>
+//                     <th className="p-2 border-b border-slate-200 border-l border-slate-200 font-bold text-slate-800">P/T</th>
+//                     <th className="p-2 border-b border-slate-200 border-l border-slate-200 font-bold text-slate-800">Fuel Type</th>
+//                     <th className="p-2 border-b border-slate-200 border-l border-slate-200 font-bold text-slate-800 text-slate-400">Drive Type</th>
+//                   </tr>
+//                 </thead>
+//                 <tbody className="divide-y divide-slate-100">
+//                   {activeVariants.length === 0 ? (
+//                     <tr>
+//                       <td colSpan={6} className="p-8 text-center text-slate-500">No variants available for this model</td>
+//                     </tr>
+//                   ) : (
+//                     activeVariants.map((v, i) => {
+//                       const plan_id = modalBrand === 'NM' ? v.variantId : undefined;
+//                       const isSelected = isVariantSelected(modalBrand, modalModel, v.name, v.version, plan_id);
+//                       return (
+//                         <tr key={i} className={`transition-colors cursor-pointer ${isSelected ? 'bg-blue-500 text-white' : 'hover:bg-slate-50 text-slate-800'}`} onClick={() => toggleVariantSelection(modalBrand, modalModel, v.name, v.version, v.variantId)}>
+//                           <td className="p-2 border-l border-slate-200 text-center align-middle w-10">
+//                             <div className={`w-3.5 h-3.5 border flex items-center justify-center mx-auto transition-colors ${isSelected ? 'bg-white border-white' : 'bg-white border-slate-400'}`}>
+//                               {isSelected && <svg className="w-3 h-3 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+//                             </div>
+//                           </td>
+//                           <td className={`p-2 border-l border-slate-200 font-bold ${isSelected ? 'text-white' : 'text-slate-800'}`}>
+//                             {v.name}
+//                           </td>
+//                           <td className={`p-2 border-l border-slate-200 ${isSelected ? 'text-blue-100' : 'text-slate-600'}`}>{v.engine}</td>
+//                           <td className={`p-2 border-l border-slate-200 ${isSelected ? 'text-blue-100' : 'text-slate-600'}`}>{v.pt}</td>
+//                           <td className={`p-2 border-l border-slate-200 ${isSelected ? 'text-blue-100' : 'text-slate-600'}`}>{v.fuel}</td>
+//                           <td className={`p-2 border-l border-slate-200 ${isSelected ? 'text-blue-100' : 'text-slate-400 italic'}`}>{v.drive || '—'}</td>
+//                         </tr>
+//                       );
+//                     })
+//                   )}
+//                 </tbody>
+//               </table>
+//             </div>
+
+//             <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end gap-3">
+//               <button onClick={closeVariantModal} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-medium rounded text-sm transition-colors">
+//                 Done
+//               </button>
+//             </div>
+//           </div>
+//         </div>
 //       )}
-//     </AnimatePresence>
+//     </>
 //   );
 // };
 
-// export default Sidebar;  
+// export default Sidebar;
+
+
+
 
 
 
 
 // src/components/Sidebar.tsx
-import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { ModelDetails, SelectionState, DropdownOption, ModelPlan } from '../types';
-import { fetchModelDetails, fetchModelPlans } from '../services/api';
-import { ChevronDown, CarFront, ChevronLeft, ChevronRight, X, Plus, GripVertical } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useMemo, useState } from 'react';
+import { SelectionState } from '../types';
+import { fetchSidebarFilters } from '../services/api';
+import { ChevronRight, ChevronLeft, Filter, Search, X, Plus, Info, AlertCircle } from 'lucide-react';
 
 interface SidebarProps {
-  onCompare: (selections: SelectionState[]) => void;
+  onCompare: (selections: SelectionState[], priceFilter?: { min: number; max: number }) => void;
   isLoading: boolean;
   selections: SelectionState[];
   setSelections: React.Dispatch<React.SetStateAction<SelectionState[]>>;
+  showCompareButton?: boolean;
+  onFiltersChange?: (priceFilter: { min: number; max: number }) => void;
 }
 
-// ---------------- Animations ----------------
-const headerVariant = {
-  hidden: { opacity: 0, y: -10 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.35 } },
-};
+interface SidebarVariant {
+  brand: string;
+  model: string;
+  body_type: string;
+  version: string;
+  variant: string;
+  variant_id: string;
+  price: number;
+  engine_type?: string;
+  transmission_type?: string;
+  fuel_type?: string;
+  drive_type?: string;
+  is_new_model: boolean;
+}
 
-const matrixVariant = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { duration: 0.5 } },
-};
+const BODY_TYPES = ['Hatch', 'Sedan', 'SUV', 'MPV', 'Van'];
 
-const buttonVariant = {
-  hidden: { opacity: 0, y: 40 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.4,
-      delay: 0.35,
-      ease: [0.4, 0, 0.2, 1] as const
-    }
-  },
-};
-
-// ✅ HELPER: Map version numbers to display labels
-const getVersionLabel = (versionValue: string): string => {
-  const versionNum = parseInt(versionValue.replace('v', ''));
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const year = 2026;
-
-  if (isNaN(versionNum) || versionNum < 1) return versionValue;
-
-  const monthIndex = (versionNum - 1) % 12;
-  const yearOffset = Math.floor((versionNum - 1) / 12);
-  return `${months[monthIndex]} ${year + yearOffset}`;
-};
-
-const Sidebar: React.FC<SidebarProps> = ({ onCompare, isLoading, selections, setSelections }) => {
-  const [modelData, setModelData] = useState<ModelDetails | null>(null);
-  const [plans, setPlans] = useState<ModelPlan[]>([]);
-
+const Sidebar: React.FC<SidebarProps> = ({
+  onCompare,
+  isLoading,
+  selections,
+  setSelections,
+  showCompareButton = true,
+  onFiltersChange,
+}) => {
+  const [allVariants, setAllVariants] = useState<SidebarVariant[]>([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
   const [isOpen, setIsOpen] = useState<boolean>(true);
-  const [contentKey, setContentKey] = useState(0);
 
-  // Resize state — NO min/max constraints, fully flexible
-  const [sidebarWidth, setSidebarWidth] = useState(480);
-  const isResizingRef = useRef(false);
+  // Filters state
+  const [priceMin, setPriceMin] = useState<number>(0);
+  const [priceMax, setPriceMax] = useState<number>(100); // Max 100 Lakhs initially
+  const [selectedBodyTypes, setSelectedBodyTypes] = useState<string[]>([]);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
 
-  const hasData = useMemo(() => !!modelData, [modelData]);
+  // Modal state
+  const [modalBrand, setModalBrand] = useState<string>('');
+  const [modalModel, setModalModel] = useState<string>('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Handle sidebar resizing — no min/max, user decides
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizingRef.current) return;
-      const newWidth = e.clientX; // ✅ No min/max clamp at all
-      setSidebarWidth(newWidth);
-    };
-
-    const handleMouseUp = () => {
-      if (isResizingRef.current) {
-        isResizingRef.current = false;
-        document.body.style.cursor = 'default';
-        document.body.style.userSelect = 'auto';
-      }
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, []);
-
-  const startResizing = (e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizingRef.current = true;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  };
+  // Model dropdown state
+  const [openDropdownBrands, setOpenDropdownBrands] = useState<string[]>([]);
+  const [selectedModels, setSelectedModels] = useState<Array<{ brand: string, model: string }>>([]);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [data, planData] = await Promise.all([
-          fetchModelDetails(),
-          fetchModelPlans()
-        ]);
-        setModelData(data);
-        setPlans(planData || []);
+        const data = await fetchSidebarFilters();
+        setAllVariants(data);
+        setDataLoaded(true);
+
+        // Find max price to set realistic slider bounds
+        if (data.length > 0) {
+          const maxP = Math.ceil(Math.max(...data.map((v: SidebarVariant) => v.price)));
+          setPriceMax(maxP > 0 ? maxP : 100);
+        }
+
+        // Don't auto-select any brands or models. Wait for user interaction as requested.
+        // Initialize based on price filter
+        const maxP = Math.ceil(Math.max(...data.map((v: SidebarVariant) => v.price)));
+        setPriceMax(maxP > 0 ? maxP : 100);
       } catch (err) {
-        console.error('Failed to fetch data', err);
+        console.error('Failed to fetch sidebar filters', err);
       }
     };
     loadData();
   }, []);
 
-  // ✅ PREFILL Selections (Vehicle 1 & 2)
+  // ✅ CHANGE 1: price slider badalte hi parent ko turant batao (Compare button ke bina)
   useEffect(() => {
-    if (!modelData || modelData.brands.length === 0) return;
-
-    const hasExistingData = selections.some(s => s.brand !== '');
-    if (hasExistingData) return;
-
-    const getFullSelection = (brandName: string, modelIdx: number): SelectionState | null => {
-      const models = modelData.models[brandName] || [];
-      const model = models[modelIdx];
-      if (!model) return null;
-
-      const bmKey = `${brandName}__${model}`;
-      const versions = modelData.versions[bmKey] || [];
-      if (versions.length === 0) return null;
-
-      const versionVal = versions[0].value;
-
-      return {
-        brand: brandName,
-        model,
-        version: versionVal,
-        variant: '',
-        variant_id: ''
-      };
-    };
-
-    const firstBrand = modelData.brands[0];
-    const sel1 = getFullSelection(firstBrand, 0);
-
-    let sel2: SelectionState | null = null;
-    sel2 = getFullSelection(firstBrand, 1);
-    if (!sel2 && modelData.brands.length > 1) {
-      sel2 = getFullSelection(modelData.brands[1], 0);
+    if (onFiltersChange) {
+      onFiltersChange({ min: priceMin, max: priceMax });
     }
-    if (!sel2) sel2 = sel1;
+  }, [priceMin, priceMax]);
 
-    if (sel1 && sel2) {
-      setSelections(prev => {
-        const next = [...prev];
-        next[0] = sel1!;
-        next[1] = sel2!;
-        return next;
-      });
-      setContentKey(k => k + 1);
+  const toggleBodyType = (type: string) => {
+    setSelectedBodyTypes(prev =>
+      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+    );
+  };
+
+  const toggleBrand = (brand: string) => {
+    setSelectedBrands(prev =>
+      prev.includes(brand) ? prev.filter(b => b !== brand) : [...prev, brand]
+    );
+  };
+
+  const openVariantModal = (brand: string, model: string) => {
+    setModalBrand(brand);
+    setModalModel(model);
+    setIsModalOpen(true);
+  };
+
+  const closeVariantModal = () => {
+    setIsModalOpen(false);
+    setModalModel('');
+    setModalBrand('');
+  };
+
+  const isVariantSelected = (brand: string, model: string, variant: string, version: string, plan_id?: string) => {
+    if (brand === 'NM') return selections.some(s => s.plan_id === plan_id);
+    return selections.some(s => s.brand === brand && s.model === model && s.variant === variant && s.version === version);
+  };
+
+  const toggleVariantSelection = (brand: string, model: string, variant: string, version: string, variantId: string) => {
+    const plan_id = brand === 'NM' ? variantId : undefined;
+
+    if (isVariantSelected(brand, model, variant, version, plan_id)) {
+      setSelections(prev => prev.filter(s => {
+        if (brand === 'NM') return s.plan_id !== plan_id;
+        return !(s.brand === brand && s.model === model && s.variant === variant && s.version === version);
+      }));
+    } else {
+      setSelections(prev => [
+        ...prev,
+        { brand, model, version, variant, variant_id: variantId, plan_id }
+      ]);
     }
-  }, [modelData]);
-
-
-  const MAX_VEHICLES = 20;
-  const CHUNK_SIZE = 5;
-
-  const addVehicleCard = () => {
-    if (selections.length >= MAX_VEHICLES) {
-      alert(`Maximum ${MAX_VEHICLES} vehicles can be compared`);
-      return;
-    }
-    setSelections((prev) => [...prev, { brand: '', model: '', version: '', variant: '' }]);
-    setContentKey((k) => k + 1);
   };
 
-  const removeVehicleCard = (idx: number) => {
-    setSelections((prev) => prev.filter((_, i) => i !== idx));
-    setContentKey((k) => k + 1);
+  const filteredVariants = useMemo(() => {
+    return allVariants.filter(v =>
+      v.price >= priceMin &&
+      v.price <= priceMax &&
+      (selectedBodyTypes.length === 0 || selectedBodyTypes.includes(v.body_type))
+    );
+  }, [allVariants, priceMin, priceMax, selectedBodyTypes]);
+
+  const isModelSelectable = (brand: string, model: string) => {
+    return filteredVariants.some(v => v.brand === brand && v.model === model);
   };
 
-  const handleSelectionChange = (idx: number, field: keyof SelectionState, value: string) => {
-    setSelections((prev) => {
-      const next = [...prev];
-      const current = next[idx];
+  const variantsInPriceRange = useMemo(() => {
+    return allVariants.filter(v => v.price >= priceMin && v.price <= priceMax);
+  }, [allVariants, priceMin, priceMax]);
 
-      if (field === 'brand') {
-        next[idx] = { brand: value, model: '', version: '', variant: '', plan_id: undefined };
-      } else if (field === 'model') {
-        const bmKeyStr = `${current.brand}__${value}`;
-        const firstVer = modelData?.versions[bmKeyStr]?.[0]?.value || '';
+  const availableBodyTypesInPrice = useMemo(() => {
+    return Array.from(new Set(variantsInPriceRange.map(v => v.body_type)));
+  }, [variantsInPriceRange]);
 
-        if (current.brand === 'CUSTOM_PLAN') {
-          const variantKey = `${current.brand}__${value}__${firstVer}__${value}`;
-          const variantId = modelData?.variantIds?.[variantKey] || '';
-          const cleanId = variantId.replace('plan_', '');
+  const availableBrandsInFilter = useMemo(() => {
+    return Array.from(new Set(filteredVariants.map(v => v.brand)));
+  }, [filteredVariants]);
 
-          next[idx] = {
-            ...current,
-            model: value,
-            version: firstVer,
-            variant: value,
-            variant_id: '',
-            plan_id: cleanId
-          };
-        } else {
-          next[idx] = { ...current, model: value, version: firstVer, variant: '' };
-        }
-      } else if (field === 'variant') {
-        const bmvKey = `${current.brand}__${current.model}__${current.version}`;
-        const variantKey = `${bmvKey}__${value}`;
-        const variantId = modelData?.variantIds?.[variantKey] || '';
-        next[idx] = { ...current, variant: value, variant_id: variantId };
-      } else if (field === 'version') {
-        const bmvKey = `${current.brand}__${current.model}__${value}`;
-        const variantKey = `${bmvKey}__${current.variant}`;
-        const variantId = modelData?.variantIds?.[variantKey] || '';
+  const activeVariants = useMemo(() => {
+    if (!dataLoaded || !modalBrand || !modalModel) return [];
 
-        if (current.brand === 'CUSTOM_PLAN' || variantId.startsWith('plan_')) {
-          const cleanId = variantId.replace('plan_', '');
-          next[idx] = { ...current, version: value, variant_id: '', plan_id: cleanId };
-        } else {
-          next[idx] = { ...current, version: value, variant_id: variantId, plan_id: undefined };
-        }
-      }
+    // ONLY SHOW VARIANTS IN FILTER! (Price + Body Type)
+    // The user said: "jo variants bhi show honge na wo price k bsae pr honge bro"
+    const modelVariantsInFilter = filteredVariants.filter(v => v.brand === modalBrand && v.model === modalModel);
 
-      return next;
-    });
-  };
-
-  const moveVehicle = (idx: number, direction: 'left' | 'right') => {
-    setSelections((prev) => {
-      const next = [...prev];
-      const targetIdx = direction === 'left' ? idx - 1 : idx + 1;
-      if (targetIdx < 0 || targetIdx >= next.length) return prev;
-
-      const temp = next[idx];
-      next[idx] = next[targetIdx];
-      next[targetIdx] = temp;
-      return next;
-    });
-    setContentKey((k) => k + 1);
-  };
-
-  const bmKey = (s: SelectionState) => (s.brand && s.model ? `${s.brand}__${s.model}` : '');
-
-  const getVersionOptions = (s: SelectionState): DropdownOption[] => {
-    if (s.brand === 'CUSTOM_PLAN') return [{ value: 'plan', label: 'Draft Plan' }];
-    if (!modelData || !s.variant) return [];
-    const key = bmKey(s);
-    const versions = key ? modelData.versions[key] || [] : [];
-    return versions.map(v => ({
-      value: v.value,
-      label: getVersionLabel(v.value)
+    return modelVariantsInFilter.map(v => ({
+      name: v.variant,
+      version: v.version,
+      variantId: v.variant_id,
+      engine: v.engine_type || '',
+      pt: v.transmission_type || '',
+      fuel: v.fuel_type || '',
+      drive: v.drive_type || '',
+      price: v.price
     }));
-  };
+  }, [dataLoaded, filteredVariants, modalBrand, modalModel]);
 
-  const getVariantOptions = (idx: number, s: SelectionState): string[] => {
-    if (s.brand === 'CUSTOM_PLAN') return [s.model];
-    if (!modelData || !s.model || !s.version) return [];
+  const allBrands = useMemo(() => {
+    const brands = Array.from(new Set(allVariants.map(v => v.brand)));
+    return brands.sort((a, b) => {
+      if (a === 'NM') return -1;
+      if (b === 'NM') return 1;
+      return a.localeCompare(b);
+    });
+  }, [allVariants]);
 
-    const key = `${s.brand}__${s.model}__${s.version}`;
-    return modelData.variants[key] || [];
-  };
+  const isCompareDisabled = isLoading || selections.length < 2;
 
-  const isCompareDisabled =
-    isLoading ||
-    selections.some((s) => !s.brand || !s.model || !s.version || !s.variant);
-
-  // ✅ UPDATED: Dropdown wrapper — no min-w, fully fluid
-  const renderCellDropdown = (
-    value: string,
-    options: (string | DropdownOption)[],
-    onChange: (val: string) => void,
-    disabled: boolean = false,
-    placeholder: string = "Select"
-  ) => (
-    <div className="relative w-full"> {/* ✅ was: min-w-[85px] → now w-full */}
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled || options.length === 0}
-        className={`block w-full min-w-0 appearance-none bg-white border border-slate-300 text-slate-800 py-1.5 px-1 pr-5 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors truncate ${disabled ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : 'cursor-pointer'
-          }`} /* ✅ px-2→px-1, pr-6→pr-5, added min-w-0 */
-      >
-        <option value="" disabled hidden>{placeholder}</option>
-        {options.map((opt) => {
-          const o = typeof opt === 'string' ? { value: opt, label: opt } : opt;
-          return (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          );
-        })}
-      </select>
-      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-0.5 text-slate-400">
-        <ChevronDown size={12} /> {/* ✅ 14→12 so it fits even in narrow columns */}
-      </div>
-    </div>
-  );
-
-  // ---------- CLOSED STATE UI ----------
   if (!isOpen) {
     return (
       <aside className="w-10 md:w-12 lg:w-14 bg-blue-700 text-slate-900 flex-shrink-0 h-full border-r border-slate-200 flex items-center justify-center">
         <button
-          type="button"
           onClick={() => setIsOpen(true)}
           className="h-[80%] w-full flex flex-col items-center justify-center gap-2 rounded-full bg-white/90 hover:bg-white shadow-md transition-colors"
-          aria-label="Open car selection sidebar"
         >
-          <ChevronRight size={18} className="text-black-700" />
-          <span className="text-[11px] font-bold tracking-wide text-slate-700 transform -rotate-90">
-            Select Cars Here
+          <ChevronRight size={18} className="text-blue-700" />
+          <span className="text-[11px] font-bold tracking-wide text-slate-700 transform -rotate-90 whitespace-nowrap">
+            Open Filters
           </span>
         </button>
       </aside>
     );
   }
 
-  // ---------- OPEN STATE UI (Matrix) ----------
   return (
-    <AnimatePresence mode="wait">
-      {isOpen && (
-        <motion.aside
-          key="sidebar-open"
-          initial={{ opacity: 1 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 1 }}
-          className="relative bg-slate-50 text-slate-900 flex-shrink-0 flex flex-col h-full border-r border-slate-200 shadow-xl z-30"
-          style={{ width: sidebarWidth }} // ✅ maxWidth removed — fully flexible
-        >
-          {/* Resize Handle */}
-          <div
-            onMouseDown={startResizing}
-            className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-50 opacity-0 hover:opacity-100"
-            title="Drag to resize sidebar"
-          />
+    <>
+      <aside className="w-[380px] bg-white flex-shrink-0 flex flex-col h-full border-r border-slate-300 shadow-xl z-30 font-sans">
 
-          {/* Header */}
-          <motion.div
-            variants={headerVariant}
-            initial="hidden"
-            animate="visible"
-            className="flex items-center justify-between p-3 border-b border-blue-600 bg-blue-600 text-white shadow-md"
-          >
-            <div>
-              <h2 className="text-sm font-bold flex items-center gap-2">
-                <CarFront className="text-white" size={16} />
-                <span>Select Cars</span>
-              </h2>
-            </div>
+        {/* Header / Compare Button Area */}
+        <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
             <button
-              type="button"
               onClick={() => setIsOpen(false)}
-              className="ml-2 inline-flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 p-1 transition-colors"
+              className="p-1 -ml-2 rounded-full hover:bg-slate-200 text-slate-500 transition-colors"
+              title="Collapse Sidebar"
             >
-              <ChevronLeft size={16} className="text-white" />
+              <ChevronLeft size={18} />
             </button>
-          </motion.div>
-
-          <div className="flex-1 overflow-hidden flex flex-col">
-            {!modelData ? (
-              <div className="p-5 text-xs text-slate-500">Loading details...</div>
-            ) : (
-              <motion.div
-                className="flex-1 flex flex-col overflow-hidden"
-                variants={matrixVariant}
-                initial="hidden"
-                animate="visible"
-              >
-                {/* ✅ overflow-x hidden so cards never spill outside sidebar */}
-                <div className="flex-1 overflow-y-auto overflow-x-hidden p-1 space-y-2">
-                  {Array.from({ length: Math.ceil(selections.length / CHUNK_SIZE) }, (_, chunkIdx) => {
-                    const start = chunkIdx * CHUNK_SIZE;
-                    const chunkSelections = selections.slice(start, start + CHUNK_SIZE);
-                    const isLastChunk = start + CHUNK_SIZE >= selections.length;
-
-                    return (
-                      // ✅ was: inline-block min-w-full → now block w-full (fills sidebar, no overflow)
-                      <div key={`chunk-${chunkIdx}`} className="block w-full">
-                        {chunkIdx > 0 && (
-                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-2 pt-1 pb-0.5 border-t border-slate-200">
-                            Vehicles {start + 1}–{Math.min(start + CHUNK_SIZE, selections.length)}
-                          </div>
-                        )}
-                        {/* ✅ table-fixed so columns respect % widths strictly */}
-                        <table className="w-full border-collapse table-fixed">
-                          <thead>
-                            <tr>
-                              {/* Label column — fixed narrow width */}
-                              <th className="p-1 w-10 sticky left-0 bg-slate-50 z-10 border-b border-slate-200" />
-                              {chunkSelections.map((_, ci) => {
-                                const idx = start + ci;
-                                const colors = [
-                                  'bg-blue-600',
-                                  'bg-emerald-600',
-                                  'bg-violet-600',
-                                  'bg-orange-600',
-                                  'bg-sky-600'
-                                ];
-                                const headerBg = colors[idx % colors.length];
-
-                                return (
-                                  <th
-                                    key={`head-${idx}`}
-                                    className={`p-1 border-b border-slate-200 border-l border-white/20 ${headerBg}`}
-                                    // ✅ Equal share of remaining width per card column
-                                    style={{ width: `${100 / chunkSelections.length}%` }}
-                                  >
-                                    <div className="flex items-center justify-between px-0.5 text-white">
-                                      <div className="flex items-center gap-0.5">
-                                        {idx > 0 && (
-                                          <button onClick={() => moveVehicle(idx, 'left')} className="text-white/70 hover:text-white transition-colors" title="Move Left">
-                                            <ChevronLeft size={10} />
-                                          </button>
-                                        )}
-                                        <span className="text-[9px] font-bold whitespace-nowrap">V{idx + 1}</span>
-                                        {idx < selections.length - 1 && (
-                                          <button onClick={() => moveVehicle(idx, 'right')} className="text-white/70 hover:text-white transition-colors" title="Move Right">
-                                            <ChevronRight size={10} />
-                                          </button>
-                                        )}
-                                      </div>
-                                      {selections.length > 1 && (
-                                        <button onClick={() => removeVehicleCard(idx)} className="text-white/70 hover:text-red-300 transition-colors">
-                                          <X size={10} />
-                                        </button>
-                                      )}
-                                    </div>
-                                  </th>
-                                );
-                              })}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200 bg-white">
-
-                            {/* Brand Row */}
-                            <tr>
-                              <td className="p-1 px-1.5 text-[9px] font-extrabold text-slate-900 uppercase sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Brand</td>
-                              {chunkSelections.map((sel, ci) => {
-                                const idx = start + ci;
-                                const brandOptions = modelData.brands.map(b => ({
-                                  value: b,
-                                  label: b === "CUSTOM_PLAN" ? "⭐ New Model Plan" : b
-                                }));
-                                return (
-                                  <td key={`brand-${idx}`} className="p-0.5 border-l border-slate-50">
-                                    {renderCellDropdown(sel.brand, brandOptions, (v) => handleSelectionChange(idx, 'brand', v), false, "Brand")}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-
-                            {/* Car Row */}
-                            <tr>
-                              <td className="p-1 px-1.5 text-[9px] font-extrabold text-slate-900 uppercase sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Car</td>
-                              {chunkSelections.map((sel, ci) => {
-                                const idx = start + ci;
-                                let carOptions: any = [];
-                                if (sel.brand === 'CUSTOM_PLAN') {
-                                  carOptions = plans.map(p => ({ value: p.plan_id, label: `${p.name} (${p.base_variant_class})` }));
-                                } else if (sel.brand) {
-                                  carOptions = modelData.models[sel.brand] || [];
-                                }
-                                return (
-                                  <td key={`car-${idx}`} className="p-0.5 border-l border-slate-50">
-                                    {renderCellDropdown(
-                                      sel.brand === 'CUSTOM_PLAN' ? sel.plan_id || '' : sel.model,
-                                      carOptions,
-                                      (v) => {
-                                        if (sel.brand === 'CUSTOM_PLAN') {
-                                          const p = plans.find(pl => pl.plan_id === v);
-                                          if (p) {
-                                            setSelections(prev => {
-                                              const n = [...prev];
-                                              n[idx] = {
-                                                brand: 'CUSTOM_PLAN',
-                                                model: p.name,
-                                                variant: p.name,
-                                                plan_id: v,
-                                                version: 'plan',
-                                                variant_id: ''
-                                              };
-                                              return n;
-                                            });
-                                          }
-                                        } else {
-                                          handleSelectionChange(idx, 'model', v);
-                                        }
-                                      },
-                                      !sel.brand,
-                                      sel.brand === 'CUSTOM_PLAN' ? "Plan" : "Car"
-                                    )}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-
-                            {/* Variant Row */}
-                            <tr>
-                              <td className="p-1 px-1.5 text-[9px] font-extrabold text-slate-900 uppercase sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Var</td>
-                              {chunkSelections.map((sel, ci) => {
-                                const idx = start + ci;
-                                return (
-                                  <td key={`var-${idx}`} className="p-0.5 border-l border-slate-50">
-                                    {renderCellDropdown(
-                                      sel.variant,
-                                      sel.brand === 'CUSTOM_PLAN' ? [{ value: sel.variant, label: sel.variant }] : getVariantOptions(idx, sel),
-                                      (v) => handleSelectionChange(idx, 'variant', v),
-                                      !sel.model || sel.brand === 'CUSTOM_PLAN',
-                                      "Var"
-                                    )}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-
-                            {/* Date Row */}
-                            <tr>
-                              <td className="p-1 px-1.5 text-[9px] font-extrabold text-slate-900 uppercase sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm truncate">Date</td>
-                              {chunkSelections.map((sel, ci) => {
-                                const idx = start + ci;
-                                return (
-                                  <td key={`ver-${idx}`} className="p-0.5 border-l border-slate-50">
-                                    {renderCellDropdown(
-                                      sel.version,
-                                      getVersionOptions(sel),
-                                      (v) => handleSelectionChange(idx, 'version', v),
-                                      !sel.variant,
-                                      "Date"
-                                    )}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-
-                            {/* Add Vehicle Button */}
-                            {isLastChunk && selections.length < MAX_VEHICLES && (
-                              <tr>
-                                <td colSpan={chunkSelections.length + 1} className="p-2 bg-slate-50 border-t border-slate-200">
-                                  <button
-                                    onClick={addVehicleCard}
-                                    className="w-full flex items-center justify-center py-2 px-3 text-xs font-semibold text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 border border-blue-300 border-dashed transition-all"
-                                  >
-                                    <Plus size={14} className="mr-1.5 flex-shrink-0" />
-                                    <span className="truncate">Add Vehicle ({selections.length}/{MAX_VEHICLES})</span>
-                                  </button>
-                                </td>
-                              </tr>
-                            )}
-
-                          </tbody>
-                        </table>
-                      </div>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            )}
+            <Filter size={16} className="text-blue-600" />
+            Vehicle Filters
           </div>
 
-          {/* Footer with Compare Button */}
-          <motion.div
-            variants={buttonVariant}
-            initial="hidden"
-            animate="visible"
-            className="p-4 border-t border-slate-200 bg-slate-50"
-          >
+          {/* ✅ CHANGE 2: Compare button ab sirf tab dikhega jab showCompareButton true ho (default true) */}
+          {showCompareButton && (
             <button
-              onClick={() => onCompare(selections)}
+              onClick={() => onCompare(selections, { min: priceMin, max: priceMax })}
               disabled={isCompareDisabled}
-              className={`w-full py-3 px-4 rounded-xl font-bold text-sm shadow-lg transition-all duration-200 transform ${isCompareDisabled
+              className={`px-4 py-1.5 rounded text-xs font-bold shadow-sm transition-all ${isCompareDisabled
                 ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white active:scale-[0.98]'
+                : 'bg-blue-600 hover:bg-blue-700 text-white'
                 }`}
             >
-              {isLoading ? 'Comparing...' : 'Compare Now'}
+              {isLoading ? 'Comparing...' : `Compare (${selections.length})`}
             </button>
-          </motion.div>
-        </motion.aside>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          {!dataLoaded ? (
+            <div className="p-8 text-center text-slate-500 text-sm">Loading catalog...</div>
+          ) : (
+            <div className="flex flex-col h-full bg-white">
+              <div className="flex-1 overflow-y-auto custom-scrollbar border-b border-slate-300">
+                <div className="flex flex-col border-t border-slate-300">
+
+                  {/* 1. Price Range Slicer */}
+                  <div className="grid grid-cols-[85px_1fr] border-b border-blue-200">
+                    <div className="border-r border-slate-300 bg-slate-50 p-2 text-[10px] font-bold flex items-center justify-center text-center text-slate-800">
+                      Ex Showroom<br />Price
+                    </div>
+                    <div className="p-4 flex flex-col gap-2 justify-center bg-white">
+                      <div className="relative px-2">
+                        {/* Dual range slider */}
+                        <div className="relative h-1.5 bg-slate-200 rounded-full">
+                          <div
+                            className="absolute h-full bg-slate-600 rounded-full"
+                            style={{
+                              left: `${(priceMin / (Math.ceil(Math.max(...allVariants.map(v => v.price), 100)))) * 100}%`,
+                              right: `${100 - (priceMax / (Math.ceil(Math.max(...allVariants.map(v => v.price), 100)))) * 100}%`
+                            }}
+                          />
+                        </div>
+                        <input
+                          type="range" min={0} max={Math.ceil(Math.max(...allVariants.map(v => v.price), 100))} step={0.5}
+                          value={priceMin} onChange={e => { const v = parseFloat(e.target.value); if (v < priceMax) setPriceMin(v); }}
+                          className="absolute top-0 left-0 w-full h-1.5 opacity-0 cursor-pointer"
+                        />
+                        <input
+                          type="range" min={0} max={Math.ceil(Math.max(...allVariants.map(v => v.price), 100))} step={0.5}
+                          value={priceMax} onChange={e => { const v = parseFloat(e.target.value); if (v > priceMin) setPriceMax(v); }}
+                          className="absolute top-0 left-0 w-full h-1.5 opacity-0 cursor-pointer"
+                        />
+                        {/* Thumbs visual */}
+                        <div className="absolute top-1/2 -translate-y-1/2 -ml-2 w-4 h-4 rounded-full bg-[#cc4400] border-2 border-white shadow pointer-events-none" style={{ left: `${(priceMin / (Math.ceil(Math.max(...allVariants.map(v => v.price), 100)))) * 100}%` }} />
+                        <div className="absolute top-1/2 -translate-y-1/2 -mr-2 w-4 h-4 rounded-full bg-[#006600] border-2 border-white shadow pointer-events-none" style={{ left: `${(priceMax / (Math.ceil(Math.max(...allVariants.map(v => v.price), 100)))) * 100}%` }} />
+                      </div>
+
+                      <div className="flex justify-between items-center text-[10px] font-bold mt-2">
+                        <div className="flex flex-col gap-1 items-center">
+                          <span className="text-[9px] font-semibold text-slate-500">Min</span>
+                          <div className="border border-slate-400 bg-slate-100 rounded px-1.5 py-0.5 flex items-center">
+                            <input type="number" className="w-8 outline-none text-center bg-transparent" value={priceMin} onChange={e => { const val = parseFloat(e.target.value); if (!isNaN(val) && val < priceMax) setPriceMin(val); }} />
+                            <span>L</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 items-center">
+                          <span className="text-[9px] font-semibold text-slate-500">Max</span>
+                          <div className="border border-slate-400 bg-slate-100 rounded px-1.5 py-0.5 flex items-center">
+                            <input type="number" className="w-8 outline-none text-center bg-transparent" value={priceMax} onChange={e => { const val = parseFloat(e.target.value); if (!isNaN(val) && val > priceMin) setPriceMax(val); }} />
+                            <span>L</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. Body Type */}
+                  <div className="grid grid-cols-[85px_1fr] border-b border-blue-200">
+                    <div className="border-r border-slate-300 bg-slate-50 p-2 text-[10px] font-bold flex items-center justify-center text-slate-800">
+                      Body Type
+                    </div>
+                    <div className="p-3 flex gap-2 flex-wrap items-center bg-white">
+                      {BODY_TYPES.map(bt => {
+                        const isSelected = selectedBodyTypes.includes(bt);
+                        const hasInRange = availableBodyTypesInPrice.includes(bt);
+
+                        let cls = '';
+                        if (isSelected) {
+                          cls = 'bg-blue-500 text-white border-blue-600 shadow-sm';
+                        } else if (hasInRange) {
+                          cls = 'bg-slate-700 text-white hover:bg-slate-800 shadow-sm'; // Dark grey
+                        } else {
+                          cls = 'bg-slate-200 text-slate-500 cursor-not-allowed'; // Light grey
+                        }
+
+                        return (
+                          <button
+                            key={bt}
+                            disabled={!hasInRange && !isSelected}
+                            onClick={() => {
+                              if (hasInRange || isSelected) toggleBodyType(bt);
+                            }}
+                            className={`px-3 py-1 text-[10px] font-bold rounded-sm transition-all ${cls}`}
+                          >
+                            {bt}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 3. Brand */}
+                  <div className="grid grid-cols-[85px_1fr] border-b border-blue-200">
+                    <div className="border-r border-slate-300 bg-slate-50 p-2 text-[10px] font-bold flex items-center justify-center text-slate-800">
+                      Brand
+                    </div>
+                    <div className="p-3 flex justify-center gap-1.5 items-center bg-white overflow-x-auto custom-scrollbar">
+                      {allBrands.filter(b => b !== 'CUSTOM_PLAN').map(brand => {
+                        const isSelected = selectedBrands.includes(brand);
+                        const isSelectable = availableBrandsInFilter.includes(brand);
+
+                        let bgColor = 'bg-slate-200 border-slate-300 opacity-50 cursor-not-allowed'; // Light grey
+                        if (isSelected) bgColor = 'bg-blue-600 border-blue-700 shadow-sm'; // Blue
+                        else if (isSelectable) bgColor = 'bg-slate-700 border-slate-800 hover:bg-slate-800 shadow-sm'; // Dark grey
+
+                        return (
+                          <div key={brand} className="w-[84px] shrink-0 flex justify-center">
+                            <button
+                              disabled={!isSelectable && !isSelected}
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedBrands(prev => prev.filter(b => b !== brand));
+                                  setOpenDropdownBrands(prev => prev.filter(b => b !== brand));
+                                } else if (isSelectable) {
+                                  setSelectedBrands(prev => [...prev, brand]);
+                                  if (!openDropdownBrands.includes(brand)) {
+                                    setOpenDropdownBrands(prev => [...prev, brand]);
+                                  }
+                                }
+                              }}
+                              className={`w-12 h-8 shrink-0 flex items-center justify-center border rounded shadow-sm transition-all ${bgColor}`}
+                            >
+                              {brand === 'NM' ? <div className={`font-black text-[10px] tracking-wider ${isSelected || isSelectable ? 'text-white' : 'text-slate-500'}`}>NM</div> :
+                                brand.toLowerCase().includes('maruti') ? <img src="/maruti_logo.png" alt={brand} className="w-8 h-4 object-contain bg-white rounded-[2px] p-[2px] shadow-sm" /> :
+                                  brand.toLowerCase().includes('hyundai') ? <img src="/hyundai_logo.png" alt={brand} className="w-8 h-4 object-contain bg-white rounded-[2px] p-[2px] shadow-sm" /> :
+                                    <div className={`text-[8px] font-bold text-center leading-tight ${isSelected || isSelectable ? 'text-white' : 'text-slate-500'}`}>{brand}</div>}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 4. Model */}
+                  <div className="grid grid-cols-[85px_1fr] border-b border-blue-200">
+                    <div className="border-r border-slate-300 bg-slate-50 p-2 flex flex-col items-center justify-center text-center">
+                      <span className="text-[10px] font-bold text-slate-800">Model</span>
+                    </div>
+                    <div className="p-3 flex justify-center gap-1.5 items-start bg-white min-h-[40px] overflow-x-auto custom-scrollbar">
+                      {allBrands.filter(b => b !== 'CUSTOM_PLAN').map(brand => {
+                        const brandModels = Array.from(new Set(allVariants.filter(v => v.brand === brand).map(v => v.model)));
+                        return (
+                          <div key={brand} className="w-[84px] shrink-0 flex flex-col items-center">
+                            <button
+                              onClick={() => {
+                                setOpenDropdownBrands(prev =>
+                                  prev.includes(brand) ? prev.filter(b => b !== brand) : [...prev, brand]
+                                );
+                              }}
+                              className="w-10 h-5 border border-slate-300 bg-slate-50 rounded shadow-sm text-slate-600 hover:bg-slate-200 flex items-center justify-center transition-colors"
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M6 9l6 6 6-6" /></svg>
+                            </button>
+
+                            {openDropdownBrands.includes(brand) && (
+                              <div className="mt-1.5 bg-white border border-slate-300 shadow-md flex flex-col w-[80px] rounded py-0.5 z-10">
+                                {brandModels.length === 0 && <div className="px-2 py-1 text-[9px] text-slate-400">No models</div>}
+                                {brandModels.map(model => {
+                                  const isSelected = selectedModels.some(m => m.brand === brand && m.model === model);
+                                  const isSelectable = isModelSelectable(brand, model);
+
+                                  let bgColor = 'bg-slate-200 text-slate-500 cursor-not-allowed'; // Light grey - NON-Selectable
+                                  if (isSelected) bgColor = 'bg-blue-600 text-white hover:bg-blue-700 shadow-inner'; // Blue - ONCE Selected
+                                  else if (isSelectable) bgColor = 'bg-slate-700 text-white hover:bg-slate-800 shadow-sm'; // Dark grey - Selectable
+
+                                  return (
+                                    <button
+                                      key={model}
+                                      disabled={!isSelectable && !isSelected}
+                                      onClick={() => {
+                                        if (isSelected) {
+                                          setSelectedModels(prev => prev.filter(m => !(m.brand === brand && m.model === model)));
+                                          setSelections(prev => prev.filter(s => !(s.brand === brand && s.model === model)));
+                                        } else if (isSelectable) {
+                                          setSelectedModels(prev => [...prev, { brand, model }]);
+                                        }
+                                      }}
+                                      className={`px-1 py-1 mx-0.5 my-0.5 text-[8.5px] font-bold text-center transition-all rounded ${bgColor} leading-[1.1]`}
+                                    >
+                                      {model}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 5. Variant */}
+                  <div className="grid grid-cols-[85px_1fr]">
+                    <div className="border-r border-slate-300 bg-slate-50 p-2 flex flex-col items-center justify-start pt-4 text-center">
+                      <span className="text-[10px] font-bold text-slate-800">Variant</span>
+                      <span className="text-[7px] text-slate-400 font-bold uppercase tracking-tighter mt-1">CLICK HERE</span>
+                    </div>
+                    <div className="p-3 flex justify-center gap-1.5 items-start bg-slate-50/50 min-h-[100px] overflow-x-auto relative">
+                      {allBrands.filter(b => b !== 'CUSTOM_PLAN').map(brand => {
+                        const brandSelectedModels = selectedModels.filter(sm => sm.brand === brand);
+                        return (
+                          <div key={brand} className="w-[84px] shrink-0 flex flex-col items-center gap-1 px-0.5">
+                            {brandSelectedModels.map((sm, idx) => {
+                              const selectedCount = selections.filter(s => s.brand === sm.brand && s.model === sm.model).length;
+                              return (
+                                <div key={idx} className="flex items-stretch bg-blue-500 text-white rounded shadow-sm w-full hover:shadow transition-shadow">
+                                  <button
+                                    onClick={() => openVariantModal(sm.brand, sm.model)}
+                                    className="w-4 hover:bg-blue-600 rounded-l transition-colors border-r border-blue-400 flex items-center justify-center shrink-0"
+                                    title={`Select variants for ${sm.model}`}
+                                  >
+                                    <Plus size={8} strokeWidth={3} className="text-white" />
+                                  </button>
+                                  <div className="flex-1 px-1 py-1 text-[8.5px] font-bold flex flex-col items-center justify-center bg-blue-500 rounded-r text-center leading-[1.1]">
+                                    <span className="truncate w-full">{sm.model}</span>
+                                    {selectedCount > 0 && <span className="bg-white text-blue-700 text-[7px] px-1 rounded-full shadow-sm mt-[1px]">{selectedCount}</span>}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                      {selectedModels.length === 0 && (
+                        <div className="absolute left-[85px] right-0 text-[10px] text-slate-400 italic py-1 text-center pointer-events-none mt-2">
+                          Select a model from the dropdowns above
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Color Coding Legend matches image exactly */}
+              <div className="p-4 bg-slate-100 flex-shrink-0 border-t border-slate-300">
+                <div className="bg-slate-200/50 p-3 rounded border border-slate-300 text-[10px] text-slate-700 space-y-1.5">
+                  <div className="font-bold text-slate-800 mb-2 border-b border-slate-300 pb-1">Color Coding:</div>
+                  <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 bg-slate-700 rounded-sm shadow-sm"></div> <span className="font-medium">1) Dark grey</span> — Selectable as it is falling in price range</div>
+                  <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 bg-slate-200 border border-slate-300 rounded-sm"></div> <span className="font-medium text-slate-500">2) Light grey</span> <span className="text-slate-500">— NON-Selectable</span></div>
+                  <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 bg-blue-600 rounded-sm shadow-sm"></div> <span className="font-medium text-blue-700">3) Blue</span> — ONCE Selected</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </aside>
+
+
+      {/* POPUP WINDOW FOR VARIANTS */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+
+            <div className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                Select Variants: <span className="text-blue-300">{modalBrand} {modalModel}</span>
+              </h3>
+              <button onClick={closeVariantModal} className="text-slate-300 hover:text-white transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-0 overflow-auto max-h-[60vh] custom-scrollbar">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="bg-slate-100 sticky top-0 shadow-sm z-10">
+                  <tr>
+                    <th className="p-2 border-b border-slate-200 w-10 text-center"></th>
+                    <th className="p-2 border-b border-slate-200 border-l border-slate-200 font-bold text-slate-800">Variant</th>
+                    <th className="p-2 border-b border-slate-200 border-l border-slate-200 font-bold text-slate-800">E/g Type</th>
+                    <th className="p-2 border-b border-slate-200 border-l border-slate-200 font-bold text-slate-800">P/T</th>
+                    <th className="p-2 border-b border-slate-200 border-l border-slate-200 font-bold text-slate-800">Fuel Type</th>
+                    <th className="p-2 border-b border-slate-200 border-l border-slate-200 font-bold text-slate-800 text-slate-400">Drive Type</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {activeVariants.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-slate-500">No variants available for this model</td>
+                    </tr>
+                  ) : (
+                    activeVariants.map((v, i) => {
+                      const plan_id = modalBrand === 'NM' ? v.variantId : undefined;
+                      const isSelected = isVariantSelected(modalBrand, modalModel, v.name, v.version, plan_id);
+                      return (
+                        <tr key={i} className={`transition-colors cursor-pointer ${isSelected ? 'bg-blue-500 text-white' : 'hover:bg-slate-50 text-slate-800'}`} onClick={() => toggleVariantSelection(modalBrand, modalModel, v.name, v.version, v.variantId)}>
+                          <td className="p-2 border-l border-slate-200 text-center align-middle w-10">
+                            <div className={`w-3.5 h-3.5 border flex items-center justify-center mx-auto transition-colors ${isSelected ? 'bg-white border-white' : 'bg-white border-slate-400'}`}>
+                              {isSelected && <svg className="w-3 h-3 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                            </div>
+                          </td>
+                          <td className={`p-2 border-l border-slate-200 font-bold ${isSelected ? 'text-white' : 'text-slate-800'}`}>
+                            {v.name}
+                          </td>
+                          <td className={`p-2 border-l border-slate-200 ${isSelected ? 'text-blue-100' : 'text-slate-600'}`}>{v.engine}</td>
+                          <td className={`p-2 border-l border-slate-200 ${isSelected ? 'text-blue-100' : 'text-slate-600'}`}>{v.pt}</td>
+                          <td className={`p-2 border-l border-slate-200 ${isSelected ? 'text-blue-100' : 'text-slate-600'}`}>{v.fuel}</td>
+                          <td className={`p-2 border-l border-slate-200 ${isSelected ? 'text-blue-100' : 'text-slate-400 italic'}`}>{v.drive || '—'}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end gap-3">
+              <button onClick={closeVariantModal} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-medium rounded text-sm transition-colors">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
-    </AnimatePresence>
+    </>
   );
 };
 

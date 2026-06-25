@@ -9,6 +9,7 @@ import { AnimatePresence } from 'framer-motion';
 import PricingComparisonPage from './components/PricingComparisonPage';
 import FeatureStackUpPage from './components/FeatureStackUpPage';
 import ChatbotDashboardPage from './components/ChatbotDashboardPage';
+import MasterPage from './components/MasterPage';
 import { ComparisonResponse, SelectionState, NewsResponse } from './types';
 import {
   fetchComparisonDetails,
@@ -20,11 +21,11 @@ import {
   deletePlanFeature
 } from './services/api';
 
-type PageView = 'comparison' | 'pricing' | 'stackup' | 'chatbot';
+type PageView = 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentPage, setCurrentPage] = useState<PageView>('comparison');
+  const [currentPage, setCurrentPage] = useState<PageView>('master');
   const [isNewsSidebarOpen, setIsNewsSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -42,11 +43,7 @@ const App: React.FC = () => {
   const [news2, setNews2] = useState<NewsResponse | null>(null);
   const [isLoadingNews, setIsLoadingNews] = useState(false);
 
-  const [currentSelections, setCurrentSelections] = useState<SelectionState[]>([
-    { brand: 'Hyundai', model: 'Creta', version: 'v1', variant: 'E' },
-    { brand: 'Maruti', model: 'Grand Vitara', version: 'v1', variant: 'Sigma' },
-    { brand: 'Maruti', model: 'Grand Vitara', version: 'v1', variant: 'Delta' },
-  ]);
+  const [currentSelections, setCurrentSelections] = useState<SelectionState[]>([]);
 
   // Track the variant IDs currently shown in comparisonData
   const lastFetchedVariantIds = React.useRef<string[]>([]);
@@ -127,7 +124,7 @@ const App: React.FC = () => {
   }, [currentSelections]);
 
   // ✅ UPDATED: Now accepts array of selections (2-5 vehicles)
-  const handleCompare = async (selections: SelectionState[]) => {
+  const handleCompare = async (selections: SelectionState[], priceFilter?: { min: number; max: number }) => {
     setCurrentSelections(selections);
 
     if (!selections || selections.length < 2) {
@@ -148,7 +145,7 @@ const App: React.FC = () => {
     setComparisonData(null);
 
     try {
-      const data = await fetchComparisonDetails(selections);
+      const data = await fetchComparisonDetails(selections, priceFilter);
       setComparisonData(data);
       lastFetchedVariantIds.current = selections.map(s => s.plan_id || s.variant).filter(Boolean) as string[];
     } catch (error) {
@@ -335,6 +332,15 @@ const App: React.FC = () => {
     );
   }
 
+  if (currentPage === 'master') {
+    return (
+      <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
+        <Header currentPage={currentPage} onPageChange={handlePageChange} />
+        <MasterPage />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
       <Header currentPage={currentPage} onPageChange={handlePageChange} />
@@ -360,25 +366,23 @@ const App: React.FC = () => {
                     Detailed specifications{currentSelections.length > 0 ? ` for ${currentSelections.length} vehicles` : ''}.
                   </p>
                 </div>
-                
+
                 {/* Sleek News Toggle Button */}
                 {(news1 || news2 || isLoadingNews) && (
                   <button
                     onClick={() => setIsNewsSidebarOpen(prev => !prev)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all shadow-sm ${
-                      isNewsSidebarOpen
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all shadow-sm ${isNewsSidebarOpen
                         ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
                         : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
-                    }`}
+                      }`}
                   >
                     <Newspaper size={14} />
                     <span>Latest News</span>
                     {isLoadingNews ? (
                       <span className="w-3 animate-spin rounded-full h-3 border-2 border-current border-t-transparent shrink-0 ml-0.5" />
                     ) : (news1 || news2) ? (
-                      <span className={`inline-flex items-center justify-center min-w-[16px] h-4 text-[9px] font-black rounded-full px-1 ${
-                        isNewsSidebarOpen ? 'bg-white text-blue-600' : 'bg-blue-500 text-white'
-                      }`}>
+                      <span className={`inline-flex items-center justify-center min-w-[16px] h-4 text-[9px] font-black rounded-full px-1 ${isNewsSidebarOpen ? 'bg-white text-blue-600' : 'bg-blue-500 text-white'
+                        }`}>
                         {((news1?.top5_news?.length || 0) + (news2?.top5_news?.length || 0))}
                       </span>
                     ) : null}
@@ -396,18 +400,9 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* Table Container - Takes remaining height */}
             <div className="flex-1 overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white relative">
               <ComparisonTable
                 data={comparisonData}
-                onPlanNewModel={handlePlanNewModel}
-                onUpdatePlanFeature={handleUpdatePlanFeature}
-                onAddPlanFeature={handleAddPlanFeature}
-                onDeletePlanFeature={handleDeletePlanFeature}
-                onFinalizePlan={handleFinalizePlan}
-                onDeletePlan={handleDeletePlan}
-                onRenamePlan={handleRenamePlan}
-                onRefresh={refreshComparison}
                 selections={currentSelections}
               />
             </div>

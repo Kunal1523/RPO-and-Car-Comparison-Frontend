@@ -81,11 +81,32 @@ export interface VariantPriceData {
   };
 }
 
+// export interface ComparisonResponse {
+//   columns: string[];
+//   data: Record<string, any>[];
+//   variant_pricing?: Record<string, VariantPriceData>;
+//   base_variant_classes?: Record<string, string>;
+// }
 export interface ComparisonResponse {
   columns: string[];
-  data: Record<string, any>[];
-  variant_pricing?: Record<string, VariantPriceData>;
-  base_variant_classes?: Record<string, string>;
+  data: any[];
+  base_variant_classes: Record<string, string>;
+  // ✅ Add these:
+  nm_variant_ids: Record<string, {
+    nm_variant_id: string;
+    feature_values: Record<string, {
+      value: string;
+      cost_delta: number;
+      is_edited: boolean;
+      copied_from?: string | null;
+      sub_variant_values?: Record<string, string>;
+    }>;
+  }>;
+  variant_meta: Record<string, {
+    car_id: string;
+    variant_class: string;
+    version: number;
+  }>;
 }
 
 export interface GroupedFeature {

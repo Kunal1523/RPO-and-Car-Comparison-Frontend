@@ -1,665 +1,957 @@
-import React, { useState, useMemo, useEffect } from 'react';
+// src/car-comparison/components/FeatureStackUpPage.tsx
+
+import React, { useState, useEffect, useRef } from 'react';
+import { Layers, TrendingUp, GripVertical, Eye, EyeOff, ArrowRightLeft, ChevronDown, ArrowLeft, X } from 'lucide-react';
+import StackUpSidebar from '../components/StackUpSidebar';
 import {
-  Plus,
-  Trash2,
-  Check,
-  X,
-  TrendingUp,
-  Info,
-  Save,
-  ChevronDown,
-  Layers,
-  PlusCircle,
-  HelpCircle,
-  Search,
-  Car,
-  ChevronRight,
-  ChevronLeft,
-  CarFront,
-  Zap,
-  DollarSign,
-  ArrowUpRight,
-  ArrowDownRight,
-  Menu,
-  FileText,
-  LayoutGrid,
-  Columns,
-  Sparkles,
-  Download,
-  Loader2
-} from 'lucide-react';
-import ExcelJS from 'exceljs';
-import { saveAs } from 'file-saver';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  fetchModelDetails,
-  fetchVariantClasses,
   fetchVariantClassDetails,
-  fetchModelPlans,
-  fetchModelPlanById
-} from '../services/api';
+  getNMVariantFeatures,
+  fetchFeatureStackUpPrefsBulk,
+  upsertFeatureStackUpPref,
+  reorderFeatureStackUpPrefsBulk,
+} from '../services/stackUpApi';
 import {
-  ModelDetails,
-  SelectionState,
-  VariantClassData,
-  VariantClassDetailsResponse,
-  ModelPlan,
-  PlanFeature
-} from '../types';
+  StackUpSelection,
+  ModelStackCard,
+  VariantBlockData,
+  StackUpFeatureRow,
+  FeatureStackUpPref,
+} from '../stackUpTypes';
 
-// Interface for comparison data
-interface ComparisonCardData {
-  id: string;
-  targetName: string;
-  baseName: string;
-  features: {
-    category: string;
-    feature_name: string;
-    baseValue: string;
-    targetValue: string;
-    type: 'same' | 'changed' | 'added' | 'removed';
-  }[];
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+function groupSelectionsIntoCards(sels: StackUpSelection[]): Omit<ModelStackCard, 'variant_blocks'>[] {
+  const seen = new Map<string, Omit<ModelStackCard, 'variant_blocks'>>();
+  sels.forEach((s) => {
+    const k = `${s.source}__${s.car_id}`;
+    if (!seen.has(k)) seen.set(k, { model_key: k, source: s.source, brand: s.brand, model_name: s.model, car_id: s.car_id });
+  });
+  return Array.from(seen.values());
 }
 
-interface ComparisonState {
-  id: string;
-  planId: string;
-  baseVariant: string;
+function applyPrefs(
+  raw: { feature_id: string | null; feature_name: string; category: string; value: string }[],
+  prefs: FeatureStackUpPref[]
+): StackUpFeatureRow[] {
+  const map = new Map<string, FeatureStackUpPref>();
+  prefs.forEach((p) => map.set(p.feature_name.trim().toLowerCase(), p));
+  return raw
+    .map((f, i) => {
+      const p = map.get(f.feature_name.trim().toLowerCase());
+      return { ...f, display_order: p ? p.display_order : i, is_hidden: p ? p.is_hidden : false };
+    })
+    .sort((a, b) => a.display_order - b.display_order);
 }
 
-const FeatureStackUpPage: React.FC = () => {
-  // Main State
-  const [comparisons, setComparisons] = useState<ComparisonState[]>(() => {
-    const saved = localStorage.getItem('rpo_stackup_comparisons');
-    return saved ? JSON.parse(saved) : [
-      { id: 'initial_1', planId: '', baseVariant: '' },
-      { id: 'initial_2', planId: '', baseVariant: '' },
-      { id: 'initial_3', planId: '', baseVariant: '' }
-    ];
+const COMP_COLORS = {
+  same:     { bg: 'bg-[#e0f2fe] border-[#bae6fd]',      circleBg: 'bg-[#38bdf8]', text: 'text-sky-800',    label: 'Same',        hex: '#e0f2fe' },
+  change:   { bg: 'bg-[#fef08a] border-[#fde047]',      circleBg: 'bg-[#eab308]', text: 'text-yellow-800', label: 'Changed',     hex: '#fef08a' },
+  addition: { bg: 'bg-[#dcfce7] border-[#bbf7d0]',      circleBg: 'bg-[#22c55e]', text: 'text-green-800',  label: 'Added',       hex: '#dcfce7' },
+  deletion: { bg: 'bg-[#fee2e2] border-[#fecaca]',      circleBg: 'bg-[#ef4444]', text: 'text-red-800',    label: 'Deleted',     hex: '#fee2e2' },
+  absent:   { bg: 'bg-[#ffedd5] border-[#fed7aa]',      circleBg: 'bg-[#f97316]', text: 'text-orange-800', label: 'Not in Base', hex: '#ffedd5' },
+  notExist: { bg: 'bg-[#f3f4f6] border-[#d1d5db]',      circleBg: 'bg-[#9ca3af]', text: 'text-gray-500',   label: 'Not exist at all', hex: '#f3f4f6' },
+};
+type CompColor = keyof typeof COMP_COLORS;
+
+function classify(compVal: string | undefined, baseVal: string | undefined, inBase: boolean): CompColor {
+  const hC = !!compVal && compVal.trim() !== '' && compVal.toLowerCase() !== 'no' && compVal.toLowerCase() !== 'no information found';
+  const hB = !!baseVal && baseVal.trim() !== '' && baseVal.toLowerCase() !== 'no' && baseVal.toLowerCase() !== 'no information found';
+  if (!hB && !hC) return 'notExist';
+  if (!inBase && hC) return 'absent';
+  if (hB && hC && compVal === baseVal) return 'same';
+  if (hB && hC) return 'change';
+  if (!hB && hC) return 'addition';
+  if (hB && !hC) return 'deletion';
+  return 'same';
+}
+
+// ─── Variant Feature Card ────────────────────────────────────────────────────
+
+interface VCardProps {
+  block: VariantBlockData;
+  showHidden: boolean;
+  index: number;
+  total: number;
+  isDragging: boolean;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent) => void;
+}
+
+const VariantCard: React.FC<VCardProps> = ({
+  block, showHidden, index, total,
+  isDragging, onDragStart, onDragOver, onDrop
+}) => {
+  const staggerLeft = (total - index - 1) * 16;
+
+  const validFeatures = block.features.filter((f) => {
+    const val = f.value?.trim().toLowerCase();
+    return val && val !== 'no' && val !== 'no information found';
   });
+  const shown = showHidden ? validFeatures.filter((f) => f.is_hidden) : validFeatures.filter((f) => !f.is_hidden);
+  const hidden = validFeatures.filter((f) => f.is_hidden);
 
-  // Persist state to localStorage
+
+
+  return (
+    <div
+      className={`flex items-start gap-0 mb-2 transition-opacity select-none ${isDragging ? 'opacity-30' : ''}`}
+      style={{ marginLeft: staggerLeft }}
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
+      <div className="flex flex-col items-end justify-start pt-2 pr-1.5 shrink-0" style={{ width: 60 }}>
+        <span className="text-[11px] font-black leading-none text-right text-[#1e6091]">
+          {block.variant_class}
+        </span>
+      </div>
+
+      <div className="rounded-xl border-2 shadow-sm flex-shrink-0 border-[#1e6091] bg-[#c8dff0]" style={{ width: 260 }}>
+        <div className="flex items-center justify-between px-2 py-0.5 text-[8px] font-bold bg-[#1e6091] text-white">
+          <span>{shown.filter(f => !f.is_hidden).length} shown</span>
+          {hidden.length > 0 && <span className="bg-pink-400/80 px-1 rounded">{hidden.length} hid</span>}
+        </div>
+
+        <div className="custom-scrollbar" style={{ maxHeight: 260, overflowY: 'auto' }}>
+          {shown.length === 0 && <div className="text-center text-[10px] text-slate-500 py-4">No features</div>}
+          {shown.map((row, fi) => (
+            <div
+              key={row.feature_name + '-' + fi}
+              className={`group flex items-center gap-1.5 px-2 py-[3px] border-b last:border-0 text-[9px] ${
+                row.is_hidden ? 'bg-pink-100 border-pink-200' : 'bg-sky-100/80 border-sky-200'
+              }`}
+            >
+              <span className={`flex-1 truncate font-semibold ${row.is_hidden ? 'text-pink-700' : 'text-slate-800'}`}>{row.feature_name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Model Priority Popup ────────────────────────────────────────────────────────
+
+interface ModelPriorityPopupProps {
+  card: ModelStackCard;
+  onClose: () => void;
+  onSave: (newOrder: string[], hiddenStates: Record<string, boolean>) => void;
+}
+
+const ModelPriorityPopup: React.FC<ModelPriorityPopupProps> = ({ card, onClose, onSave }) => {
+  const [features, setFeatures] = useState<{name: string, is_hidden: boolean}[]>([]);
+  const [saving, setSaving] = useState(false);
+  const dragIdx = useRef<number | null>(null);
+
   useEffect(() => {
-    localStorage.setItem('rpo_stackup_comparisons', JSON.stringify(comparisons));
-  }, [comparisons]);
+    const rankMap = new Map<string, number>();
+    const hiddenMap = new Map<string, boolean>();
+    
+    card.variant_blocks.forEach(v => {
+      v.features.forEach(f => {
+        if (!rankMap.has(f.feature_name) || f.display_order < rankMap.get(f.feature_name)!) {
+          rankMap.set(f.feature_name, f.display_order);
+        }
+        if (!hiddenMap.has(f.feature_name)) {
+          hiddenMap.set(f.feature_name, f.is_hidden);
+        } else if (f.is_hidden) {
+          hiddenMap.set(f.feature_name, true);
+        }
+      });
+    });
 
-  const [modelData, setModelData] = useState<ModelDetails | null>(null);
-  const [plans, setPlans] = useState<ModelPlan[]>([]);
-  const [allVariants, setAllVariants] = useState<{ variant_class: string; brand: string; model: string; car_id: string }[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
+    const unique = Array.from(rankMap.keys()).sort((a, b) => rankMap.get(a)! - rankMap.get(b)!);
+    setFeatures(unique.map(name => ({ name, is_hidden: hiddenMap.get(name)! })));
+  }, [card]);
 
-  // Per-Card Data Cache - Now with persistence for instant loading
-  const [baseDataCache, setBaseDataCache] = useState<Record<string, VariantClassDetailsResponse>>(() => {
-    const saved = localStorage.getItem('rpo_stackup_base_cache');
-    return saved ? JSON.parse(saved) : {};
-  });
-  const [plansDataCache, setPlansDataCache] = useState<Record<string, ModelPlan>>(() => {
-    const saved = localStorage.getItem('rpo_stackup_plans_cache');
-    return saved ? JSON.parse(saved) : {};
-  });
-
-  // Persist Caches
-  useEffect(() => {
-    localStorage.setItem('rpo_stackup_base_cache', JSON.stringify(baseDataCache));
-  }, [baseDataCache]);
-
-  useEffect(() => {
-    localStorage.setItem('rpo_stackup_plans_cache', JSON.stringify(plansDataCache));
-  }, [plansDataCache]);
-
-  type FilterState = {
-    initialized: boolean;
-    selectedCategories: Set<string>;
-    selectedFeatures: Set<string>;
-    isFilterOpen: boolean;
-    filterSearch: string;
-    expandedCats: Set<string>;
+  const dropFeat = (dropIdx: number) => {
+    const di = dragIdx.current;
+    dragIdx.current = null;
+    if (di === null || di === dropIdx) return;
+    const reord = [...features];
+    const [m] = reord.splice(di, 1);
+    reord.splice(dropIdx, 0, m);
+    setFeatures(reord);
   };
-  const [cardFilters, setCardFilters] = useState<Record<string, FilterState>>({});
 
-  const getCardFilter = (compId: string): FilterState => {
-    return cardFilters[compId] || {
-      initialized: false,
-      selectedCategories: new Set(),
-      selectedFeatures: new Set(),
-      isFilterOpen: false,
-      filterSearch: '',
-      expandedCats: new Set()
-    };
+  const toggleHide = (name: string) => {
+    setFeatures(features.map(f => f.name === name ? { ...f, is_hidden: !f.is_hidden } : f));
   };
 
-  const updateCardFilter = (compId: string, updates: Partial<FilterState>) => {
-    setCardFilters(prev => ({
-      ...prev,
-      [compId]: { ...getCardFilter(compId), ...updates }
-    }));
-  };
-
-  // Fetch initial model data & plans
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [details, planList] = await Promise.all([
-          fetchModelDetails(),
-          fetchModelPlans()
-        ]);
-        setModelData(details);
-        setPlans(planList || []);
-
-        // Flatten all variants for the dropdown
-        if (details) {
-          const brandModelPairs = Object.entries(details.carIds);
-
-          // Fetch variant classes for all cars
-          const classPromises = brandModelPairs.map(async ([key, carId]) => {
-            const [brand, model] = key.split('__');
-            try {
-              const classes = await fetchVariantClasses(carId);
-              return classes.map(c => ({
-                variant_class: c.variant_class,
-                brand,
-                model,
-                car_id: carId
-              }));
-            } catch (e) { return []; }
-          });
-
-          const results = await Promise.all(classPromises);
-          setAllVariants(results.flat().sort((a, b) => a.variant_class.localeCompare(b.variant_class)));
-        }
-      } catch (err) {
-        console.error('Failed to fetch initial data', err);
-      }
-    };
-    loadData();
-  }, []);
-
-  // Fetch full details for selected plans/variants in comparisons
-  useEffect(() => {
-    comparisons.forEach(async (comp) => {
-      // Load Plan Data - Always refresh to get latest additional features
-      if (comp.planId) {
-        try {
-          const data = await fetchModelPlanById(comp.planId);
-          setPlansDataCache(prev => ({ ...prev, [comp.planId]: data }));
-        } catch (err) { console.error(err); }
-      }
-
-      // Load Base Data
-      if (comp.baseVariant && !baseDataCache[comp.baseVariant]) {
-        try {
-          const data = await fetchVariantClassDetails(comp.baseVariant, 1);
-          setBaseDataCache(prev => ({ ...prev, [comp.baseVariant]: data }));
-        } catch (err) { console.error(err); }
-      }
-    });
-  }, [comparisons]);
-
-  // Get all available categories and features for filtering
-  const availableFilters = useMemo(() => {
-    const cats = new Set<string>();
-    const feats = new Map<string, Set<string>>();
-
-    Object.values(baseDataCache).forEach(data => {
-      data.features.forEach(f => {
-        cats.add(f.category);
-        if (!feats.has(f.category)) feats.set(f.category, new Set());
-        feats.get(f.category)!.add(f.feature_name);
-      });
-    });
-
-    Object.values(plansDataCache).forEach(plan => {
-      plan.features?.forEach(f => {
-        cats.add(f.category);
-        if (!feats.has(f.category)) feats.set(f.category, new Set());
-        feats.get(f.category)!.add(f.feature_name);
-      });
-    });
-
-    return {
-      categories: Array.from(cats).sort(),
-      featuresByCategory: feats
-    };
-  }, [baseDataCache, plansDataCache]);
-
-  // Initialize filters for any card that hasn't been initialized yet
-  useEffect(() => {
-    if (availableFilters.categories.length > 0) {
-      const allF = new Set<string>();
-      availableFilters.featuresByCategory.forEach(set => set.forEach(f => allF.add(f)));
-      
-      let changed = false;
-      const nextFilters = { ...cardFilters };
-      
-      comparisons.forEach(comp => {
-         if (!nextFilters[comp.id]?.initialized) {
-            nextFilters[comp.id] = {
-               initialized: true,
-               selectedCategories: new Set(availableFilters.categories),
-               selectedFeatures: new Set(allF),
-               isFilterOpen: false,
-               filterSearch: '',
-               expandedCats: new Set()
-            };
-            changed = true;
-         }
-      });
-      
-      if (changed) {
-         setCardFilters(nextFilters);
-      }
-    }
-  }, [availableFilters, comparisons, cardFilters]);
-
-  // Comparison Logic - Now returns data for each comparison entry
-  const comparisonDataMap = useMemo(() => {
-    const data: Record<string, ComparisonCardData> = {};
-    comparisons.forEach(comp => {
-      const baseData = baseDataCache[comp.baseVariant];
-      const plan = plansDataCache[comp.planId];
-
-      if (!baseData || !plan || !plan.features) return;
-
-      const features: ComparisonCardData['features'] = [];
-      const allNames = new Set([
-        ...baseData.features.map(f => f.feature_name),
-        ...plan.features.map(f => f.feature_name)
-      ]);
-
-      allNames.forEach(name => {
-        const baseF = baseData.features.find(f => f.feature_name === name);
-        // 1. Find all plan features matching this name (case-insensitive)
-        const matchingPlanFeatures = plan.features?.filter(f => f.feature_name.trim().toLowerCase() === name.trim().toLowerCase()) || [];
-
-        // 2. Check if ANY of those records are marked as deleted
-        const isDeleted = matchingPlanFeatures.some(f =>
-          f.is_deleted === true ||
-          String(f.is_deleted).toUpperCase() === 'TRUE' ||
-          Number(f.is_deleted) === 1
-        );
-
-        const cat = matchingPlanFeatures[0]?.category || baseF?.category || 'General';
-
-        const filter = getCardFilter(comp.id);
-        if (filter.initialized) {
-           if (!filter.selectedCategories.has(cat)) return;
-           if (filter.selectedFeatures.size > 0 && !filter.selectedFeatures.has(name)) return;
-        }
-
-        const baseVals = baseF ? Array.from(new Set(Object.values(baseF.sub_variant_values).filter(v => v !== null && v !== undefined && v !== ''))) : [];
-        const baseVal = baseVals.length > 0 ? baseVals.join(' / ') : '';
-
-        if (isDeleted) {
-          features.push({
-            category: cat,
-            feature_name: name,
-            baseValue: baseVal || '—',
-            targetValue: 'Deleted',
-            type: 'removed'
-          });
-          return;
-        }
-
-        // 3. If not deleted, use the value from the first non-deleted matching feature
-        const planF = matchingPlanFeatures.find(f => !f.is_deleted);
-        const targetVal = planF?.value || '';
-
-        if (baseVal && targetVal) {
-          if (baseVals.includes(targetVal) && baseVals.length === 1) {
-            features.push({ category: cat, feature_name: name, baseValue: baseVal, targetValue: targetVal, type: 'same' });
-          } else {
-            features.push({ category: cat, feature_name: name, baseValue: baseVal, targetValue: targetVal, type: 'changed' });
-          }
-        } else if (!baseVal && targetVal) {
-          features.push({ category: cat, feature_name: name, baseValue: '—', targetValue: targetVal, type: 'added' });
-        } else if (baseVal && !targetVal) {
-          // If it's in base but not in plan list (and NOT deleted), it's inherited (Same)
-          features.push({ category: cat, feature_name: name, baseValue: baseVal, targetValue: baseVal, type: 'same' });
-        }
-      });
-
-      data[comp.id] = {
-        id: comp.id,
-        targetName: plan.name,
-        baseName: comp.baseVariant,
-        features: features.sort((a, b) => {
-          // Sort order: Same (blue), Changed (yellow), Added (green), Removed (red)
-          const order: Record<string, number> = { 'same': 1, 'changed': 2, 'added': 3, 'removed': 4 };
-          if (order[a.type] !== order[b.type]) {
-            return order[a.type] - order[b.type];
-          }
-          return a.category.localeCompare(b.category) || a.feature_name.localeCompare(b.feature_name);
-        })
-      };
-    });
-    return data;
-  }, [comparisons, baseDataCache, plansDataCache, cardFilters]);
-
-  const exportToExcel = async () => {
-    setIsExporting(true);
+  const handleSave = async () => {
+    setSaving(true);
     try {
-      const workbook = new ExcelJS.Workbook();
-      const ws = workbook.addWorksheet('Feature Stack-Up', {
-        views: [{ showGridLines: false }]
+      const order = features.map(f => f.name);
+      const originalHidden = new Map<string, boolean>();
+      card.variant_blocks.forEach(v => {
+        v.features.forEach(f => originalHidden.set(f.feature_name, f.is_hidden));
       });
-
-      const typeColors: Record<string, string> = {
-        'same': 'FFDBEAFE',    // blue-100
-        'changed': 'FFFEF08A', // yellow-200
-        'added': 'FFBBF7D0',   // green-200
-        'removed': 'FFFED7AA'  // orange-200
-      };
-
-      const visibleComps = comparisons.filter(c => comparisonDataMap[c.id]);
-      if (visibleComps.length === 0) {
-        setIsExporting(false);
-        return;
-      }
-
-      const columns: any[] = [];
-      visibleComps.forEach((comp, idx) => {
-        columns.push({ key: `card_${idx}`, width: 45 });
-        if (idx < visibleComps.length - 1) {
-          columns.push({ key: `gap_${idx}`, width: 3 });
+      
+      const hiddenStates: Record<string, boolean> = {};
+      for (const f of features) {
+        hiddenStates[f.name] = f.is_hidden;
+        if (originalHidden.get(f.name) !== f.is_hidden) {
+          await upsertFeatureStackUpPref({
+            variant_ref_type: card.source,
+            variant_id: card.car_id,
+            feature_id: null,
+            feature_name: f.name,
+            is_hidden: f.is_hidden
+          });
         }
-      });
-      ws.columns = columns;
-
-      const headerRow = ws.getRow(2);
-      visibleComps.forEach((comp, idx) => {
-        const colIndex = idx * 2 + 1;
-        const cell = headerRow.getCell(colIndex);
-        const cardData = comparisonDataMap[comp.id];
-
-        cell.value = `New ${cardData.targetName} vs ${cardData.baseName}`;
-        cell.font = { bold: true, size: 11 };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4D4D8' } };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      });
-
-      const maxFeatures = Math.max(...visibleComps.map(c => comparisonDataMap[c.id]?.features?.length || 0));
-
-      for (let i = 0; i < maxFeatures; i++) {
-        const row = ws.getRow(i + 3);
-        visibleComps.forEach((comp, idx) => {
-          const colIndex = idx * 2 + 1;
-          const cell = row.getCell(colIndex);
-          const cardData = comparisonDataMap[comp.id];
-          const feature = cardData?.features?.[i];
-
-          if (feature) {
-            let text = '';
-            if (feature.type === 'removed') {
-              text = feature.feature_name;
-            } else if (feature.type === 'changed') {
-              text = `${feature.feature_name}: ${feature.baseValue || '—'} ➔ ${feature.targetValue}`;
-            } else if (feature.type === 'added') {
-              text = feature.feature_name;
-            } else {
-              text = feature.feature_name;
-            }
-
-            cell.value = text;
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: typeColors[feature.type] || 'FFFFFFFF' } };
-            cell.alignment = { wrapText: true, vertical: 'middle' };
-          }
-        });
       }
 
-      const buffer = await workbook.xlsx.writeBuffer();
-      saveAs(new Blob([buffer]), `Feature_StackUp_${new Date().toISOString().split('T')[0]}.xlsx`);
-    } catch (err) {
-      console.error('Export failed', err);
+      await reorderFeatureStackUpPrefsBulk(card.source, card.car_id, order);
+
+      onSave(order, hiddenStates);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to save priority');
     } finally {
-      setIsExporting(false);
+      setSaving(false);
     }
   };
 
   return (
-    <div className="flex h-screen bg-[#f1f5f9] overflow-hidden font-sans text-slate-900">
-      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-20 shadow-sm">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-indigo-600 rounded-lg text-white">
-              <TrendingUp size={16} />
-            </div>
-            <h1 className="text-sm font-black text-slate-900 tracking-tight uppercase">Feature Stack-Up Comparison</h1>
-          </div>
-
-          <div className="flex items-center gap-6">
-            {/* Legend */}
-            <div className="flex items-center gap-4 bg-slate-50 px-4 py-1.5 rounded-full border border-slate-100 shadow-sm">
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-sm bg-[#bae6fd]"></div>
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Same as Base</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-sm bg-yellow-200"></div>
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Changed</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-sm bg-green-200"></div>
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Additional</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-sm bg-red-200"></div>
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Deleted</span>
-              </div>
-            </div>
-            <button
-              onClick={exportToExcel}
-              disabled={isExporting || comparisons.length === 0}
-              className="flex items-center gap-2 px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md transition-all disabled:opacity-50 text-[10px] uppercase tracking-wider"
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-xl shadow-xl w-[400px] flex flex-col max-h-[80vh] overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b bg-slate-50">
+          <h3 className="font-bold text-slate-800 text-[13px] flex items-center gap-2">
+            <GripVertical size={14} className="text-slate-400" />
+            Model Priority & Visibility
+          </h3>
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-3 bg-slate-100 border-b text-[11px] text-slate-600 leading-tight">
+          Drag to reorder features. Click the eye icon to hide/show.<br/>
+          <strong>Changes will apply to ALL variants in this model.</strong>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2">
+          {features.map((f, i) => (
+            <div
+              key={f.name}
+              draggable
+              onDragStart={(e) => { e.stopPropagation(); dragIdx.current = i; }}
+              onDragOver={(e) => { e.stopPropagation(); e.preventDefault(); }}
+              onDrop={(e) => { e.stopPropagation(); dropFeat(i); }}
+              className={`group flex items-center gap-2 px-3 py-2 mb-1 border rounded cursor-move text-[11px] font-semibold bg-white shadow-sm ${
+                f.is_hidden ? 'border-pink-200 text-pink-700' : 'border-slate-200 text-slate-700'
+              }`}
             >
-              {isExporting ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-              <span>{isExporting ? 'Exporting...' : 'Download Excel'}</span>
-            </button>
+              <GripVertical size={12} className="text-slate-300 shrink-0" />
+              <span className="flex-1 truncate">{f.name}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleHide(f.name); }}
+                className={`shrink-0 p-1 rounded transition-colors ${f.is_hidden ? 'text-pink-600 hover:bg-pink-50' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}
+              >
+                {f.is_hidden ? <Eye size={12} /> : <EyeOff size={12} />}
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="p-3 border-t bg-slate-50 flex justify-end gap-2 shrink-0">
+          <button onClick={onClose} disabled={saving} className="px-4 py-1.5 rounded-lg text-[11px] font-bold text-slate-600 hover:bg-slate-200 transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving} className="px-5 py-1.5 rounded-lg text-[11px] font-bold text-white bg-[#1e6091] hover:bg-[#164a73] transition-colors flex items-center gap-2 shadow-sm">
+            {saving ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}
+            Save Priority
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Model Column ─────────────────────────────────────────────────────────────
+
+interface ModelColumnProps {
+  card: ModelStackCard;
+  onCardUpdate: (c: ModelStackCard) => void;
+  loadingVariantId?: string;
+}
+
+const ModelColumn: React.FC<ModelColumnProps> = ({ card, onCardUpdate, loadingVariantId }) => {
+  const [showHidden, setShowHidden] = useState(false);
+  const [showPriorityPopup, setShowPriorityPopup] = useState(false);
+  const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
+  const dropRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0.85);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        setScale(s => Math.min(1.0, Math.max(0.5, s - e.deltaY * 0.005)));
+      }
+    };
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  const processedBlocks = card.variant_blocks.map(block => {
+    const isCompletelyEmpty = block.features.every(f => f.value === 'No information found');
+    return isCompletelyEmpty ? { ...block, features: [] } : block;
+  });
+
+  const handleVariantDrop = (dropIdx: number) => {
+    const di = draggingIdx;
+    setDraggingIdx(null);
+    if (di === null || di === dropIdx) return;
+    const nb = [...card.variant_blocks];
+    const [m] = nb.splice(di, 1);
+    nb.splice(dropIdx, 0, m);
+    onCardUpdate({ ...card, variant_blocks: nb });
+  };
+
+  return (
+    <div className="flex flex-col shrink-0 w-[340px] h-full border-r border-slate-400/50 pr-4 mr-3 last:border-0 last:pr-0 last:mr-0">
+      <div className="flex-1 rounded-2xl border-2 border-slate-400 overflow-hidden shadow bg-[#e0e0e0] flex flex-col">
+        <div className="flex items-center justify-end px-3 py-2 bg-slate-500 shrink-0 h-10">
+          <div className="flex items-center gap-2">
+            {loadingVariantId && <div className="w-3.5 h-3.5 border-2 border-slate-300 border-t-transparent rounded-full animate-spin" />}
+            <div className="text-[10px] text-slate-200 font-bold pr-1">
+              {card.variant_blocks.length} variant{card.variant_blocks.length !== 1 ? 's' : ''}
+            </div>
           </div>
-        </header>
+        </div>
 
-        <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar bg-[#f8fafc] p-8">
-          <div className="flex gap-10 h-full min-w-max pb-4">
-
-            {comparisons.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center w-full min-w-full text-center">
-                <div className="w-20 h-20 bg-slate-200/50 rounded-3xl flex items-center justify-center mb-6">
-                  <Layers size={40} className="text-slate-300" />
-                </div>
-                <h2 className="text-xl font-black text-slate-400">No Comparisons Added</h2>
-                <button
-                  onClick={() => setComparisons([{ id: Math.random().toString(), planId: '', baseVariant: '' }])}
-                  className="mt-4 px-6 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black uppercase"
-                >
-                  Start New Stack-Up
-                </button>
-              </div>
+        <div ref={containerRef} className="p-4 overflow-y-auto overflow-x-auto custom-scrollbar flex-1">
+          <div style={{ zoom: scale } as React.CSSProperties}>
+            {processedBlocks.length === 0 ? (
+              <div className="text-[11px] text-slate-500 text-center py-10 px-4">No variants with features.<br/><span className="text-slate-400 text-[10px]">Use the sidebar to add variants.</span></div>
             ) : (
-              <>
-                {comparisons.map((comp) => {
-                  const cardData = comparisonDataMap[comp.id];
-                  const filter = getCardFilter(comp.id);
-                  const grouped = cardData?.features.reduce((acc, f) => {
-                    if (!acc[f.category]) acc[f.category] = [];
-                    acc[f.category].push(f);
-                    return acc;
-                  }, {} as Record<string, typeof cardData.features>);
+              processedBlocks.map((block, idx) => (
+              <VariantCard
+                key={block.variant_id}
+                block={block}
+                showHidden={showHidden}
+                index={idx}
+                total={processedBlocks.length}
+                isDragging={draggingIdx === idx}
+                onDragStart={() => setDraggingIdx(idx)}
+                onDragOver={(e) => { e.preventDefault(); dropRef.current = idx; }}
+                onDrop={() => handleVariantDrop(idx)}
+              />
+            ))
+          )}
+          </div>
+        </div>
 
-                  return (
-                    <motion.div
-                      key={comp.id}
-                      layout
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      className="group flex-1 min-w-[280px] max-w-[450px] bg-white rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.08)] flex flex-col overflow-hidden border border-slate-200 h-full relative shrink-0"
-                    >
-                      {/* Card Delete Button */}
-                      <button
-                        onClick={() => setComparisons(comparisons.filter(c => c.id !== comp.id))}
-                        className="absolute -right-1 -top-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center z-50 shadow-xl opacity-0 group-hover:opacity-100 hover:scale-110 transition-all"
-                      >
-                        <X size={12} />
-                      </button>
+        <div className="flex items-center justify-center gap-4 px-3 py-2 bg-slate-200 border-t border-slate-300 shrink-0">
+          <button
+            onClick={() => setShowPriorityPopup(true)}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-all bg-white shadow-sm text-slate-700 hover:text-[#1e6091] border border-slate-300"
+          >
+            <GripVertical size={12} />
+          Priority
+        </button>
+        <button
+          onClick={() => setShowHidden(false)}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-all ${
+            !showHidden ? 'text-[#1e6091] bg-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <span className={`w-2.5 h-2.5 rounded-full ${!showHidden ? 'bg-[#1e6091]' : 'bg-slate-300'}`} />
+          All
+        </button>
+        <button
+          onClick={() => setShowHidden(true)}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-all ${
+            showHidden ? 'text-pink-600 bg-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <span className={`w-2.5 h-2.5 rounded-full ${showHidden ? 'bg-pink-500' : 'bg-slate-300'}`} />
+          Hidden
+        </button>
+      </div>
 
-                      {/* Card Header with Side-by-Side Selectors */}
-                      {/* Ultra-Compact Card Header */}
-                      <div className="bg-[#f8fafc] px-2 py-1.5 border-b border-slate-200 flex flex-col gap-1.5">
-                        {cardData && (
-                          <div className="text-[10px] font-black text-center text-slate-700 bg-slate-100 rounded py-0.5 border border-slate-200 uppercase tracking-tight">
-                            {cardData.targetName} vs {cardData.baseName}
-                          </div>
-                        )}
-                        <div className="flex items-center gap-1.5 overflow-hidden">
-                          {/* Plan Dropdown First */}
-                          <div className="flex-1 flex items-center gap-1 min-w-0">
-                            <span className="text-[7px] font-black text-slate-400 uppercase shrink-0">Plan:</span>
-                            <select
-                              value={comp.planId}
-                              onChange={(e) => {
-                                setComparisons(prev => prev.map(c => c.id === comp.id ? { ...c, planId: e.target.value } : c));
-                              }}
-                              className="flex-1 bg-white border border-slate-200 rounded px-1 py-0.5 text-[8px] font-black outline-none shadow-sm min-w-0 truncate"
-                            >
-                              <option value="">Choose Plan</option>
-                              {plans.map(p => <option key={p.plan_id} value={p.plan_id}>{p.name}</option>)}
-                            </select>
-                          </div>
+      {showPriorityPopup && (
+        <ModelPriorityPopup
+          card={card}
+          onClose={() => setShowPriorityPopup(false)}
+          onSave={(newOrder, hiddenStates) => {
+            const newBlocks = card.variant_blocks.map(v => {
+              const rank = new Map<string, number>();
+              newOrder.forEach((n, i) => rank.set(n, i));
+              const newFeatures = [...v.features].map(f => ({
+                ...f,
+                is_hidden: hiddenStates[f.feature_name] !== undefined ? hiddenStates[f.feature_name] : f.is_hidden
+              })).sort((a, b) => {
+                const rA = rank.has(a.feature_name) ? rank.get(a.feature_name)! : 999;
+                const rB = rank.has(b.feature_name) ? rank.get(b.feature_name)! : 999;
+                return rA - rB;
+              }).map((f, i) => ({ ...f, display_order: i }));
+              return { ...v, features: newFeatures };
+            });
+            onCardUpdate({ ...card, variant_blocks: newBlocks });
+            setShowPriorityPopup(false);
+          }}
+        />
+      )}
+      </div>
+    </div>
+  );
+};
 
-                          {/* Base Dropdown Second */}
-                          <div className="flex-1 flex items-center gap-1 min-w-0">
-                            <span className="text-[7px] font-black text-slate-400 uppercase shrink-0">Base:</span>
-                            <select
-                              value={comp.baseVariant}
-                              onChange={(e) => {
-                                setComparisons(prev => prev.map(c => c.id === comp.id ? { ...c, baseVariant: e.target.value } : c));
-                              }}
-                              className="flex-1 bg-white border border-slate-200 rounded px-1 py-0.5 text-[8px] font-black outline-none shadow-sm min-w-0 truncate"
-                            >
-                              <option value="">Choose Base</option>
-                              {allVariants.map(v => (
-                                <option key={`${v.car_id}_${v.variant_class}`} value={v.variant_class}>
-                                  {v.variant_class} ({v.brand})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      </div>
+// ─── Mapping Popup ────────────────────────────────────────────────────────────
 
-                      {!cardData ? (
-                        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-slate-50/50">
-                          <Info size={24} className="text-slate-300 mb-3" />
-                          <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
-                            Select both a plan and a base model to see the stack-up data
-                          </p>
-                        </div>
-                      ) : (
-                        <>
-                          {/* Column Labels */}
-                          <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-200 text-[7px] font-black uppercase text-slate-400 tracking-tighter flex items-center gap-2">
-                              <div className="relative py-1 -my-1" onMouseLeave={() => updateCardFilter(comp.id, { isFilterOpen: false })}>
-                                <button
-                                  onClick={() => updateCardFilter(comp.id, { isFilterOpen: !filter.isFilterOpen })}
-                                  className={`p-0.5 rounded transition-all ${filter.isFilterOpen ? 'bg-indigo-600 text-white' : 'hover:bg-slate-200 text-slate-400'}`}
-                                >
-                                  <Menu size={8} />
-                                </button>
+interface MappingPopupProps {
+  compCard: ModelStackCard;
+  allCards: ModelStackCard[];
+  mappingState: { targetModelKey: string; map: Record<string, string> };
+  onSave: (targetModelKey: string, map: Record<string, string>) => void;
+  onClose: () => void;
+}
 
-                                <AnimatePresence>
-                                  {filter.isFilterOpen && (
-                                    <motion.div
-                                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                      className="absolute left-0 top-full w-52 bg-white border border-slate-200 rounded-xl shadow-2xl z-[100] p-3 pt-4 normal-case tracking-normal text-left overflow-hidden"
-                                    >
-                                      <div className="flex items-center justify-between mb-2">
-                                        <span className="text-[7.5px] font-black text-slate-800 uppercase tracking-widest">Filters</span>
-                                        <div className="flex gap-2">
-                                          <button onClick={() => { updateCardFilter(comp.id, { selectedCategories: new Set(availableFilters.categories), selectedFeatures: new Set(Array.from(availableFilters.featuresByCategory.values()).flatMap(s => Array.from(s))) }); }} className="text-[7px] font-black text-indigo-600">ALL</button>
-                                          <button onClick={() => { updateCardFilter(comp.id, { selectedCategories: new Set(), selectedFeatures: new Set() }); }} className="text-[7px] font-black text-slate-400">NONE</button>
-                                        </div>
-                                      </div>
-                                      <div className="relative mb-2">
-                                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-300" size={8} />
-                                        <input type="text" placeholder="Search..." value={filter.filterSearch} onChange={(e) => updateCardFilter(comp.id, { filterSearch: e.target.value })} className="w-full bg-slate-50 border border-slate-100 rounded-lg pl-6 pr-1.5 py-1 text-[8px] font-bold outline-none" />
-                                      </div>
-                                      <div className="space-y-0.5 max-h-40 overflow-y-auto custom-scrollbar pr-0.5">
-                                        {availableFilters.categories.map(cat => {
-                                          const feats = Array.from(availableFilters.featuresByCategory.get(cat) || []).filter(f => !filter.filterSearch || f.toLowerCase().includes(filter.filterSearch.toLowerCase()));
-                                          if (filter.filterSearch && feats.length === 0) return null;
-                                          return (
-                                            <div key={cat} className="space-y-0.5">
-                                              <div className="flex items-center gap-1.5 px-1 py-0.5 hover:bg-slate-50 rounded">
-                                                <input type="checkbox" checked={filter.selectedCategories.has(cat)} onChange={(e) => { const next = new Set(filter.selectedCategories); const nextFeats = new Set(filter.selectedFeatures); if (e.target.checked) { next.add(cat); availableFilters.featuresByCategory.get(cat)?.forEach(f => nextFeats.add(f)); } else { next.delete(cat); availableFilters.featuresByCategory.get(cat)?.forEach(f => nextFeats.delete(f)); } updateCardFilter(comp.id, { selectedCategories: next, selectedFeatures: nextFeats }); }} className="w-2 h-2 accent-indigo-600" />
-                                                <button onClick={() => { const next = new Set(filter.expandedCats); if (next.has(cat)) next.delete(cat); else next.add(cat); updateCardFilter(comp.id, { expandedCats: next }); }} className="flex-1 text-left text-[8px] font-bold text-slate-700 truncate">{cat}</button>
-                                                <ChevronDown size={8} className={`text-slate-400 ${filter.expandedCats.has(cat) || filter.filterSearch ? 'rotate-180' : ''}`} />
-                                              </div>
-                                              {(filter.expandedCats.has(cat) || filter.filterSearch) && (
-                                                <div className="ml-4 border-l border-slate-100 pl-1.5 py-0.5">
-                                                  {feats.sort().map(feat => (
-                                                    <label key={feat} className="flex items-center gap-1.5 py-0.5 cursor-pointer">
-                                                      <input type="checkbox" checked={filter.selectedFeatures.has(feat)} onChange={(e) => { const next = new Set(filter.selectedFeatures); if (e.target.checked) next.add(feat); else next.delete(feat); updateCardFilter(comp.id, { selectedFeatures: next }); }} className="w-2 h-2 accent-indigo-600" />
-                                                      <span className="text-[7.5px] font-medium text-slate-500 truncate">{feat}</span>
-                                                    </label>
-                                                  ))}
-                                                </div>
-                                              )}
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
-                              </div>
-                              <span>Feature Detail</span>
-                          </div>
+const MappingPopup: React.FC<MappingPopupProps> = ({ compCard, allCards, mappingState, onSave, onClose }) => {
+  const [targetModelKey, setTargetModelKey] = useState<string>(mappingState.targetModelKey);
+  const [localMap, setLocalMap] = useState<Record<string, string>>({ ...mappingState.map });
 
-                          {/* Features List */}
-                          <div className="flex-1 overflow-y-auto custom-scrollbar">
-                            {cardData.features.map((item, i) => (
-                              <div
-                                key={i}
-                                className={`px-3 py-1.5 border-b border-black/[0.03] last:border-0 hover:bg-slate-50/50 transition-colors ${item.type === 'same' ? 'bg-[#bae6fd]' :
-                                  item.type === 'changed' ? 'bg-yellow-200' :
-                                    item.type === 'added' ? 'bg-green-200' :
-                                      item.type === 'removed' ? 'bg-red-200' : ''
-                                  }`}
-                              >
-                                <span className="text-[8px] font-bold text-slate-800 leading-tight block" title={item.feature_name}>
-                                  {item.type === 'removed' && item.feature_name}
-                                  {item.type === 'same' && item.feature_name}
-                                  {item.type === 'added' && item.feature_name}
-                                  {item.type === 'changed' && (
-                                    <>
-                                      {item.feature_name}: <span className="text-slate-500 font-medium">{item.baseValue || '—'}</span> <span className="text-slate-400 mx-0.5">➔</span> <span className="text-slate-900">{item.targetValue}</span>
-                                    </>
-                                  )}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </motion.div>
-                  );
-                })}
+  const setMap = (compId: string, baseId: string) => setLocalMap((prev) => ({ ...prev, [compId]: baseId }));
+  
+  const targetCard = allCards.find(c => c.model_key === targetModelKey);
+  const availableTargets = allCards.filter(c => c.model_key !== compCard.model_key);
 
-                {/* Add Comparison Ghost Card */}
-                <button
-                  onClick={() => setComparisons([...comparisons, { id: Math.random().toString(), planId: '', baseVariant: '' }])}
-                  className="min-w-[180px] max-w-[240px] w-full border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center gap-3 hover:border-indigo-400 hover:bg-indigo-50/20 transition-all text-slate-300 hover:text-indigo-500 group shrink-0 h-full"
-                >
-                  <div className="w-12 h-12 rounded-full bg-white border border-slate-100 shadow-sm flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Plus size={24} />
-                  </div>
-                  <span className="text-xs font-black uppercase tracking-widest">Add Another Card</span>
-                </button>
-              </>
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="relative bg-[#f8f5d0] border-[6px] border-black rounded-[40px] px-6 py-8 min-w-[380px] max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        
+        <button onClick={onClose} className="absolute top-4 right-5 text-slate-500 hover:text-black font-black text-lg">✕</button>
+
+        <div className="flex items-end justify-between mb-8 gap-4 px-2">
+          <div className="flex flex-col items-center flex-1">
+            <div className="w-full bg-slate-100 border border-slate-400 rounded px-2 py-1.5 text-[12px] font-bold text-center text-slate-500 cursor-not-allowed mb-2 flex justify-between items-center">
+              <span>{compCard.brand}</span>
+              <ChevronDown size={14} className="opacity-50" />
+            </div>
+            <div className="bg-[#679ba1] text-slate-900 font-bold px-4 py-1.5 rounded shadow-sm text-sm">
+              {compCard.model_name}
+            </div>
+          </div>
+
+          <div className="flex flex-col items-center flex-1">
+            <div className="w-full relative mb-2">
+              <select 
+                value={targetModelKey} 
+                onChange={(e) => { setTargetModelKey(e.target.value); setLocalMap({}); }}
+                className="w-full appearance-none bg-white border border-slate-400 rounded px-2 py-1.5 text-[12px] font-bold text-center outline-none cursor-pointer"
+              >
+                <option value="">— Select Target —</option>
+                {availableTargets.map(c => <option key={c.model_key} value={c.model_key}>{c.brand} — {c.model_name}</option>)}
+              </select>
+              <ChevronDown size={14} className="absolute right-2 top-2 pointer-events-none text-slate-500" />
+            </div>
+            {targetCard && (
+              <div className="bg-[#679ba1] text-slate-900 font-bold px-4 py-1.5 rounded shadow-sm text-sm">
+                {targetCard.model_name}
+              </div>
             )}
           </div>
         </div>
+
+        {targetCard ? (
+          <div className="flex justify-center mb-6">
+            <div className="flex flex-col gap-2">
+              {compCard.variant_blocks.map((cv) => {
+                const currentBase = localMap[cv.variant_id] || '';
+                return (
+                  <div key={cv.variant_id} className="flex items-center gap-4">
+                    <div className="w-16 bg-[#679ba1] text-slate-900 font-bold py-2 rounded text-center text-[13px] shadow-sm">
+                      {cv.variant_class}
+                    </div>
+                    <ArrowLeft size={28} className="text-[#2b4c3b] font-black shrink-0" strokeWidth={3.5} />
+                    <div className="relative w-16">
+                      <select
+                        value={currentBase}
+                        onChange={(e) => setMap(cv.variant_id, e.target.value)}
+                        className="w-full appearance-none text-[13px] font-bold rounded py-2 text-center outline-none cursor-pointer shadow-sm"
+                        style={{ background: '#679ba1', color: '#1e293b' }}
+                      >
+                        <option value="">—</option>
+                        {targetCard.variant_blocks.map((bv) => (
+                          <option key={bv.variant_id} value={bv.variant_id}>{bv.variant_class}</option>
+                        ))}
+                      </select>
+                      {!currentBase && <ChevronDown size={12} className="absolute right-1 top-[10px] pointer-events-none text-slate-700" />}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="text-center text-slate-500 text-xs font-bold py-8">
+            Please select a target model from the dropdown above.
+          </div>
+        )}
+
+        <button
+          onClick={() => { onSave(targetModelKey, localMap); onClose(); }}
+          disabled={!targetModelKey}
+          className={`w-full text-sm font-black py-3 rounded-xl transition-colors shadow-sm ${targetModelKey ? 'bg-[#2b4c3b] hover:bg-[#1a3125] text-white' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}
+        >
+          Confirm Mapping
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ─── Comparison Block ─────────────────────────────────────────────────────────
+
+interface CompBlockProps {
+  compVariant: VariantBlockData;
+  baseVariant: VariantBlockData;
+  label: string;
+  idx: number;
+  total: number;
+  activeFilters: Record<CompColor, boolean>;
+  targetFeatureNames: Set<string>;
+  onVariantUpdate: (v: VariantBlockData) => void;
+}
+
+const ComparisonBlock: React.FC<CompBlockProps> = ({ compVariant, baseVariant, label, idx, total, activeFilters, targetFeatureNames, onVariantUpdate }) => {
+  const staggerL = (total - idx - 1) * 16;
+  const featDragIdx = useRef<number | null>(null);
+
+  const baseFeatMap = new Map<string, string>();
+  baseVariant.features.forEach((f) => baseFeatMap.set(f.feature_name.trim().toLowerCase(), f.value));
+
+  const mappedFeatures = compVariant.features.map(f => {
+    const fName = f.feature_name.trim().toLowerCase();
+    const bv2 = baseFeatMap.get(fName);
+    const inBase = targetFeatureNames.has(fName);
+    const color = classify(f.value, bv2, inBase);
+    return { f, color, baseVal: bv2 };
+  });
+
+  const shown = mappedFeatures.filter(r => activeFilters[r.color] && !r.f.is_hidden);
+  const diffCount = mappedFeatures.filter(r => r.color !== 'same').length;
+
+  const toggleHide = async (row: StackUpFeatureRow) => {
+    const next = !row.is_hidden;
+    onVariantUpdate({ ...compVariant, features: compVariant.features.map((f) => f.feature_name === row.feature_name ? { ...f, is_hidden: next } : f) });
+    try { await upsertFeatureStackUpPref({ variant_ref_type: compVariant.variant_ref_type, variant_id: compVariant.variant_id, feature_id: row.feature_id, feature_name: row.feature_name, is_hidden: next }); } catch { }
+  };
+
+  const dropFeat = (dropIdx: number) => {
+    const di = featDragIdx.current;
+    featDragIdx.current = null;
+    if (di === null || di === dropIdx) return;
+    const reord = [...shown];
+    const [m] = reord.splice(di, 1);
+    reord.splice(dropIdx, 0, m);
+    const reordNames = new Set(reord.map(r => r.f.feature_name));
+    const rest = compVariant.features.filter((f) => !reordNames.has(f.feature_name));
+    const full = [...reord.map(r => r.f), ...rest].map((f, i) => ({ ...f, display_order: i }));
+    onVariantUpdate({ ...compVariant, features: full });
+    reorderFeatureStackUpPrefsBulk(compVariant.variant_ref_type, compVariant.variant_id, full.map((f) => f.feature_name)).catch(() => { });
+  };
+
+  return (
+    <div className="flex items-start mb-2" style={{ marginLeft: staggerL }}>
+      <div className="text-right shrink-0 pt-1 pr-2" style={{ width: 72 }}>
+        <span className="text-[8.5px] font-black text-slate-600 leading-tight block">{label}</span>
+      </div>
+      <div className="rounded-xl border-2 border-slate-400 bg-white shadow-sm flex-shrink-0 overflow-hidden" style={{ width: 260 }}>
+        <div className="flex items-center justify-between px-2 py-1 bg-slate-100 text-[8px] font-bold text-slate-600">
+          <span className="font-bold text-slate-700 truncate">{compVariant.variant_class}</span>
+        </div>
+        <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+          {shown.length === 0 && <div className="text-center text-[9px] text-slate-400 py-3">No features to display</div>}
+          {shown.map(({ f, color, baseVal }, fi) => (
+            <div
+              key={f.feature_name + '-' + fi}
+              draggable
+              onDragStart={(e) => { e.stopPropagation(); featDragIdx.current = fi; }}
+              onDragOver={(e) => { e.stopPropagation(); e.preventDefault(); }}
+              onDrop={(e) => { e.stopPropagation(); dropFeat(fi); }}
+              className={`group flex items-center px-1.5 py-0.5 border-b last:border-0 text-[9px] border cursor-move ${COMP_COLORS[color].bg}`}
+            >
+              <GripVertical size={7} className="text-slate-300 shrink-0" />
+              <span className={`flex-1 truncate font-medium ${COMP_COLORS[color].text}`}>{f.feature_name}</span>
+              {color === 'change' && (
+                <span className={`shrink-0 ml-1 max-w-[100px] truncate text-[8px] ${COMP_COLORS[color].text}`}>
+                  {baseVal || 'No info'} ➔ {f.value || 'No info'}
+                </span>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleHide(f); }}
+                className={`shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100 ${COMP_COLORS[color].text}`}
+              >
+                <EyeOff size={9} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Comparison Card ──────────────────────────────────────────────────────────
+
+interface CompCardProps {
+  compCard: ModelStackCard;
+  allCards: ModelStackCard[];
+  mappingState: { targetModelKey: string; map: Record<string, string> };
+  onMappingUpdate: (targetKey: string, map: Record<string, string>) => void;
+  onCardUpdate: (c: ModelStackCard) => void;
+}
+
+const ComparisonCard: React.FC<CompCardProps> = ({ compCard, allCards, mappingState, onMappingUpdate, onCardUpdate }) => {
+  const [showPopup, setShowPopup] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<Record<CompColor, boolean>>({
+    same: true, change: true, addition: true, deletion: true, absent: true, notExist: false
+  });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        setScale(s => Math.min(1.0, Math.max(0.5, s - e.deltaY * 0.005)));
+      }
+    };
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  const targetCard = allCards.find(c => c.model_key === mappingState.targetModelKey);
+
+  const compRows: { compVariant: VariantBlockData; baseVariant: VariantBlockData; label: string }[] = [];
+  const targetFeatureNames = new Set<string>();
+
+  if (targetCard) {
+    targetCard.variant_blocks.forEach((bv) => bv.features.forEach((f) => {
+      const val = f.value?.trim().toLowerCase();
+      if (val && val !== 'no' && val !== 'no information found') {
+        targetFeatureNames.add(f.feature_name.trim().toLowerCase());
+      }
+    }));
+    compCard.variant_blocks.forEach((cv) => {
+      const baseVarId = mappingState.map[cv.variant_id];
+      const bv = baseVarId ? targetCard.variant_blocks.find(b => b.variant_id === baseVarId) : undefined;
+      if (bv) {
+        compRows.push({ compVariant: cv, baseVariant: bv, label: `${cv.variant_class} wrt ${bv.variant_class}` });
+      }
+    });
+  }
+
+  const toggleFilter = (c: CompColor) => setActiveFilters(p => ({ ...p, [c]: !p[c] }));
+
+  return (
+    <div className="flex flex-col shrink-0 w-[340px] h-full border-r border-slate-400/50 pr-4 mr-3 last:border-0 last:pr-0 last:mr-0">
+      <div className="flex-1 rounded-2xl border-2 border-slate-400 overflow-hidden shadow bg-[#e0e0e0] flex flex-col">
+        <div className="flex items-center justify-between px-3 py-2 bg-slate-500 shrink-0 h-10">
+          <div className="flex items-center gap-1.5">
+            {(Object.keys(COMP_COLORS) as CompColor[]).map((c) => (
+              <button
+                key={c}
+                onClick={() => toggleFilter(c)}
+                title={COMP_COLORS[c].label}
+                className={`w-3 h-3 rounded-full border shadow-sm transition-all ${
+                  activeFilters[c] ? `${COMP_COLORS[c].bg}` : 'bg-slate-300 border-slate-400 opacity-50 grayscale'
+                }`}
+              />
+            ))}
+          </div>
+          <button
+            onClick={() => setShowPopup(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-white text-[10px] font-bold transition-colors"
+            title="Map variants"
+          >
+            <ArrowRightLeft size={11} strokeWidth={2.5} />
+            Map
+          </button>
+        </div>
+        <div ref={containerRef} className="p-4 overflow-y-auto overflow-x-auto custom-scrollbar flex-1">
+          <div style={{ zoom: scale } as React.CSSProperties}>
+            {compRows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center gap-2">
+                <ArrowRightLeft size={28} className="text-slate-300" />
+                <div className="text-slate-400 text-[11px] font-bold">No mapping set</div>
+                <div className="text-slate-400 text-[10px]">Click "Map" to map variants for comparison</div>
+              </div>
+            ) : (
+            <div>
+              {compRows.map(({ compVariant, baseVariant, label }, idx) => (
+                <ComparisonBlock
+                  key={compVariant.variant_id}
+                  compVariant={compVariant}
+                  baseVariant={baseVariant}
+                  label={label}
+                  idx={idx}
+                  total={compRows.length}
+                  activeFilters={activeFilters}
+                  targetFeatureNames={targetFeatureNames}
+                  onVariantUpdate={(updatedVar) => {
+                    onCardUpdate({
+                      ...compCard,
+                      variant_blocks: compCard.variant_blocks.map(v => v.variant_id === updatedVar.variant_id ? updatedVar : v)
+                    });
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          </div>
+        </div>
+      </div>
+
+      {showPopup && (
+        <MappingPopup
+          compCard={compCard}
+          allCards={allCards}
+          mappingState={mappingState}
+          onSave={onMappingUpdate}
+          onClose={() => setShowPopup(false)}
+        />
+      )}
+    </div>
+  );
+};
+
+// ─── Main Page ─────────────────────────────────────────────────────────────────
+
+type StackTab = 'model' | 'comparison';
+
+const FeatureStackUpPage: React.FC = () => {
+  // ── Tab state — persisted across page renders ──
+  const [activeTab, setActiveTab] = useState<StackTab>('model');
+
+  // ── All data state lives here so it survives tab switches ──
+  const [selections, setSelections] = useState<StackUpSelection[]>([]);
+  const [loadedBlocks, setLoadedBlocks] = useState<Record<string, VariantBlockData>>({});
+  const [compMappings, setCompMappings] = useState<Record<string, { targetModelKey: string; map: Record<string, string> }>>({});
+  const [loadingVariantIds, setLoadingVariantIds] = useState<Set<string>>(new Set());
+
+  const cardsShells = groupSelectionsIntoCards(selections);
+  const cards: ModelStackCard[] = cardsShells.map(shell => {
+    const blocks: VariantBlockData[] = [];
+    selections.forEach(sel => {
+      const key = `${sel.source}__${sel.car_id}`;
+      if (key === shell.model_key) {
+        const vid = sel.variant_id || sel.variant_class;
+        const loaded = loadedBlocks[`${key}__${vid}`];
+        if (loaded) blocks.push(loaded);
+      }
+    });
+    return { ...shell, variant_blocks: blocks };
+  });
+
+  // ── Fetch data only for new selections ──
+  useEffect(() => {
+    const fetchNewSelections = async () => {
+      const needed = selections.filter(sel => {
+        const key = `${sel.source}__${sel.car_id}__${sel.variant_id || sel.variant_class}`;
+        return !loadedBlocks[key] && !loadingVariantIds.has(key);
+      });
+
+      if (needed.length === 0) return;
+
+      const newLoading = new Set(loadingVariantIds);
+      needed.forEach(sel => newLoading.add(`${sel.source}__${sel.car_id}__${sel.variant_id || sel.variant_class}`));
+      setLoadingVariantIds(newLoading);
+
+      const newBlocks: Record<string, VariantBlockData> = {};
+
+      await Promise.all(needed.map(async (sel) => {
+        try {
+          let raw: any[] = [];
+          const vid = sel.variant_id || sel.variant_class;
+
+          if (sel.source === 'production') {
+            const d = await fetchVariantClassDetails(sel.variant_class, 1);
+            raw = (d.features || []).map((f: any) => {
+              const vals = Object.values(f.sub_variant_values || {}).filter((v) => v !== null && v !== undefined && v !== '');
+              const value = vals.length ? Array.from(new Set(vals)).join(' / ') : 'No information found';
+              return { feature_id: f.feature_id, feature_name: f.feature_name, category: f.category, value };
+            });
+          } else {
+            const r = await getNMVariantFeatures(vid);
+            raw = (r.data || []).map((f: any) => ({
+              feature_id: f.feature_id, feature_name: f.feature_name, category: f.category,
+              value: f.feature_value || 'No information found',
+            }));
+          }
+
+          const prefsResp = await fetchFeatureStackUpPrefsBulk(sel.source, [sel.car_id]);
+          const prefs = prefsResp[sel.car_id] || [];
+
+          newBlocks[`${sel.source}__${sel.car_id}__${vid}`] = {
+            variant_ref_type: sel.source,
+            variant_id: vid,
+            variant_class: sel.variant_class,
+            car_id: sel.car_id,
+            features: applyPrefs(raw, prefs)
+          };
+        } catch (e) {
+          console.error("Failed to load", sel, e);
+        }
+      }));
+
+      setLoadedBlocks(prev => ({ ...prev, ...newBlocks }));
+      setLoadingVariantIds(prev => {
+        const next = new Set(prev);
+        needed.forEach(sel => next.delete(`${sel.source}__${sel.car_id}__${sel.variant_id || sel.variant_class}`));
+        return next;
+      });
+    };
+
+    fetchNewSelections();
+  }, [selections]);
+
+  const updateCard = (u: ModelStackCard) => {
+    const newBlocks = { ...loadedBlocks };
+    u.variant_blocks.forEach(b => {
+      newBlocks[`${u.source}__${u.car_id}__${b.variant_id}`] = b;
+    });
+    setLoadedBlocks(newBlocks);
+  };
+
+  const anyLoading = loadingVariantIds.size > 0;
+  const mappedCount = Object.keys(compMappings).filter(k => compMappings[k].targetModelKey).length;
+
+  return (
+    <div className="flex h-screen font-sans text-slate-900 bg-[#c0ccd4] overflow-hidden">
+      <StackUpSidebar onSelectionChange={setSelections} />
+
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+
+        {/* ── Header ── */}
+        <header className="flex-shrink-0 bg-white border-b border-slate-200 shadow-sm z-20">
+          <div className="flex items-center justify-between h-12">
+            <div className="flex h-full">
+              <button
+                onClick={() => setActiveTab('model')}
+                className={`flex items-center gap-2 px-6 h-full text-[12px] font-bold border-b-2 transition-all ${
+                  activeTab === 'model'
+                    ? 'border-[#1e6091] text-[#1e6091] bg-blue-50/50'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <Layers size={14} />
+                Model Stack
+                {cards.length > 0 && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                    activeTab === 'model' ? 'bg-[#1e6091] text-white' : 'bg-slate-200 text-slate-600'
+                  }`}>
+                    {cards.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab('comparison')}
+                className={`flex items-center gap-2 px-6 h-full text-[12px] font-bold border-b-2 transition-all ${
+                  activeTab === 'comparison'
+                    ? 'border-[#6878a0] text-[#6878a0] bg-indigo-50/50'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <ArrowRightLeft size={14} />
+                Comparison Stack
+                {mappedCount > 0 && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                    activeTab === 'comparison' ? 'bg-[#6878a0] text-white' : 'bg-slate-200 text-slate-600'
+                  }`}>
+                    {mappedCount}
+                  </span>
+                )}
+              </button>
+              {anyLoading && (
+                <div className="flex items-center gap-1.5 ml-4 text-[10px] text-slate-500 font-semibold">
+                  <div className="w-3 h-3 border-2 border-[#1e6091] border-t-transparent rounded-full animate-spin" />
+                  Loading...
+                </div>
+              )}
+            </div>
+            {/* Color legend */}
+            <div className="hidden lg:flex items-center gap-2 text-[8px] font-bold text-slate-500 uppercase bg-slate-50 px-3 py-1 rounded-full border border-slate-200 mr-5">
+              {Object.entries(COMP_COLORS).map(([k, v]) => (
+                <span key={k} className={`flex items-center gap-1 ${v.text}`}>
+                  <span className={`w-2 h-2 rounded-sm inline-block border ${v.circleBg}`} />{v.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Tabs Content ── */}
+        </header>
+
+        {/* ── Model Stack Tab ── */}
+        <div
+          className={`flex-1 overflow-hidden ${activeTab === 'model' ? 'flex' : 'hidden'}`}
+          style={{ background: '#b8c8d4' }}
+        >
+          <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
+            {cards.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center gap-3">
+                <Layers size={48} className="text-slate-400" />
+                <p className="text-base font-black text-slate-500">No Models Selected</p>
+                <p className="text-[11px] text-slate-400 max-w-xs">Use the sidebar on the left to select variant classes to stack up.</p>
+              </div>
+            ) : (
+              <div className="flex gap-0 min-w-max h-full">
+                {cards.map((card) => {
+                  const isLoad = Array.from(loadingVariantIds).some(id => id.startsWith(card.model_key));
+                  return (
+                    <ModelColumn
+                      key={card.model_key}
+                      card={card}
+                      onCardUpdate={updateCard}
+                      loadingVariantId={isLoad ? 'loading' : undefined}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Comparison Stack Tab ── */}
+        <div
+          className={`flex-1 overflow-hidden ${activeTab === 'comparison' ? 'flex' : 'hidden'}`}
+          style={{ background: '#c8d0e0' }}
+        >
+          <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
+            {cards.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center gap-3">
+                <ArrowRightLeft size={48} className="text-slate-400" />
+                <p className="text-base font-black text-slate-500">No Models to Compare</p>
+                <p className="text-[11px] text-slate-400 max-w-xs">First select models in the "Model Stack" tab, then switch here to map and compare them.</p>
+              </div>
+            ) : (
+              <div className="flex gap-0 min-w-max h-full">
+                {cards.map((card) => {
+                  const modelMapping = compMappings[card.model_key] || { targetModelKey: '', map: {} };
+                  return (
+                    <ComparisonCard
+                      key={card.model_key}
+                      compCard={card}
+                      allCards={cards}
+                      mappingState={modelMapping}
+                      onMappingUpdate={(tk, m) => setCompMappings((prev) => ({ ...prev, [card.model_key]: { targetModelKey: tk, map: m } }))}
+                      onCardUpdate={updateCard}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
       </main>
     </div>
   );

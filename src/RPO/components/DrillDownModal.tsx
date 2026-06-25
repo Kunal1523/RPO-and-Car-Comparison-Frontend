@@ -42,6 +42,7 @@ const DrillDownModal: React.FC<DrillDownModalProps> = ({
                         cellData={modelData}
                         isEditable={false}
                         financialYears={years}
+                        itemColors={{}}
                     />
                 </div>
             </div>

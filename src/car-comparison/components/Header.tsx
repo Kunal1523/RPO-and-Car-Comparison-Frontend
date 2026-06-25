@@ -6,11 +6,12 @@ import logo from '../Images/amlgolabslogowhite.png';
 import FeedbackButton from '../../shared/FeedbackButton';
 
 interface HeaderProps {
-  currentPage?: 'comparison' | 'pricing' | 'stackup' | 'chatbot';
-  onPageChange?: (page: 'comparison' | 'pricing' | 'stackup' | 'chatbot') => void;
+  currentPage?: 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master';
+  onPageChange?: (page: 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master') => void;
 }
 
 const NAV_TABS = [
+  { key: 'master'    as const, label: 'MASTER',               Icon: Sliders    },
   { key: 'comparison' as const, label: 'Feature Comparison',  Icon: GitCompare },
   { key: 'pricing'    as const, label: 'Pricing Comparison',  Icon: BarChart3  },
   { key: 'stackup'   as const, label: 'Feature Stack-Up',     Icon: Layers     },

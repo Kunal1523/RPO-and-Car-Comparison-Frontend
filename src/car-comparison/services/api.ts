@@ -306,13 +306,13 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
     const variants: Record<string, string[]> = {};
     const variantIds: Record<string, string> = {}; // ✅ NEW: Store variant IDs
     const carIds: Record<string, string> = {}; // ✅ NEW: Store car IDs
-    
+
     // Always include the Custom Plan brand
     brandsSet.add("CUSTOM_PLAN");
     models["CUSTOM_PLAN"] = [];
 
     // Step 2: For each car, fetch variant classes in parallel
-    const carPromises = brands.flatMap(brand => 
+    const carPromises = brands.flatMap(brand =>
       brand.cars.map(async car => {
         try {
           // ✅ Use classes API instead of variants API
@@ -320,11 +320,11 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
           if (!classesRes.ok) return null;
           const classesData = await classesRes.json();
           if (!classesData.success) return null;
-          return { 
-            brandName: brand.brand_name, 
-            carName: car.car_name, 
-            carId: car.car_id, 
-            classes: classesData.data as VariantClassData[] 
+          return {
+            brandName: brand.brand_name,
+            carName: car.car_name,
+            carId: car.car_id,
+            classes: classesData.data as VariantClassData[]
           };
         } catch (e) {
           console.error(`Error fetching variant classes for ${car.car_name}:`, e);
@@ -350,7 +350,7 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
 
       // Group by version
       const versionMap = new Map<number, { className: string, variantId: string }[]>();
-      
+
       classes.forEach(cls => {
         cls.variants.forEach(v => {
           if (!versionMap.has(v.version)) versionMap.set(v.version, []);
@@ -374,7 +374,7 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
         const bmvKey = `${brandName}__${carName}__v${versionNum}`;
         // Store class names as the selectable "variants"
         variants[bmvKey] = Array.from(new Set(classList.map(c => c.className)));
-        
+
         // Map the class name to its first variant ID for that version
         classList.forEach(c => {
           const variantKey = `${bmvKey}__${c.className}`;
@@ -392,18 +392,18 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
       if (plansRes.ok) {
         const plans = await plansRes.json();
         const planBrand = "CUSTOM_PLAN";
-        
+
         if (plans && plans.length > 0) {
           plans.forEach((plan: any) => {
             const planModelName = plan.name;
             if (!models[planBrand].includes(planModelName)) {
               models[planBrand].push(planModelName);
             }
-            
+
             // For plans, we use a special version 'plan'
             const bmKey = `${planBrand}__${planModelName}`;
             versions[bmKey] = [{ value: 'plan', label: 'Draft Plan' }];
-            
+
             // Map the plan ID
             const variantKey = `${planBrand}__${planModelName}__plan__${planModelName}`;
             variantIds[variantKey] = `plan_${plan.plan_id}`;
@@ -434,7 +434,8 @@ export const fetchModelDetails = async (): Promise<ModelDetails> => {
  * Accepts multiple selections (2-20 items, can be classes or plans)
  */
 export const fetchComparisonDetails = async (
-  selections: SelectionState[]
+  selections: SelectionState[],
+  priceFilter?: { min: number; max: number }
 ): Promise<ComparisonResponse> => {
 
   if (selections.length < 2) {
@@ -454,11 +455,16 @@ export const fetchComparisonDetails = async (
     throw new Error('Some variant classes or plans are missing. Please reselect the vehicles.');
   }
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     variant_classes: variantClasses,
     plan_ids: planIds,
     version: 1,
   };
+
+  if (priceFilter) {
+    payload.price_min_lakhs = priceFilter.min;
+    payload.price_max_lakhs = priceFilter.max;
+  }
 
   console.log('Comparison payload (Mixed):', payload);
 
@@ -479,23 +485,20 @@ export const fetchComparisonDetails = async (
 
   const classDataArray = result.data || [];
 
-  // Sort classDataArray to match the original order of selections
   const sortedClassData = selections.map(sel => {
-    // If it's a plan, match by variant_class (which contains the plan name in the backend response)
-    // or if it's a standard variant, match by variant name.
-    // Note: The mixed API typically returns plans with their plan name as the 'variant_class'.
-    return classDataArray.find((cls: any) => 
-      cls.variant_class === sel.variant || cls.variant_class === sel.plan_id
-    );
+    if (sel.plan_id) {
+      return classDataArray.find((cls: any) => cls.plan_id === sel.plan_id);
+    }
+    return classDataArray.find((cls: any) => cls.variant_class === sel.variant);
   }).filter(Boolean);
 
   const columns = ['Feature', ...sortedClassData.map((cls: any) => cls.variant_class)];
-  
+
   const featureMap: Map<string, { feature: string, category: string, [key: string]: any }> = new Map();
 
   sortedClassData.forEach((cls: any) => {
     const className = cls.variant_class;
-    
+
     (cls.features || []).forEach((feat: any) => {
       const featureKey = `${feat.category}__${feat.feature_name}`;
       if (!featureMap.has(featureKey)) {
@@ -505,7 +508,7 @@ export const fetchComparisonDetails = async (
           feature_id: feat.feature_id,
         });
       }
-      
+
       const row = featureMap.get(featureKey)!;
       row[className] = feat.sub_variant_values || { "Value": feat.value };
       if (feat.cost_delta !== undefined) {
@@ -559,7 +562,10 @@ export const fetchComparisonDetails = async (
         acc[cls.variant_class] = cls.base_variant_class;
       }
       return acc;
-    }, {})
+    }, {}),
+    // ✅ FIX: pass nm_variant_ids and variant_meta from backend response
+    nm_variant_ids: result.nm_variant_ids ?? {},
+    variant_meta: result.variant_meta ?? {},
   };
 };
 
@@ -605,7 +611,7 @@ export const createModelPlan = async (name: string, variantClass: string, versio
 };
 
 export const fetchModelPlans = async (variantClass?: string): Promise<ModelPlan[]> => {
-  const url = variantClass 
+  const url = variantClass
     ? `${BASE_API}/api/model-plans?base_variant_class=${variantClass}`
     : `${BASE_API}/api/model-plans`;
   const res = await fetch(url);
@@ -648,7 +654,7 @@ export const deletePlanFeature = async (planId: string, planFeatureId: string): 
 
 // ============== FEATURE MASTER MANAGEMENT API ==============
 
-export const fetchFeatureMasterCategoryWise = async (): Promise<Record<string, { id: string, name: string }[]>> => {
+export const fetchFeatureMasterCategoryWise = async (): Promise<Record<string, { id: string, name: string, isMerged?: boolean }[]>> => {
   const res = await fetch(`${BASE_API}/features/master/category-wise`);
   if (!res.ok) throw new Error(`Failed to fetch master features: ${res.status}`);
   return await res.json();
@@ -681,12 +687,229 @@ export const moveFeatureMaster = async (featureId: string, newCategory: string):
 };
 
 export const deleteFeatureMaster = async (featureId: string): Promise<any> => {
-  const res = await fetch(`${BASE_API}/features/master/${featureId}`, {
+  const res = await fetch(`${BASE_API}/api/feature-master/${featureId}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
-    const errorData = await res.json();
+    const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.detail || 'Failed to delete feature');
   }
   return await res.json();
-};
+};
+
+export const addFeatureMaster = async (name: string, category: string): Promise<any> => {
+  const res = await fetch(`${BASE_API}/features/master`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, category })
+  });
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || 'Failed to add feature');
+  }
+  return await res.json();
+};
+
+export const mergeFeatureMaster = async (featureIds: string[], targetName: string, targetCategory: string): Promise<any> => {
+  const res = await fetch(`${BASE_API}/features/master/merge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feature_ids: featureIds, target_name: targetName, target_category: targetCategory })
+  });
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || 'Failed to merge features');
+  }
+  return await res.json();
+};
+
+export const unmergeFeatureMaster = async (featureId: string): Promise<any> => {
+  const res = await fetch(`${BASE_API}/features/master/${featureId}/unmerge`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || 'Failed to unmerge features');
+  }
+  return await res.json();
+};
+
+// --- SECTION 3: Master Dropdown Values ---
+
+export const fetchMasterValues = async (): Promise<any> => {
+  const res = await fetch(`${BASE_API}/api/master-values`);
+  if (!res.ok) throw new Error('Failed to fetch master values');
+  return await res.json();
+};
+
+export const addMasterValue = async (category: string, value: string): Promise<any> => {
+  const res = await fetch(`${BASE_API}/api/master-values`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category, value })
+  });
+  if (!res.ok) throw new Error('Failed to add master value');
+  return await res.json();
+};
+
+export const deleteMasterValue = async (id: string): Promise<any> => {
+  const res = await fetch(`${BASE_API}/api/master-values/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete master value');
+  return await res.json();
+};
+
+// --- SECTION 4: New Model Planning ---
+
+export const fetchNewModels = async (): Promise<any> => {
+  const res = await fetch(`${BASE_API}/api/new-models`);
+  if (!res.ok) throw new Error('Failed to fetch new models');
+  return await res.json();
+};
+
+export const createNewModel = async (name: string, bodyType: string, subBodyType: string): Promise<any> => {
+  const res = await fetch(`${BASE_API}/api/new-models`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, body_type: bodyType, sub_body_type: subBodyType })
+  });
+  if (!res.ok) throw new Error('Failed to create new model');
+  return await res.json();
+};
+
+export const addNewModelVariant = async (modelId: string, variantData: any): Promise<any> => {
+  const res = await fetch(`${BASE_API}/api/new-models/${modelId}/variants`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(variantData)
+  });
+  if (!res.ok) throw new Error('Failed to add variant');
+  return await res.json();
+};
+
+export const updateNewModelVariant = async (variantId: string, variantData: any): Promise<any> => {
+  const res = await fetch(`${BASE_API}/api/new-models/variants/${variantId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(variantData)
+  });
+  if (!res.ok) throw new Error('Failed to update variant');
+  return await res.json();
+};
+
+export const deleteNewModelVariant = async (variantId: string): Promise<any> => {
+  const res = await fetch(`${BASE_API}/api/new-models/variants/${variantId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete variant');
+  return await res.json();
+};
+
+export const fetchSidebarFilters = async (): Promise<any> => {
+  const res = await fetch(`${BASE_API}/api/sidebar-filters`);
+  if (!res.ok) throw new Error('Failed to fetch sidebar filters');
+  const json = await res.json();
+  return json.data;
+};
+
+
+/**
+ * Bulk-update sort_order for features within a category.
+ * Called after drag-and-drop reorder within the same category.
+ *
+ * PATCH /features/master/reorder
+ */
+export const reorderFeatures = async (
+  updates: { id: string; sort_order: number }[]
+): Promise<void> => {
+  const res = await fetch(`${BASE_API}/features/master/reorder`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to reorder features');
+  }
+};
+
+/**
+ * Move a feature to a different category.
+ * Called after drag-and-drop across categories.
+ *
+ * PATCH /features/master/{feature_id}/move
+ */
+export const moveFeatureCategory = async (
+  featureId: string,
+  newCategory: string
+): Promise<void> => {
+  const res = await fetch(`${BASE_API}/features/master/${featureId}/move`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_category: newCategory }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to move feature');
+  }
+};
+
+
+// ============== NM VARIANT FEATURES (Copy / Inline Edit) ==============
+
+// services/api.ts — ye already hona chahiye, verify karo URL sahi hai
+export const updateNMVariantFeature = async (
+  nmVariantId: string,
+  featureId: string,
+  payload: { feature_value?: string; cost_delta?: number }
+) => {
+  const res = await fetch(
+    `${BASE_API}/api/new-models/variants/${nmVariantId}/features/${featureId}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'Failed to update feature');
+  return data;
+};
+
+// Copy features API
+export const copyFeaturesToNMVariant = async (
+  nmVariantId: string,
+  carId: string,
+  variantClass: string,
+  version: number = 1
+) => {
+  const res = await fetch(
+    `${BASE_API}/api/new-models/variants/${nmVariantId}/copy-features`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ car_id: carId, variant_class: variantClass, version }),
+    }
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'Failed to copy features');
+  return data;
+};
+
+
+export const clearNMVariantFeatures = async (nmVariantId: string) => {
+  const res = await fetch(
+    `${BASE_API}/api/new-models/variants/${nmVariantId}/features`,
+    { method: 'DELETE' }
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'Failed to clear features');
+  return data;
+};
+
+export const getNMVariantFeatures = async (nmVariantId: string) => {
+  const res = await fetch(
+    `${BASE_API}/api/new-models/variants/${nmVariantId}/features`,
+    { method: 'GET' }
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'Failed to fetch features');
+  return data; // { success: true, data: [ { feature_id, feature_value, cost_delta, sub_variant_values, copied_from_variant_class, ... } ] }
+};
