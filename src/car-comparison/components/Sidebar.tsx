@@ -605,10 +605,22 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [isOpen, setIsOpen] = useState<boolean>(true);
 
   // Filters state
-  const [priceMin, setPriceMin] = useState<number>(0);
-  const [priceMax, setPriceMax] = useState<number>(100); // Max 100 Lakhs initially
-  const [selectedBodyTypes, setSelectedBodyTypes] = useState<string[]>([]);
-  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+  const [priceMin, setPriceMin] = useState<number>(() => {
+    const saved = sessionStorage.getItem('fc_priceMin');
+    return saved ? parseFloat(saved) : 0;
+  });
+  const [priceMax, setPriceMax] = useState<number>(() => {
+    const saved = sessionStorage.getItem('fc_priceMax');
+    return saved ? parseFloat(saved) : 100;
+  }); // Max 100 Lakhs initially
+  const [selectedBodyTypes, setSelectedBodyTypes] = useState<string[]>(() => {
+    const saved = sessionStorage.getItem('fc_selectedBodyTypes');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedBrands, setSelectedBrands] = useState<string[]>(() => {
+    const saved = sessionStorage.getItem('fc_selectedBrands');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   // Modal state
   const [modalBrand, setModalBrand] = useState<string>('');
@@ -616,8 +628,24 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Model dropdown state
-  const [openDropdownBrands, setOpenDropdownBrands] = useState<string[]>([]);
-  const [selectedModels, setSelectedModels] = useState<Array<{ brand: string, model: string }>>([]);
+  const [openDropdownBrands, setOpenDropdownBrands] = useState<string[]>(() => {
+    const saved = sessionStorage.getItem('fc_openDropdownBrands');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedModels, setSelectedModels] = useState<Array<{ brand: string, model: string }>>(() => {
+    const saved = sessionStorage.getItem('fc_selectedModels');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Persist all state
+  useEffect(() => {
+    sessionStorage.setItem('fc_priceMin', priceMin.toString());
+    sessionStorage.setItem('fc_priceMax', priceMax.toString());
+    sessionStorage.setItem('fc_selectedBodyTypes', JSON.stringify(selectedBodyTypes));
+    sessionStorage.setItem('fc_selectedBrands', JSON.stringify(selectedBrands));
+    sessionStorage.setItem('fc_openDropdownBrands', JSON.stringify(openDropdownBrands));
+    sessionStorage.setItem('fc_selectedModels', JSON.stringify(selectedModels));
+  }, [priceMin, priceMax, selectedBodyTypes, selectedBrands, openDropdownBrands, selectedModels]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -635,7 +663,9 @@ const Sidebar: React.FC<SidebarProps> = ({
         // Don't auto-select any brands or models. Wait for user interaction as requested.
         // Initialize based on price filter
         const maxP = Math.ceil(Math.max(...data.map((v: SidebarVariant) => v.price)));
-        setPriceMax(maxP > 0 ? maxP : 100);
+        if (!sessionStorage.getItem('fc_priceMax')) {
+          setPriceMax(maxP > 0 ? maxP : 100);
+        }
       } catch (err) {
         console.error('Failed to fetch sidebar filters', err);
       }
@@ -696,14 +726,16 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const filteredVariants = useMemo(() => {
+    if (selectedBodyTypes.length === 0) return []; // STRICT hierarchy
     return allVariants.filter(v =>
       v.price >= priceMin &&
       v.price <= priceMax &&
-      (selectedBodyTypes.length === 0 || selectedBodyTypes.includes(v.body_type))
+      selectedBodyTypes.includes(v.body_type)
     );
   }, [allVariants, priceMin, priceMax, selectedBodyTypes]);
 
   const isModelSelectable = (brand: string, model: string) => {
+    if (!selectedBrands.includes(brand)) return false; // STRICT hierarchy
     return filteredVariants.some(v => v.brand === brand && v.model === model);
   };
 

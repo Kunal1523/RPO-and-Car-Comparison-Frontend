@@ -60,20 +60,52 @@ const StackUpSidebar: React.FC<StackUpSidebarProps> = ({ onSelectionChange }) =>
     const [dataLoaded, setDataLoaded] = useState<boolean>(false);
 
     // Filters
-    const [priceMin, setPriceMin] = useState<number>(0);
-    const [priceMax, setPriceMax] = useState<number>(100);
-    const [selectedBodyTypes, setSelectedBodyTypes] = useState<string[]>([]);
-    const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+    const [priceMin, setPriceMin] = useState<number>(() => {
+        const saved = sessionStorage.getItem('stackup_priceMin');
+        return saved ? parseFloat(saved) : 0;
+    });
+    const [priceMax, setPriceMax] = useState<number>(() => {
+        const saved = sessionStorage.getItem('stackup_priceMax');
+        return saved ? parseFloat(saved) : 100;
+    });
+    const [selectedBodyTypes, setSelectedBodyTypes] = useState<string[]>(() => {
+        const saved = sessionStorage.getItem('stackup_selectedBodyTypes');
+        return saved ? JSON.parse(saved) : [];
+    });
+    const [selectedBrands, setSelectedBrands] = useState<string[]>(() => {
+        const saved = sessionStorage.getItem('stackup_selectedBrands');
+        return saved ? JSON.parse(saved) : [];
+    });
 
     // Model dropdown state
-    const [openDropdownBrands, setOpenDropdownBrands] = useState<string[]>([]);
-    const [selectedModels, setSelectedModels] = useState<Array<{ brand: string; model: string }>>([]);
+    const [openDropdownBrands, setOpenDropdownBrands] = useState<string[]>(() => {
+        const saved = sessionStorage.getItem('stackup_openDropdownBrands');
+        return saved ? JSON.parse(saved) : [];
+    });
+    const [selectedModels, setSelectedModels] = useState<Array<{ brand: string; model: string }>>(() => {
+        const saved = sessionStorage.getItem('stackup_selectedModels');
+        return saved ? JSON.parse(saved) : [];
+    });
 
     // Variant popup + final selections
     const [modalBrand, setModalBrand] = useState<string>('');
     const [modalModel, setModalModel] = useState<string>('');
     const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-    const [selections, setSelections] = useState<StackUpSelection[]>([]);
+    const [selections, setSelections] = useState<StackUpSelection[]>(() => {
+        const saved = sessionStorage.getItem('stackup_selections');
+        return saved ? JSON.parse(saved) : [];
+    });
+
+    // Persist all state
+    useEffect(() => {
+        sessionStorage.setItem('stackup_priceMin', priceMin.toString());
+        sessionStorage.setItem('stackup_priceMax', priceMax.toString());
+        sessionStorage.setItem('stackup_selectedBodyTypes', JSON.stringify(selectedBodyTypes));
+        sessionStorage.setItem('stackup_selectedBrands', JSON.stringify(selectedBrands));
+        sessionStorage.setItem('stackup_openDropdownBrands', JSON.stringify(openDropdownBrands));
+        sessionStorage.setItem('stackup_selectedModels', JSON.stringify(selectedModels));
+        sessionStorage.setItem('stackup_selections', JSON.stringify(selections));
+    }, [priceMin, priceMax, selectedBodyTypes, selectedBrands, openDropdownBrands, selectedModels, selections]);
 
     // ====================== Single bulk fetch ======================
     useEffect(() => {
@@ -83,7 +115,9 @@ const StackUpSidebar: React.FC<StackUpSidebarProps> = ({ onSelectionChange }) =>
                 setDataLoaded(true);
                 const allPrices = data.flatMap((e) => e.sub_variants.map((sv) => sv.ex_showroom_price / LAKH));
                 const maxP = allPrices.length ? Math.ceil(Math.max(...allPrices)) : 100;
-                setPriceMax(maxP > 0 ? maxP : 100);
+                if (!sessionStorage.getItem('stackup_priceMax')) {
+                    setPriceMax(maxP > 0 ? maxP : 100);
+                }
             })
             .catch((e) => console.error('Failed to load Stack-Up catalog', e));
     }, []);
@@ -109,10 +143,11 @@ const StackUpSidebar: React.FC<StackUpSidebarProps> = ({ onSelectionChange }) =>
     );
 
     const filteredCatalog = useMemo(() => {
+        if (selectedBodyTypes.length === 0) return [];
         return catalog.filter(
             (e) =>
                 overlapsRange(e, priceMin, priceMax) &&
-                (selectedBodyTypes.length === 0 || selectedBodyTypes.includes(e.body_type))
+                selectedBodyTypes.includes(e.body_type)
         );
     }, [catalog, priceMin, priceMax, selectedBodyTypes]);
 
@@ -120,8 +155,10 @@ const StackUpSidebar: React.FC<StackUpSidebarProps> = ({ onSelectionChange }) =>
         return new Set(filteredCatalog.map((e) => e.brand));
     }, [filteredCatalog]);
 
-    const isModelSelectable = (brand: string, model: string) =>
-        filteredCatalog.some((e) => e.brand === brand && e.model === model);
+    const isModelSelectable = (brand: string, model: string) => {
+        if (!selectedBrands.includes(brand)) return false;
+        return filteredCatalog.some((e) => e.brand === brand && e.model === model);
+    };
 
     const allBrands = useMemo(() => {
         const brands = Array.from(new Set(catalog.map((e) => e.brand)));

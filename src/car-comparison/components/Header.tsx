@@ -1,29 +1,28 @@
 // src/components/Header.tsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, BarChart3, GitCompare, ArrowLeft, Layers, Bot, Sliders } from 'lucide-react';
+import { LogOut, BarChart3, GitCompare, ArrowLeft, Layers, Bot, Sliders, ClipboardList } from 'lucide-react';
 import logo from '../Images/amlgolabslogowhite.png';
 import FeedbackButton from '../../shared/FeedbackButton';
 
 interface HeaderProps {
-  currentPage?: 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master';
-  onPageChange?: (page: 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master') => void;
+  currentPage?: 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master' | 'master-log';
+  onPageChange?: (page: 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master' | 'master-log') => void;
 }
 
 const NAV_TABS = [
-  { key: 'master'    as const, label: 'MASTER',               Icon: Sliders    },
+  { key: 'master'     as const, label: 'MASTER',               Icon: Sliders    },
   { key: 'comparison' as const, label: 'Feature Comparison',  Icon: GitCompare },
   { key: 'pricing'    as const, label: 'Pricing Comparison',  Icon: BarChart3  },
-  { key: 'stackup'   as const, label: 'Feature Stack-Up',     Icon: Layers     },
-  { key: 'chatbot'   as const, label: 'Chatbot',              Icon: Bot        },
+  { key: 'stackup'    as const, label: 'Feature Stack-Up',    Icon: Layers     },
+  { key: 'chatbot'    as const, label: 'Chatbot',             Icon: Bot        },
 ];
 
 const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChange }) => {
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    sessionStorage.removeItem('isLoggedIn');
-    sessionStorage.removeItem('manualLoginUser');
+    sessionStorage.clear();
     window.location.reload();
   };
 
@@ -104,7 +103,7 @@ const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChang
                   onClick={() => onPageChange(key)}
                   className={`
                     relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold
-                    transition-all duration-200 focus:outline-none
+                    transition-all duration-200 focus:outline-none rounded-t-md
                     ${active
                       ? 'text-white'
                       : 'text-blue-200/70 hover:text-white/90'
@@ -126,8 +125,27 @@ const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChang
             })}
           </div>
 
-          {/* Right slot (for injected controls) */}
-          <div id="header-action-bar" className="flex items-center gap-3" />
+          {/* Right slot (for injected controls & Log Button) */}
+          <div className="flex items-center gap-3">
+            <div id="header-action-bar" className="flex items-center gap-3" />
+            
+            {onPageChange && (
+              <button
+                onClick={() => onPageChange('master-log')}
+                className={`
+                  flex items-center gap-2 px-3 py-1.5 text-[13px] font-bold rounded-md shadow-sm
+                  transition-all duration-200 border
+                  ${currentPage === 'master-log'
+                    ? 'bg-yellow-400 text-slate-900 border-yellow-500 scale-105'
+                    : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30 hover:bg-yellow-400/40 hover:text-yellow-100'
+                  }
+                `}
+              >
+                <ClipboardList size={14} className={currentPage === 'master-log' ? 'text-slate-900' : 'text-yellow-300'} />
+                <span>Log: Master Change</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
     </header>

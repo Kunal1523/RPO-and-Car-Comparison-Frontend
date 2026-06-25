@@ -1162,39 +1162,6 @@ const PriceComparisonPage = ({ initialSelections }: PriceComparisonPageProps) =>
   return (
     <div className="h-screen w-screen overflow-hidden bg-sky-50 flex flex-col">
       <div className="hidden" />
-      {domReady && typeof document !== 'undefined' && document.getElementById('header-action-bar') && createPortal(
-        <div className="flex items-center gap-3">
-          <div className="flex bg-slate-100 p-1 rounded-xl border">
-            <button
-              onClick={() => setGlobalViewMode('chart')}
-              className={`flex items-center gap-2 px-3 py-1 rounded-lg text-xs font-bold transition-all ${globalViewMode === 'chart' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              <TrendingUp size={14} /> Chart
-            </button>
-            <button
-              onClick={() => setGlobalViewMode('table')}
-              className={`flex items-center gap-2 px-3 py-1 rounded-lg text-xs font-bold transition-all ${globalViewMode === 'table' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              <List size={14} /> Table
-            </button>
-          </div>
-          <div className="w-px h-6 bg-slate-200 mx-1"></div>
-          <DownloadExcelButton
-            carsData={allCarsData.map(c => {
-              return { brand: '', model: c.carName, data: c.pricing };
-            })}
-            chartRef={chartContainerRef}
-          />
-          <button
-            onClick={() => alert("Coming Soon")}
-            className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-bold text-slate-500 hover:text-blue-600 transition-colors border border-dashed border-slate-300 hover:border-blue-400"
-            title="Upload New Car (Prices)"
-          >
-            <Upload size={16} /> <span className="hidden sm:inline">Upload New Car (Prices)</span>
-          </button>
-        </div>,
-        document.getElementById('header-action-bar')!
-      )}
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
@@ -1208,11 +1175,38 @@ const PriceComparisonPage = ({ initialSelections }: PriceComparisonPageProps) =>
 
         <main className="flex-1 flex flex-col overflow-hidden relative bg-slate-100 p-2 md:p-4 gap-2">
           <div className="flex-shrink-0 space-y-2">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900 leading-tight">Pricing Analysis</h2>
-              <p className="text-[10px] text-slate-500">
-                Compare prices across {localSelections.length} selected variants.
-              </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 leading-tight">Pricing Analysis</h2>
+                <p className="text-[10px] text-slate-500">
+                  Compare prices across {localSelections.length} selected variants.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-3">
+                <div className="flex bg-white p-1 rounded-lg border shadow-sm">
+                  <button
+                    onClick={() => setGlobalViewMode('chart')}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-md text-xs font-bold transition-all ${globalViewMode === 'chart' ? 'bg-slate-100 text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    <TrendingUp size={14} /> Chart
+                  </button>
+                  <button
+                    onClick={() => setGlobalViewMode('table')}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-md text-xs font-bold transition-all ${globalViewMode === 'table' ? 'bg-slate-100 text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    <List size={14} /> Table
+                  </button>
+                </div>
+                
+                <DownloadExcelButton
+                  carsData={allCarsData.map(c => ({
+                    brand: '', model: c.carName, data: c.pricing
+                  }))}
+                  chartRef={chartContainerRef}
+                />
+              </div>
             </div>
           </div>
 

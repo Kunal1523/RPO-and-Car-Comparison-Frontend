@@ -353,6 +353,14 @@ const emptyVariant = (): NewVariantDraft => ({
 // MasterPage
 // ─────────────────────────────────────────────────────────────────────────────
 const MasterPage: React.FC = () => {
+  let isAdmin = false;
+  try {
+    const userStr = sessionStorage.getItem('manualLoginUser');
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      isAdmin = user.username === 'msiluser3@gmail.com';
+    }
+  } catch (e) {}
   const [brandsCars, setBrandsCars] = useState<Record<string, string[]>>({});
   const [mappedCars, setMappedCars] = useState<MappedCar[]>([]);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
@@ -452,7 +460,7 @@ const MasterPage: React.FC = () => {
     try {
       const res = await fetch(`${API_BASE}/api/cars/body-type`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
         body: JSON.stringify({ brand_name: fromOem, car_name: model, body_type: toBodyType, sub_body_type: null }),
       });
       const data = await res.json();
@@ -469,7 +477,7 @@ const MasterPage: React.FC = () => {
     try {
       const res = await fetch(`${API_BASE}/api/cars/sub-body-type`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
         body: JSON.stringify({ brand_name: oem, car_name: model, sub_body_type: val }),
       });
       const data = await res.json();
@@ -490,8 +498,8 @@ const MasterPage: React.FC = () => {
     } catch (e: any) { showToast('error', e.message || 'Failed'); }
   };
 
-  const handleDeleteMasterValue = async (id: string) => {
-    try { await deleteMasterValue(id); showToast('success', 'Deleted'); loadMasterValues(); }
+  const handleDeleteMasterValue = async (id: string, value: string, category: string) => {
+    try { await deleteMasterValue(id, `Deleted Master Value: "${value}" from Category: "${category}"`, value); showToast('success', 'Deleted'); loadMasterValues(); }
     catch (e: any) { showToast('error', e.message || 'Failed'); }
   };
 
@@ -504,7 +512,7 @@ const MasterPage: React.FC = () => {
     try {
       const res = await fetch(`${API_BASE}/api/new-models/${model.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
         body: JSON.stringify({ body_type: model.body_type, sub_body_type: model.sub_body_type || null }),
       });
       const data = await res.json();
@@ -518,7 +526,14 @@ const MasterPage: React.FC = () => {
     setMappedCars(prev => prev.filter(c => !(c.oem === oem && c.model === model)));
     try {
       const params = new URLSearchParams({ brand_name: oem, car_name: model });
-      const res = await fetch(`${API_BASE}/api/cars/body-type?${params}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/api/cars/body-type?${params}`, { 
+        method: 'DELETE', 
+        headers: { 
+          'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : ''),
+          'X-Audit-Message': `Removed mapping for "${model}" (${oem})`,
+          'X-Audit-Entity-Name': model
+        } 
+      });
       const data = await res.json();
       if (res.ok && data.success) showToast('success', `${model} unassigned`);
       else { showToast('error', typeof data.detail === 'string' ? data.detail : 'Failed to unassign'); fetchBrandsCars(); }
@@ -529,7 +544,15 @@ const MasterPage: React.FC = () => {
   const handleDeleteModel = async (modelId: string) => {
     setDeletingModelId(modelId);
     try {
-      const res = await fetch(`${API_BASE}/api/new-models/${modelId}`, { method: 'DELETE' });
+      const mObj = newModels.find(m => m.id === modelId);
+      const res = await fetch(`${API_BASE}/api/new-models/${modelId}`, { 
+        method: 'DELETE', 
+        headers: { 
+          'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : ''),
+          'X-Audit-Message': `Deleted New Model: "${mObj?.name || 'Unknown'}"`,
+          'X-Audit-Entity-Name': mObj?.name || modelId
+        } 
+      });
       const data = await res.json();
       if (res.ok && data.success) {
         showToast('success', 'Model deleted');
@@ -660,6 +683,12 @@ const MasterPage: React.FC = () => {
   return (
     <div className="flex-1 overflow-y-auto bg-[#f5f5f5] p-5 font-sans text-slate-800">
 
+      {!isAdmin && (
+        <div className="mb-4 p-3 bg-blue-100 text-blue-800 rounded-sm border border-blue-200 font-bold flex justify-center items-center gap-2">
+          <AlertCircle size={18} /> View Only Mode: You do not have permission to modify Master data.
+        </div>
+      )}
+
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-[10000] flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg text-sm font-medium
@@ -669,7 +698,7 @@ const MasterPage: React.FC = () => {
         </div>
       )}
 
-      <div className="max-w-[1400px] mx-auto space-y-10">
+      <div className={`max-w-[1400px] mx-auto space-y-10 ${!isAdmin ? 'pointer-events-none opacity-80' : ''}`}>
 
         {/* ── SECTION 1 ─────────────────────────────────────────────────────── */}
         <div className="bg-white border border-[#ccc] rounded-sm shadow-sm">
@@ -794,8 +823,8 @@ const MasterPage: React.FC = () => {
                   {masterValues[cat]?.map(item => (
                     <div key={item.id} className="relative group bg-black text-white text-center py-1 text-[12px] font-bold rounded-sm cursor-default">
                       {item.value}
-                      <button onClick={() => handleDeleteMasterValue(item.id)}
-                        className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md" title="Delete">
+                      <button onClick={() => handleDeleteMasterValue(item.id, item.value, cat)}
+                        className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity shadow-md" title="Delete">
                         <Trash2 size={10} />
                       </button>
                     </div>

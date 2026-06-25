@@ -815,7 +815,7 @@ const FeatureMasterSection: React.FC<Props> = ({ featuresMaster, onRefresh, show
     const handleDelete = async (id: string, name: string) => {
         if (!window.confirm(`Are you sure you want to delete "${name}"? This action cannot be undone.`)) return;
         try {
-            await deleteFeatureMaster(id);
+            await deleteFeatureMaster(id, `Deleted Feature: "${name}"`, name);
             showToast('success', 'Feature deleted');
             onRefresh();
         } catch (err: any) {
@@ -839,9 +839,9 @@ const FeatureMasterSection: React.FC<Props> = ({ featuresMaster, onRefresh, show
         }
     };
 
-    const handleUnmerge = async (id: string) => {
+    const handleUnmerge = async (id: string, name: string) => {
         try {
-            await unmergeFeatureMaster(id);
+            await unmergeFeatureMaster(id, `Unmerged Feature: "${name}"`, name);
             showToast('success', 'Unmerged');
             onRefresh();
         } catch (err: any) {
@@ -917,7 +917,7 @@ const FeatureMasterSection: React.FC<Props> = ({ featuresMaster, onRefresh, show
                                             return next;
                                         });
                                     }}
-                                    className="text-slate-400 hover:text-[#104a7a] hover:bg-blue-100 rounded p-0.5 flex-shrink-0 transition-colors"
+                                    className="text-slate-600 hover:text-[#104a7a] hover:bg-blue-100 rounded p-0.5 flex-shrink-0 transition-colors"
                                     title={`Add feature to ${cat}`}
                                 >
                                     <Plus size={12} />
@@ -1047,7 +1047,7 @@ const FeatureMasterSection: React.FC<Props> = ({ featuresMaster, onRefresh, show
                                                         <span className="flex items-center gap-0.5 bg-purple-100 text-purple-700 text-[8px] px-1 py-0.5 rounded border border-purple-200 font-semibold flex-shrink-0">
                                                             Merged
                                                             <button
-                                                                onClick={e => { e.stopPropagation(); handleUnmerge(feat.id); }}
+                                                                onClick={e => { e.stopPropagation(); handleUnmerge(feat.id, feat.name); }}
                                                                 title="Unmerge"
                                                                 className="ml-0.5 text-orange-500 hover:text-orange-700"
                                                             >
@@ -1058,7 +1058,7 @@ const FeatureMasterSection: React.FC<Props> = ({ featuresMaster, onRefresh, show
 
                                                     {/* Edit / confirm */}
                                                     <div className={`flex items-center gap-0.5 flex-shrink-0 transition-opacity
-                            ${isRenaming ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                            ${isRenaming ? 'opacity-100' : 'opacity-60 hover:opacity-100'}`}>
                                                         {isRenaming ? (
                                                             <>
                                                                 <button onClick={() => handleRename(feat.id)} disabled={!renameValue.trim()} className="text-green-600 hover:text-green-800 disabled:text-gray-300 p-0.5">
@@ -1076,7 +1076,7 @@ const FeatureMasterSection: React.FC<Props> = ({ featuresMaster, onRefresh, show
                                                                         setRenamingId(feat.id);
                                                                         setRenameValue(feat.name);
                                                                     }}
-                                                                    className="text-slate-300 hover:text-blue-600 p-0.5 hover:bg-blue-50 rounded"
+                                                                    className="text-slate-500 hover:text-blue-600 p-0.5 hover:bg-blue-50 rounded"
                                                                     title="Rename"
                                                                 >
                                                                     <Edit2 size={11} />
@@ -1086,7 +1086,7 @@ const FeatureMasterSection: React.FC<Props> = ({ featuresMaster, onRefresh, show
                                                                         e.stopPropagation();
                                                                         handleDelete(feat.id, feat.name);
                                                                     }}
-                                                                    className="text-slate-300 hover:text-red-600 p-0.5 hover:bg-red-50 rounded ml-0.5"
+                                                                    className="text-slate-500 hover:text-red-600 p-0.5 hover:bg-red-50 rounded ml-0.5"
                                                                     title="Delete Feature"
                                                                 >
                                                                     <Trash2 size={11} />

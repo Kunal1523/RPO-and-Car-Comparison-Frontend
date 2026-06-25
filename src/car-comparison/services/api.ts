@@ -152,8 +152,8 @@
 //   };
 
 //   const res = await fetch(`${BASE_API}/get-comparison-details`, {
-//     method: 'POST',
-//     headers: { 'Content-Type': 'application/json' },
+//     method: 'POST', headers: { 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
+//     headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
 //     body: JSON.stringify(payload),
 //   });
 
@@ -469,8 +469,7 @@ export const fetchComparisonDetails = async (
   console.log('Comparison payload (Mixed):', payload);
 
   const res = await fetch(`${BASE_API}/api/compare/mixed`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify(payload),
   });
 
@@ -601,8 +600,7 @@ export const fetchVariantClassDetails = async (variantClass: string, version: nu
 
 export const createModelPlan = async (name: string, variantClass: string, version: number = 1): Promise<ModelPlan> => {
   const res = await fetch(`${BASE_API}/api/model-plans`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify({ name, base_variant_class: variantClass, version }),
   });
   if (!res.ok) throw new Error(`Failed to create plan: ${res.status}`);
@@ -627,8 +625,7 @@ export const fetchModelPlanById = async (planId: string): Promise<ModelPlan> => 
 
 export const addPlanFeature = async (planId: string, feature: { feature_name: string, category: string, value: string, cost_delta: number, price_delta: number, after_feature?: string }) => {
   const res = await fetch(`${BASE_API}/api/model-plans/${planId}/features`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify(feature)
   });
   if (!res.ok) throw new Error('Failed to add plan feature');
@@ -638,7 +635,7 @@ export const addPlanFeature = async (planId: string, feature: { feature_name: st
 export const updatePlanFeature = async (planId: string, planFeatureId: string, updates: { value?: string, cost_delta?: number, price_delta?: number, is_deleted?: boolean }) => {
   const res = await fetch(`${BASE_API}/api/model-plans/${planId}/features/${planFeatureId}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify(updates)
   });
   if (!res.ok) throw new Error('Failed to update plan feature');
@@ -647,7 +644,7 @@ export const updatePlanFeature = async (planId: string, planFeatureId: string, u
 
 export const deletePlanFeature = async (planId: string, planFeatureId: string): Promise<any> => {
   const res = await fetch(`${BASE_API}/api/model-plans/${planId}/features/${planFeatureId}`, {
-    method: 'DELETE',
+    method: 'DELETE', headers: { 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
   });
   return await res.json();
 };
@@ -663,7 +660,7 @@ export const fetchFeatureMasterCategoryWise = async (): Promise<Record<string, {
 export const renameFeatureMaster = async (featureId: string, newName: string): Promise<any> => {
   const res = await fetch(`${BASE_API}/features/master/${featureId}/rename`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify({ new_name: newName })
   });
   if (!res.ok) {
@@ -676,7 +673,7 @@ export const renameFeatureMaster = async (featureId: string, newName: string): P
 export const moveFeatureMaster = async (featureId: string, newCategory: string): Promise<any> => {
   const res = await fetch(`${BASE_API}/features/master/${featureId}/move`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify({ new_category: newCategory })
   });
   if (!res.ok) {
@@ -686,9 +683,15 @@ export const moveFeatureMaster = async (featureId: string, newCategory: string):
   return await res.json();
 };
 
-export const deleteFeatureMaster = async (featureId: string): Promise<any> => {
-  const res = await fetch(`${BASE_API}/api/feature-master/${featureId}`, {
-    method: 'DELETE',
+export const deleteFeatureMaster = async (featureId: string, auditMsg?: string, auditEntityName?: string): Promise<any> => {
+  const headers: Record<string, string> = {
+    'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '')
+  };
+  if (auditMsg) headers['X-Audit-Message'] = auditMsg;
+  if (auditEntityName) headers['X-Audit-Entity-Name'] = auditEntityName;
+
+  const res = await fetch(`${BASE_API}/features/master/${featureId}`, {
+    method: 'DELETE', headers,
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
@@ -699,8 +702,7 @@ export const deleteFeatureMaster = async (featureId: string): Promise<any> => {
 
 export const addFeatureMaster = async (name: string, category: string): Promise<any> => {
   const res = await fetch(`${BASE_API}/features/master`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify({ name, category })
   });
   if (!res.ok) {
@@ -712,8 +714,7 @@ export const addFeatureMaster = async (name: string, category: string): Promise<
 
 export const mergeFeatureMaster = async (featureIds: string[], targetName: string, targetCategory: string): Promise<any> => {
   const res = await fetch(`${BASE_API}/features/master/merge`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify({ feature_ids: featureIds, target_name: targetName, target_category: targetCategory })
   });
   if (!res.ok) {
@@ -723,9 +724,15 @@ export const mergeFeatureMaster = async (featureIds: string[], targetName: strin
   return await res.json();
 };
 
-export const unmergeFeatureMaster = async (featureId: string): Promise<any> => {
+export const unmergeFeatureMaster = async (featureId: string, auditMsg?: string, auditEntityName?: string): Promise<any> => {
+  const headers: any = {
+    'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '')
+  };
+  if (auditMsg) headers['X-Audit-Message'] = auditMsg;
+  if (auditEntityName) headers['X-Audit-Entity-Name'] = auditEntityName;
+
   const res = await fetch(`${BASE_API}/features/master/${featureId}/unmerge`, {
-    method: 'POST',
+    method: 'POST', headers
   });
   if (!res.ok) {
     const errorData = await res.json();
@@ -744,16 +751,24 @@ export const fetchMasterValues = async (): Promise<any> => {
 
 export const addMasterValue = async (category: string, value: string): Promise<any> => {
   const res = await fetch(`${BASE_API}/api/master-values`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify({ category, value })
   });
   if (!res.ok) throw new Error('Failed to add master value');
   return await res.json();
 };
 
-export const deleteMasterValue = async (id: string): Promise<any> => {
-  const res = await fetch(`${BASE_API}/api/master-values/${id}`, { method: 'DELETE' });
+export const deleteMasterValue = async (id: string, auditMsg?: string, auditEntityName?: string): Promise<any> => {
+  const headers: Record<string, string> = {
+    'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '')
+  };
+  if (auditMsg) headers['X-Audit-Message'] = auditMsg;
+  if (auditEntityName) headers['X-Audit-Entity-Name'] = auditEntityName;
+
+  const res = await fetch(`${BASE_API}/api/master-values/${id}`, { 
+    method: 'DELETE', 
+    headers
+  });
   if (!res.ok) throw new Error('Failed to delete master value');
   return await res.json();
 };
@@ -768,8 +783,7 @@ export const fetchNewModels = async (): Promise<any> => {
 
 export const createNewModel = async (name: string, bodyType: string, subBodyType: string): Promise<any> => {
   const res = await fetch(`${BASE_API}/api/new-models`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify({ name, body_type: bodyType, sub_body_type: subBodyType })
   });
   if (!res.ok) throw new Error('Failed to create new model');
@@ -778,8 +792,7 @@ export const createNewModel = async (name: string, bodyType: string, subBodyType
 
 export const addNewModelVariant = async (modelId: string, variantData: any): Promise<any> => {
   const res = await fetch(`${BASE_API}/api/new-models/${modelId}/variants`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify(variantData)
   });
   if (!res.ok) throw new Error('Failed to add variant');
@@ -789,7 +802,7 @@ export const addNewModelVariant = async (modelId: string, variantData: any): Pro
 export const updateNewModelVariant = async (variantId: string, variantData: any): Promise<any> => {
   const res = await fetch(`${BASE_API}/api/new-models/variants/${variantId}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify(variantData)
   });
   if (!res.ok) throw new Error('Failed to update variant');
@@ -797,7 +810,10 @@ export const updateNewModelVariant = async (variantId: string, variantData: any)
 };
 
 export const deleteNewModelVariant = async (variantId: string): Promise<any> => {
-  const res = await fetch(`${BASE_API}/api/new-models/variants/${variantId}`, { method: 'DELETE' });
+  const res = await fetch(`${BASE_API}/api/new-models/variants/${variantId}`, { 
+    method: 'DELETE',
+    headers: { 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') }
+  });
   if (!res.ok) throw new Error('Failed to delete variant');
   return await res.json();
 };
@@ -821,7 +837,7 @@ export const reorderFeatures = async (
 ): Promise<void> => {
   const res = await fetch(`${BASE_API}/features/master/reorder`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify(updates),
   });
   if (!res.ok) {
@@ -842,7 +858,7 @@ export const moveFeatureCategory = async (
 ): Promise<void> => {
   const res = await fetch(`${BASE_API}/features/master/${featureId}/move`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
     body: JSON.stringify({ new_category: newCategory }),
   });
   if (!res.ok) {
@@ -864,7 +880,7 @@ export const updateNMVariantFeature = async (
     `${BASE_API}/api/new-models/variants/${nmVariantId}/features/${featureId}`,
     {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
       body: JSON.stringify(payload),
     }
   );
@@ -883,8 +899,7 @@ export const copyFeaturesToNMVariant = async (
   const res = await fetch(
     `${BASE_API}/api/new-models/variants/${nmVariantId}/copy-features`,
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') },
       body: JSON.stringify({ car_id: carId, variant_class: variantClass, version }),
     }
   );
@@ -897,7 +912,10 @@ export const copyFeaturesToNMVariant = async (
 export const clearNMVariantFeatures = async (nmVariantId: string) => {
   const res = await fetch(
     `${BASE_API}/api/new-models/variants/${nmVariantId}/features`,
-    { method: 'DELETE' }
+    { 
+      method: 'DELETE',
+      headers: { 'X-User-Email': (sessionStorage.getItem('manualLoginUser') ? JSON.parse(sessionStorage.getItem('manualLoginUser') as string).username : '') }
+    }
   );
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail || 'Failed to clear features');

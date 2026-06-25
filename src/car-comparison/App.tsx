@@ -10,6 +10,7 @@ import PricingComparisonPage from './components/PricingComparisonPage';
 import FeatureStackUpPage from './components/FeatureStackUpPage';
 import ChatbotDashboardPage from './components/ChatbotDashboardPage';
 import MasterPage from './components/MasterPage';
+import MasterAuditLog from './components/MasterAuditLog';
 import { ComparisonResponse, SelectionState, NewsResponse } from './types';
 import {
   fetchComparisonDetails,
@@ -21,12 +22,18 @@ import {
   deletePlanFeature
 } from './services/api';
 
-type PageView = 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master';
+type PageView = 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master' | 'master-log';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentPage, setCurrentPage] = useState<PageView>('master');
+  const [currentPage, setCurrentPage] = useState<PageView>(() => {
+    return (sessionStorage.getItem('app_currentPage') as PageView) || 'master';
+  });
   const [isNewsSidebarOpen, setIsNewsSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    sessionStorage.setItem('app_currentPage', currentPage);
+  }, [currentPage]);
 
   useEffect(() => {
     const loggedIn = sessionStorage.getItem('isLoggedIn');
@@ -43,7 +50,14 @@ const App: React.FC = () => {
   const [news2, setNews2] = useState<NewsResponse | null>(null);
   const [isLoadingNews, setIsLoadingNews] = useState(false);
 
-  const [currentSelections, setCurrentSelections] = useState<SelectionState[]>([]);
+  const [currentSelections, setCurrentSelections] = useState<SelectionState[]>(() => {
+    const saved = sessionStorage.getItem('app_currentSelections');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem('app_currentSelections', JSON.stringify(currentSelections));
+  }, [currentSelections]);
 
   // Track the variant IDs currently shown in comparisonData
   const lastFetchedVariantIds = React.useRef<string[]>([]);
@@ -164,6 +178,13 @@ const App: React.FC = () => {
       console.error('Failed to refresh comparison:', error);
     }
   };
+
+  // ✅ NEW: Auto-load comparison data if there are saved selections on mount
+  useEffect(() => {
+    if (currentSelections.length >= 2 && !comparisonData && !isLoading) {
+      handleCompare(currentSelections);
+    }
+  }, []);
 
   // ✅ NEW: Plan Management Handlers
   const handlePlanNewModel = async (variantName: string) => {
@@ -337,6 +358,15 @@ const App: React.FC = () => {
       <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
         <Header currentPage={currentPage} onPageChange={handlePageChange} />
         <MasterPage />
+      </div>
+    );
+  }
+
+  if (currentPage === 'master-log') {
+    return (
+      <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
+        <Header currentPage={currentPage} onPageChange={handlePageChange} />
+        <MasterAuditLog />
       </div>
     );
   }

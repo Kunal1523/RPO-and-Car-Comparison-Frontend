@@ -1334,9 +1334,7 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     try {
       // Clear shared frontend auth used by global shell
-      sessionStorage.removeItem('manualLoginUser');
-      sessionStorage.removeItem('isLoggedIn');
-
+      sessionStorage.clear();
       // Clear Microsoft login (backend cookie) if present
       await fetch(`${BACKEND_BASE_URL}/auth/logout`, {
         method: 'POST',
