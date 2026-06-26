@@ -2057,7 +2057,8 @@ import { ComparisonResponse, FeatureGroup, GroupedFeature } from '../types';
 import NMFeatureCell from './NMFeatureCell';
 import { copyFeaturesToNMVariant, updateNMVariantFeature, clearNMVariantFeatures, getNMVariantFeatures } from '../services/api';
 
-const EXCLUDED_FEATURE_IDS = new Set([
+// These are base car specs (Engine, Fuel, Drive, Transmission) whose truth comes from the master page metadata, not from copied features.
+const READONLY_NM_FEATURE_IDS = new Set([
   'e03ef22e-9dd9-497f-a63e-a66498865dec',
   '9e7edfff-c83f-4fec-96e9-8dc3a430caa9',
   '769ad0f5-a7fb-4965-8260-fa1408e11fd7',
@@ -2288,14 +2289,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data, selections }) =
         meta.version ?? 1
       );
 
-      // Step 2: Blank out excluded features (engine/fuel/drive/transmission)
-      await Promise.all(
-        Array.from(EXCLUDED_FEATURE_IDS).map(fid =>
-          updateNMVariantFeature(nmCol.nm_variant_id, fid, { feature_value: '' }).catch(() => null)
-        )
-      );
-
-      // Step 3: Fetch fresh features from backend and seed localNM immediately
+      // Step 2: Fetch fresh features from backend and seed localNM immediately
       // Yahi woh step hai jo UI ko instantly update karta hai — no page reload needed
       const freshResult = await getNMVariantFeatures(nmCol.nm_variant_id);
       const freshFeatures: any[] = freshResult?.data ?? [];
@@ -2934,22 +2928,12 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data, selections }) =
                               const isPriceCell = isPriceRow && value && typeof value === 'object' && (value as any).is_price_class;
 
                               // ── NM editable cell ──────────────────────────
-                              if (isNMColumn(v) && !isPriceRow && !isBrand && !isCar && !isVar && !isDate) {
+                              const isReadOnlyFeature = READONLY_NM_FEATURE_IDS.has(item.feature_id ?? '');
+                              if (isNMColumn(v) && !isPriceRow && !isBrand && !isCar && !isVar && !isDate && !isReadOnlyFeature) {
                                 const nmCol = getNMData(v);
                                 const nmId = nmCol?.nm_variant_id ?? '';
                                 const localKey = `${nmId}::${item.feature_id}`;
                                 const featureData = localNM[localKey] ?? nmCol?.feature_values?.[item.feature_id];
-
-                                // ── Excluded features (engine/fuel/drive/transmission) — show empty cell ──
-                                if (EXCLUDED_FEATURE_IDS.has(item.feature_id ?? '')) {
-                                  return (
-                                    <div key={vIdx}
-                                      className="relative border-l border-slate-300 bg-indigo-50/30 px-1"
-                                      style={{ minWidth: 0 }}>
-                                      <div className="py-2 px-1.5 text-[9px] text-slate-300 italic">—</div>
-                                    </div>
-                                  );
-                                }
 
                                 return (
                                   <div key={vIdx}

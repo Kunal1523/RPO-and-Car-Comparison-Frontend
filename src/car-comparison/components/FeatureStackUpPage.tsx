@@ -140,8 +140,11 @@ interface ModelPriorityPopupProps {
   onSave: (newOrder: string[], hiddenStates: Record<string, boolean>) => void;
 }
 
+import { Search } from 'lucide-react';
+
 const ModelPriorityPopup: React.FC<ModelPriorityPopupProps> = ({ card, onClose, onSave }) => {
   const [features, setFeatures] = useState<{name: string, is_hidden: boolean}[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [saving, setSaving] = useState(false);
   const dragIdx = useRef<number | null>(null);
 
@@ -184,26 +187,13 @@ const ModelPriorityPopup: React.FC<ModelPriorityPopupProps> = ({ card, onClose, 
     setSaving(true);
     try {
       const order = features.map(f => f.name);
-      const originalHidden = new Map<string, boolean>();
-      card.variant_blocks.forEach(v => {
-        v.features.forEach(f => originalHidden.set(f.feature_name, f.is_hidden));
-      });
       
       const hiddenStates: Record<string, boolean> = {};
       for (const f of features) {
         hiddenStates[f.name] = f.is_hidden;
-        if (originalHidden.get(f.name) !== f.is_hidden) {
-          await upsertFeatureStackUpPref({
-            variant_ref_type: card.source,
-            variant_id: card.car_id,
-            feature_id: null,
-            feature_name: f.name,
-            is_hidden: f.is_hidden
-          });
-        }
       }
 
-      await reorderFeatureStackUpPrefsBulk(card.source, card.car_id, order);
+      await reorderFeatureStackUpPrefsBulk(card.source, card.car_id, order, hiddenStates);
 
       onSave(order, hiddenStates);
     } catch (e) {
@@ -226,32 +216,53 @@ const ModelPriorityPopup: React.FC<ModelPriorityPopupProps> = ({ card, onClose, 
             <X size={16} />
           </button>
         </div>
-        <div className="p-3 bg-slate-100 border-b text-[11px] text-slate-600 leading-tight">
-          Drag to reorder features. Click the eye icon to hide/show.<br/>
-          <strong>Changes will apply to ALL variants in this model.</strong>
+        <div className="p-3 bg-slate-100 border-b flex flex-col gap-2">
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search features..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-300 text-[11px] focus:outline-none focus:border-[#1e6091] focus:ring-1 focus:ring-[#1e6091]"
+            />
+          </div>
+          <div className="flex items-center justify-between mt-1">
+            <span className="text-[10px] text-slate-500 font-semibold">Drag to reorder features</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setFeatures(features.map(f => ({...f, is_hidden: false})))} className="text-[10px] text-[#1e6091] font-bold hover:underline">Select All</button>
+              <span className="text-slate-300">|</span>
+              <button onClick={() => setFeatures(features.map(f => ({...f, is_hidden: true})))} className="text-[10px] text-slate-500 font-bold hover:underline">Clear All</button>
+            </div>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
-          {features.map((f, i) => (
+          {features.map((f, i) => ({f, i})).filter(x => x.f.name.toLowerCase().includes(searchTerm.toLowerCase())).map(({f, i}) => (
             <div
               key={f.name}
-              draggable
+              draggable={searchTerm === ''} // Only allow drag when not searching to prevent wrong index dropping
               onDragStart={(e) => { e.stopPropagation(); dragIdx.current = i; }}
               onDragOver={(e) => { e.stopPropagation(); e.preventDefault(); }}
               onDrop={(e) => { e.stopPropagation(); dropFeat(i); }}
-              className={`group flex items-center gap-2 px-3 py-2 mb-1 border rounded cursor-move text-[11px] font-semibold bg-white shadow-sm ${
-                f.is_hidden ? 'border-pink-200 text-pink-700' : 'border-slate-200 text-slate-700'
-              }`}
+              className={`group flex items-center gap-2 px-3 py-2 mb-1 border rounded text-[11px] font-semibold bg-white shadow-sm transition-colors ${
+                searchTerm === '' ? 'cursor-move' : ''
+              } ${f.is_hidden ? 'border-slate-200 text-slate-400 bg-slate-50' : 'border-sky-200 text-slate-700'}`}
             >
-              <GripVertical size={12} className="text-slate-300 shrink-0" />
-              <span className="flex-1 truncate">{f.name}</span>
-              <button
-                onClick={(e) => { e.stopPropagation(); toggleHide(f.name); }}
-                className={`shrink-0 p-1 rounded transition-colors ${f.is_hidden ? 'text-pink-600 hover:bg-pink-50' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}
-              >
-                {f.is_hidden ? <Eye size={12} /> : <EyeOff size={12} />}
-              </button>
+              <GripVertical size={12} className={`shrink-0 ${f.is_hidden ? 'text-slate-200' : 'text-slate-300'}`} />
+              <input
+                type="checkbox"
+                checked={!f.is_hidden}
+                onChange={() => toggleHide(f.name)}
+                className="w-3.5 h-3.5 rounded border-slate-300 text-[#1e6091] focus:ring-[#1e6091] cursor-pointer"
+              />
+              <span className={`flex-1 truncate ${f.is_hidden ? 'line-through decoration-slate-300' : ''}`}>
+                {f.name}
+              </span>
             </div>
           ))}
+          {features.filter(f => f.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
+            <div className="text-center text-slate-400 text-[11px] py-4">No features found</div>
+          )}
         </div>
         <div className="p-3 border-t bg-slate-50 flex justify-end gap-2 shrink-0">
           <button onClick={onClose} disabled={saving} className="px-4 py-1.5 rounded-lg text-[11px] font-bold text-slate-600 hover:bg-slate-200 transition-colors">
@@ -259,7 +270,7 @@ const ModelPriorityPopup: React.FC<ModelPriorityPopupProps> = ({ card, onClose, 
           </button>
           <button onClick={handleSave} disabled={saving} className="px-5 py-1.5 rounded-lg text-[11px] font-bold text-white bg-[#1e6091] hover:bg-[#164a73] transition-colors flex items-center gap-2 shadow-sm">
             {saving ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}
-            Save Priority
+            Save
           </button>
         </div>
       </div>
@@ -518,12 +529,12 @@ interface CompBlockProps {
   total: number;
   activeFilters: Record<CompColor, boolean>;
   targetFeatureNames: Set<string>;
+  showHidden: boolean;
   onVariantUpdate: (v: VariantBlockData) => void;
 }
 
-const ComparisonBlock: React.FC<CompBlockProps> = ({ compVariant, baseVariant, label, idx, total, activeFilters, targetFeatureNames, onVariantUpdate }) => {
+const ComparisonBlock: React.FC<CompBlockProps> = ({ compVariant, baseVariant, label, idx, total, activeFilters, targetFeatureNames, showHidden, onVariantUpdate }) => {
   const staggerL = (total - idx - 1) * 16;
-  const featDragIdx = useRef<number | null>(null);
 
   const baseFeatMap = new Map<string, string>();
   baseVariant.features.forEach((f) => baseFeatMap.set(f.feature_name.trim().toLowerCase(), f.value));
@@ -536,27 +547,13 @@ const ComparisonBlock: React.FC<CompBlockProps> = ({ compVariant, baseVariant, l
     return { f, color, baseVal: bv2 };
   });
 
-  const shown = mappedFeatures.filter(r => activeFilters[r.color] && !r.f.is_hidden);
+  const shown = mappedFeatures.filter(r => activeFilters[r.color] && (showHidden ? r.f.is_hidden : !r.f.is_hidden));
   const diffCount = mappedFeatures.filter(r => r.color !== 'same').length;
 
   const toggleHide = async (row: StackUpFeatureRow) => {
     const next = !row.is_hidden;
     onVariantUpdate({ ...compVariant, features: compVariant.features.map((f) => f.feature_name === row.feature_name ? { ...f, is_hidden: next } : f) });
     try { await upsertFeatureStackUpPref({ variant_ref_type: compVariant.variant_ref_type, variant_id: compVariant.variant_id, feature_id: row.feature_id, feature_name: row.feature_name, is_hidden: next }); } catch { }
-  };
-
-  const dropFeat = (dropIdx: number) => {
-    const di = featDragIdx.current;
-    featDragIdx.current = null;
-    if (di === null || di === dropIdx) return;
-    const reord = [...shown];
-    const [m] = reord.splice(di, 1);
-    reord.splice(dropIdx, 0, m);
-    const reordNames = new Set(reord.map(r => r.f.feature_name));
-    const rest = compVariant.features.filter((f) => !reordNames.has(f.feature_name));
-    const full = [...reord.map(r => r.f), ...rest].map((f, i) => ({ ...f, display_order: i }));
-    onVariantUpdate({ ...compVariant, features: full });
-    reorderFeatureStackUpPrefsBulk(compVariant.variant_ref_type, compVariant.variant_id, full.map((f) => f.feature_name)).catch(() => { });
   };
 
   return (
@@ -573,16 +570,11 @@ const ComparisonBlock: React.FC<CompBlockProps> = ({ compVariant, baseVariant, l
           {shown.map(({ f, color, baseVal }, fi) => (
             <div
               key={f.feature_name + '-' + fi}
-              draggable
-              onDragStart={(e) => { e.stopPropagation(); featDragIdx.current = fi; }}
-              onDragOver={(e) => { e.stopPropagation(); e.preventDefault(); }}
-              onDrop={(e) => { e.stopPropagation(); dropFeat(fi); }}
-              className={`group flex items-center px-1.5 py-0.5 border-b last:border-0 text-[9px] border cursor-move ${COMP_COLORS[color].bg}`}
+              className={`group flex items-center px-1.5 py-0.5 border-b last:border-0 text-[9px] border ${COMP_COLORS[color].bg}`}
             >
-              <GripVertical size={7} className="text-slate-300 shrink-0" />
-              <span className={`flex-1 truncate font-medium ${COMP_COLORS[color].text}`}>{f.feature_name}</span>
+              <span className={`flex-1 break-words leading-[1.2] font-medium ${COMP_COLORS[color].text}`}>{f.feature_name}</span>
               {color === 'change' && (
-                <span className={`shrink-0 ml-1 max-w-[100px] truncate text-[8px] ${COMP_COLORS[color].text}`}>
+                <span className={`shrink-0 ml-1 max-w-[120px] break-words leading-[1.2] text-[8px] ${COMP_COLORS[color].text}`}>
                   {baseVal || 'No info'} ➔ {f.value || 'No info'}
                 </span>
               )}
@@ -590,7 +582,7 @@ const ComparisonBlock: React.FC<CompBlockProps> = ({ compVariant, baseVariant, l
                 onClick={(e) => { e.stopPropagation(); toggleHide(f); }}
                 className={`shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100 ${COMP_COLORS[color].text}`}
               >
-                <EyeOff size={9} />
+                {f.is_hidden ? <EyeOff size={9} /> : <Eye size={9} />}
               </button>
             </div>
           ))}
@@ -612,6 +604,8 @@ interface CompCardProps {
 
 const ComparisonCard: React.FC<CompCardProps> = ({ compCard, allCards, mappingState, onMappingUpdate, onCardUpdate }) => {
   const [showPopup, setShowPopup] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
+  const [showPriorityPopup, setShowPriorityPopup] = useState(false);
   const [activeFilters, setActiveFilters] = useState<Record<CompColor, boolean>>({
     same: true, change: true, addition: true, deletion: true, absent: true, notExist: false
   });
@@ -704,6 +698,7 @@ const ComparisonCard: React.FC<CompCardProps> = ({ compCard, allCards, mappingSt
                   total={compRows.length}
                   activeFilters={activeFilters}
                   targetFeatureNames={targetFeatureNames}
+                  showHidden={showHidden}
                   onVariantUpdate={(updatedVar) => {
                     onCardUpdate({
                       ...compCard,
@@ -716,6 +711,34 @@ const ComparisonCard: React.FC<CompCardProps> = ({ compCard, allCards, mappingSt
           )}
           </div>
         </div>
+
+        <div className="flex items-center justify-center gap-4 px-3 py-2 bg-slate-200 border-t border-slate-300 shrink-0">
+          <button
+            onClick={() => setShowPriorityPopup(true)}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-all bg-white shadow-sm text-slate-700 hover:text-[#1e6091] border border-slate-300"
+          >
+            <GripVertical size={12} />
+            Priority
+          </button>
+          <button
+            onClick={() => setShowHidden(false)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-all ${
+              !showHidden ? 'text-[#1e6091] bg-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <span className={`w-2.5 h-2.5 rounded-full ${!showHidden ? 'bg-[#1e6091]' : 'bg-slate-300'}`} />
+            All
+          </button>
+          <button
+            onClick={() => setShowHidden(true)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-all ${
+              showHidden ? 'text-pink-600 bg-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <span className={`w-2.5 h-2.5 rounded-full ${showHidden ? 'bg-pink-500' : 'bg-slate-300'}`} />
+            Hidden
+          </button>
+        </div>
       </div>
 
       {showPopup && (
@@ -725,6 +748,30 @@ const ComparisonCard: React.FC<CompCardProps> = ({ compCard, allCards, mappingSt
           mappingState={mappingState}
           onSave={onMappingUpdate}
           onClose={() => setShowPopup(false)}
+        />
+      )}
+
+      {showPriorityPopup && (
+        <ModelPriorityPopup
+          card={compCard}
+          onClose={() => setShowPriorityPopup(false)}
+          onSave={(newOrder, hiddenStates) => {
+            const newBlocks = compCard.variant_blocks.map(v => {
+              const rank = new Map<string, number>();
+              newOrder.forEach((n, i) => rank.set(n, i));
+              const newFeatures = [...v.features].map(f => ({
+                ...f,
+                is_hidden: hiddenStates[f.feature_name] !== undefined ? hiddenStates[f.feature_name] : f.is_hidden
+              })).sort((a, b) => {
+                const rA = rank.has(a.feature_name) ? rank.get(a.feature_name)! : 999;
+                const rB = rank.has(b.feature_name) ? rank.get(b.feature_name)! : 999;
+                return rA - rB;
+              }).map((f, i) => ({ ...f, display_order: i }));
+              return { ...v, features: newFeatures };
+            });
+            onCardUpdate({ ...compCard, variant_blocks: newBlocks });
+            setShowPriorityPopup(false);
+          }}
         />
       )}
     </div>

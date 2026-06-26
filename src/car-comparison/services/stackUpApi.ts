@@ -165,7 +165,8 @@ export const upsertFeatureStackUpPref = async (
 export const reorderFeatureStackUpPrefsBulk = async (
     variantRefType: 'production' | 'new_model',
     variantId: string,
-    orderedFeatureNames: string[]
+    orderedFeatureNames: string[],
+    hiddenStates?: Record<string, boolean>
 ): Promise<void> => {
     const res = await fetch(`${BASE_API}/api/stackup/prefs/reorder`, {
         method: 'PATCH',
@@ -174,6 +175,7 @@ export const reorderFeatureStackUpPrefsBulk = async (
             variant_ref_type: variantRefType,
             variant_id: variantId,
             ordered_feature_names: orderedFeatureNames,
+            hidden_states: hiddenStates,
         }),
     });
     if (!res.ok) {
