@@ -11,6 +11,7 @@ import FeatureStackUpPage from './components/FeatureStackUpPage';
 import ChatbotDashboardPage from './components/ChatbotDashboardPage';
 import MasterPage from './components/MasterPage';
 import MasterAuditLog from './components/MasterAuditLog';
+import FeatureApplicabilityPage from './components/FeatureApplicabilityPage';
 import { ComparisonResponse, SelectionState, NewsResponse } from './types';
 import {
   fetchComparisonDetails,
@@ -22,7 +23,7 @@ import {
   deletePlanFeature
 } from './services/api';
 
-type PageView = 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master' | 'master-log';
+type PageView = 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master' | 'master-log' | 'applicability';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -367,6 +368,15 @@ const App: React.FC = () => {
       <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
         <Header currentPage={currentPage} onPageChange={handlePageChange} />
         <MasterAuditLog />
+      </div>
+    );
+  }
+
+  if (currentPage === 'applicability') {
+    return (
+      <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
+        <Header currentPage={currentPage} onPageChange={handlePageChange} />
+        <FeatureApplicabilityPage />
       </div>
     );
   }

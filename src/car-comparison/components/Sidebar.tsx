@@ -751,6 +751,39 @@ const Sidebar: React.FC<SidebarProps> = ({
     return Array.from(new Set(filteredVariants.map(v => v.brand)));
   }, [filteredVariants]);
 
+  // Auto-remove selections that fall outside the active filters (Price/BodyType/Hierarchy)
+  useEffect(() => {
+    if (!dataLoaded) return;
+
+    setSelections((prev) => {
+      const valid = prev.filter(sel => {
+        if (sel.brand === 'NM') {
+          return filteredVariants.some(v => v.brand === 'NM' && v.variant_id === sel.plan_id);
+        }
+        return filteredVariants.some(v => 
+          v.brand === sel.brand && 
+          v.model === sel.model && 
+          v.variant === sel.variant && 
+          v.version === sel.version
+        );
+      });
+      return valid.length !== prev.length ? valid : prev;
+    });
+
+    setSelectedModels((prev) => {
+      const valid = prev.filter(m => 
+        filteredVariants.some(v => v.brand === m.brand && v.model === m.model)
+      );
+      return valid.length !== prev.length ? valid : prev;
+    });
+
+    setSelectedBrands((prev) => {
+      const valid = prev.filter(b => availableBrandsInFilter.includes(b));
+      return valid.length !== prev.length ? valid : prev;
+    });
+
+  }, [filteredVariants, availableBrandsInFilter, dataLoaded, setSelections]);
+
   const activeVariants = useMemo(() => {
     if (!dataLoaded || !modalBrand || !modalModel) return [];
 

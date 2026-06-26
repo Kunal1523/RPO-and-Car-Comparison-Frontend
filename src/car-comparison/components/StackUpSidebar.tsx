@@ -160,6 +160,31 @@ const StackUpSidebar: React.FC<StackUpSidebarProps> = ({ onSelectionChange }) =>
         return filteredCatalog.some((e) => e.brand === brand && e.model === model);
     };
 
+    // Auto-remove selections that fall outside the active filters (Price/BodyType/Hierarchy)
+    useEffect(() => {
+        if (!dataLoaded) return;
+
+        setSelections((prev) => {
+            const valid = prev.filter(sel => 
+                filteredCatalog.some(e => e.brand === sel.brand && e.model === sel.model && e.variant_class === sel.variant_class)
+            );
+            return valid.length !== prev.length ? valid : prev;
+        });
+
+        setSelectedModels((prev) => {
+            const valid = prev.filter(m => 
+                filteredCatalog.some(e => e.brand === m.brand && e.model === m.model)
+            );
+            return valid.length !== prev.length ? valid : prev;
+        });
+
+        setSelectedBrands((prev) => {
+            const valid = prev.filter(b => availableBrandsInFilter.has(b));
+            return valid.length !== prev.length ? valid : prev;
+        });
+
+    }, [filteredCatalog, availableBrandsInFilter, dataLoaded]);
+
     const allBrands = useMemo(() => {
         const brands = Array.from(new Set(catalog.map((e) => e.brand)));
         return brands.sort((a, b) => {

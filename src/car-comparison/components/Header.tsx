@@ -1,21 +1,22 @@
 // src/components/Header.tsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, BarChart3, GitCompare, ArrowLeft, Layers, Bot, Sliders, ClipboardList } from 'lucide-react';
+import { LogOut, BarChart3, GitCompare, ArrowLeft, Layers, Bot, Sliders, ClipboardList, LayoutGrid } from 'lucide-react';
 import logo from '../Images/amlgolabslogowhite.png';
 import FeedbackButton from '../../shared/FeedbackButton';
 
 interface HeaderProps {
-  currentPage?: 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master' | 'master-log';
-  onPageChange?: (page: 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master' | 'master-log') => void;
+  currentPage?: 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master' | 'master-log' | 'applicability';
+  onPageChange?: (page: 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master' | 'master-log' | 'applicability') => void;
 }
 
 const NAV_TABS = [
-  { key: 'master'     as const, label: 'MASTER',               Icon: Sliders    },
-  { key: 'comparison' as const, label: 'Feature Comparison',  Icon: GitCompare },
-  { key: 'pricing'    as const, label: 'Pricing Comparison',  Icon: BarChart3  },
-  { key: 'stackup'    as const, label: 'Feature Stack-Up',    Icon: Layers     },
-  { key: 'chatbot'    as const, label: 'Chatbot',             Icon: Bot        },
+  { key: 'master'        as const, label: 'MASTER',                      Icon: Sliders     },
+  { key: 'comparison'   as const, label: 'Feature Comparison',           Icon: GitCompare  },
+  { key: 'pricing'      as const, label: 'Pricing Comparison',           Icon: BarChart3   },
+  { key: 'stackup'      as const, label: 'Feature Stack-Up',             Icon: Layers      },
+  { key: 'chatbot'      as const, label: 'Chatbot',                      Icon: Bot         },
+  { key: 'applicability'as const, label: 'Feature Wise Applicability',   Icon: LayoutGrid  },
 ];
 
 const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChange }) => {

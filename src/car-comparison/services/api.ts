@@ -931,3 +931,42 @@ export const getNMVariantFeatures = async (nmVariantId: string) => {
   if (!res.ok) throw new Error(data.detail || 'Failed to fetch features');
   return data; // { success: true, data: [ { feature_id, feature_value, cost_delta, sub_variant_values, copied_from_variant_class, ... } ] }
 };
+
+// ─── Feature Wise Applicability APIs ───────────────────────────────────────
+
+export const fetchBrandsList = async (): Promise<{ id: string; name: string }[]> => {
+  const res = await fetch(`${BASE_API}/api/brands-list`);
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error('Failed to fetch brands');
+  return data.data;
+};
+
+export const fetchFeaturesList = async (): Promise<{ feature_id: string; feature_name: string; category: string }[]> => {
+  const res = await fetch(`${BASE_API}/api/features-list`);
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error('Failed to fetch features list');
+  return data.data;
+};
+
+export interface FeatureApplicabilityRow {
+  body_type: string;
+  sub_body_type: string;
+  brand: string;
+  model: string;
+  variant_class: string;
+  has_feature: boolean;
+  sub_variants: { name: string; value: string }[];
+}
+
+export const fetchFeatureApplicability = async (
+  featureId: string | undefined,
+  brandNames: string[]
+): Promise<FeatureApplicabilityRow[]> => {
+  const params = new URLSearchParams();
+  if (featureId) params.set('feature_id', featureId);
+  if (brandNames.length > 0) params.set('brand_names', brandNames.join(','));
+  const res = await fetch(`${BASE_API}/api/feature-applicability?${params.toString()}`);
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error('Failed to fetch feature applicability');
+  return data.data;
+};
