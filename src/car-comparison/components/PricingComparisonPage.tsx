@@ -1029,7 +1029,24 @@ const VariantModal = ({
 /* ================= MAIN COMPONENT ================= */
 
 const PriceComparisonPage = ({ initialSelections }: PriceComparisonPageProps) => {
-  const [localSelections, setLocalSelections] = useState<SelectionState[]>(() => initialSelections || []);
+  const [localSelections, setLocalSelections] = useState<SelectionState[]>(() => {
+    const saved = sessionStorage.getItem('pricing_selections');
+    return saved ? JSON.parse(saved) : (initialSelections || []);
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem('pricing_selections', JSON.stringify(localSelections));
+  }, [localSelections]);
+
+  useEffect(() => {
+    const fcUpdated = sessionStorage.getItem('fc_filters_updated_at');
+    const pricingSync = sessionStorage.getItem('pricing_last_sync_time_selections');
+    
+    if (initialSelections && fcUpdated && fcUpdated !== pricingSync) {
+      setLocalSelections(initialSelections);
+      sessionStorage.setItem('pricing_last_sync_time_selections', fcUpdated);
+    }
+  }, [initialSelections]);
 
   const [globalViewMode, setGlobalViewMode] = useState<'chart' | 'table'>(() => {
     const saved = sessionStorage.getItem('pricingViewMode');
@@ -1171,6 +1188,7 @@ const PriceComparisonPage = ({ initialSelections }: PriceComparisonPageProps) =>
           setSelections={setLocalSelections}
           showCompareButton={false}           // 👈 NEW — button hidden, graph already live-renders
           onFiltersChange={handleFiltersChange} // 👈 NEW — price slider live-syncs without Compare
+          pageContext="pricing"
         />
 
         <main className="flex-1 flex flex-col overflow-hidden relative bg-slate-100 p-2 md:p-4 gap-2">

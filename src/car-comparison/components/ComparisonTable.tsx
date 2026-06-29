@@ -2191,12 +2191,13 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data, selections }) =
             const key = `${nmCol.nm_variant_id}::${f.feature_id}`;
             const newVal = f.feature_value ?? '';
             const newCost = f.cost_delta ?? 0;
+            const newIsEdited = f.is_edited ?? false;
             // Only update if it actually differs from what we just seeded
-            if (!next[key] || next[key].value !== newVal || next[key].cost_delta !== newCost) {
+            if (!next[key] || next[key].value !== newVal || next[key].cost_delta !== newCost || next[key].is_edited !== newIsEdited) {
               next[key] = {
                 value: newVal,
                 cost_delta: newCost,
-                is_edited: false,
+                is_edited: newIsEdited,
                 copied_from: f.copied_from_variant_class,
                 sub_variant_values: f.sub_variant_values ?? {},
               };
@@ -2276,6 +2277,19 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data, selections }) =
   const handlePaste = useCallback(async (targetNMCol: string, sourceCol: string) => {
     const nmCol = getNMData(targetNMCol);
     if (!nmCol) { alert(`NM variant data not found for "${targetNMCol}".`); return; }
+
+    const nmId = nmCol.nm_variant_id;
+    const copiedFromSource = (() => {
+      const localEntry = Object.entries(localNM).find(([k, fv]) => k.startsWith(`${nmId}::`) && fv.copied_from);
+      if (localEntry) return localEntry[1].copied_from;
+      return Object.values(nmCol.feature_values || {}).find(fv => fv.copied_from)?.copied_from ?? null;
+    })();
+
+    if (copiedFromSource) {
+      alert(`This column has already been copied from "${copiedFromSource}". Please delete/clear the existing features first using the trash icon.`);
+      return;
+    }
+
     const meta = variantMeta[sourceCol];
     if (!meta?.car_id) { alert(`No car_id found for "${sourceCol}".`); return; }
 
@@ -2774,11 +2788,21 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data, selections }) =
               // Copied-from: get from localNM first, then server
               const copiedFromSource = isNM
                 ? (() => {
-                  const localEntry = Object.entries(localNM).find(([k, fv]) => k.startsWith(`${nmId}::`) && fv.copied_from);
-                  if (localEntry) return localEntry[1].copied_from;
+                  const columnEntries = Object.entries(localNM).filter(([k]) => k.startsWith(`${nmId}::`));
+                  if (columnEntries.length > 0) {
+                    return columnEntries.find(([, fv]) => fv.copied_from)?.[1].copied_from ?? null;
+                  }
                   return Object.values(nmData?.feature_values || {}).find(fv => fv.copied_from)?.copied_from ?? null;
                 })()
                 : null;
+
+              const hasContent = isNM && (() => {
+                const columnEntries = Object.entries(localNM).filter(([k]) => k.startsWith(`${nmId}::`));
+                if (columnEntries.length > 0) {
+                  return columnEntries.some(([, fv]) => fv.value || fv.cost_delta !== 0 || fv.copied_from);
+                }
+                return Object.values(nmData?.feature_values || {}).some(fv => fv.value || fv.cost_delta !== 0 || fv.copied_from);
+              })();
 
               const displayName = isNM ? getColDisplayName(v) : (data?.base_variant_classes?.[v] ? `${v} (${data.base_variant_classes[v]})` : v);
 
@@ -2799,17 +2823,32 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data, selections }) =
                     )}
                     {/* Paste button — NM columns only */}
                     {isNM && (
-                      <button onClick={() => copiedCol && !pasting && handlePaste(v, copiedCol)} disabled={!copiedCol || pasting}
+                      <button 
+                        onClick={() => {
+                          if (copiedFromSource) {
+                            alert(`This column has already been copied from "${copiedFromSource}". Please delete/clear the existing features first using the trash icon.`);
+                            return;
+                          }
+                          copiedCol && !pasting && handlePaste(v, copiedCol);
+                        }} 
+                        disabled={!copiedCol || pasting}
                         className={`transition-all rounded-full p-1 shadow-sm
                           ${justPasted ? 'bg-emerald-400 text-white'
-                            : copiedCol ? 'bg-white text-indigo-700 hover:bg-indigo-50 animate-pulse'
+                            : copiedCol 
+                              ? copiedFromSource
+                                ? 'bg-white/40 text-slate-500 hover:bg-white/60 cursor-not-allowed'
+                                : 'bg-white text-indigo-700 hover:bg-indigo-50 animate-pulse'
                               : 'bg-black/10 text-white/50 cursor-not-allowed'}`}
-                        title={copiedCol ? `Paste "${copiedCol}" features here` : 'Copy a column first'}>
+                        title={copiedCol 
+                          ? copiedFromSource
+                            ? `Already copied from "${copiedFromSource}"`
+                            : `Paste "${copiedCol}" features here` 
+                          : 'Copy a column first'}>
                         {justPasted ? <Check size={10} /> : <ClipboardPaste size={10} />}
                       </button>
                     )}
                     {/* Clear — NM only, when features exist */}
-                    {isNM && (Object.keys(nmData?.feature_values || {}).length > 0 || Object.keys(localNM).some(k => k.startsWith(`${nmId}::`))) && (
+                    {isNM && hasContent && (
                       <button onClick={() => handleClearNMColumn(v)} disabled={isClearing} className="transition-all bg-red-500/70 hover:bg-red-600 rounded-full p-1 text-white shadow-sm" title="Clear all copied features">
                         {isClearing ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
                       </button>
@@ -2847,9 +2886,15 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data, selections }) =
                       </div>
                     )}
                     {isNM && copiedCol && !justPasted && (
-                      <div className="mt-1 text-[8px] font-bold bg-white/20 text-white px-1.5 py-0.5 rounded-sm flex items-center gap-1">
-                        <ClipboardPaste size={9} /> Tap to paste "{copiedCol.split(' - ').pop()}"
-                      </div>
+                      copiedFromSource ? (
+                        <div className="mt-1 text-[8px] font-bold bg-red-500/20 text-red-200 px-1.5 py-0.5 rounded-sm flex items-center gap-1 cursor-not-allowed" title="Already copied - clear first to paste new features">
+                          Already copied
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-[8px] font-bold bg-white/20 text-white px-1.5 py-0.5 rounded-sm flex items-center gap-1">
+                          <ClipboardPaste size={9} /> Tap to paste "{copiedCol.split(' - ').pop()}"
+                        </div>
+                      )
                     )}
                     {justPasted && (
                       <div className="mt-1 text-[8px] font-bold bg-emerald-500/80 text-white px-1.5 py-0.5 rounded-sm flex items-center gap-1">

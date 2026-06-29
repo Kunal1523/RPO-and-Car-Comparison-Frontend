@@ -20,9 +20,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronRight, ChevronLeft, Filter, Plus, X, Sparkles } from 'lucide-react';
 import { fetchFullCatalogPricing, CatalogEntry } from '../services/stackUpApi';
 import { StackUpSelection } from '../stackUpTypes';
+import { SelectionState } from '../types';
 
 interface StackUpSidebarProps {
     onSelectionChange: (selections: StackUpSelection[]) => void;
+    initialSelections?: SelectionState[];
 }
 
 const CUSTOM_PLAN_BRAND = 'NM';
@@ -53,7 +55,53 @@ const overlapsRange = (entry: CatalogEntry, min: number, max: number) => {
     return hi >= min && lo <= max;
 };
 
-const StackUpSidebar: React.FC<StackUpSidebarProps> = ({ onSelectionChange }) => {
+const StackUpSidebar: React.FC<StackUpSidebarProps> = ({ onSelectionChange, initialSelections }) => {
+    // Synchronize filters on initial render if fc has updated
+    const fcUpdated = sessionStorage.getItem('fc_filters_updated_at');
+    const stackupSync = sessionStorage.getItem('stackup_last_sync_time');
+    if (fcUpdated && fcUpdated !== stackupSync) {
+        // Sync all keys from fc to stackup
+        const mappings = {
+            fc_priceMin: 'stackup_priceMin',
+            fc_priceMax: 'stackup_priceMax',
+            fc_selectedBodyTypes: 'stackup_selectedBodyTypes',
+            fc_selectedBrands: 'stackup_selectedBrands',
+            fc_openDropdownBrands: 'stackup_openDropdownBrands',
+            fc_selectedModels: 'stackup_selectedModels'
+        };
+        Object.entries(mappings).forEach(([fcKey, suKey]) => {
+            const val = sessionStorage.getItem(fcKey);
+            if (val !== null) {
+                sessionStorage.setItem(suKey, val);
+            } else {
+                sessionStorage.removeItem(suKey);
+            }
+        });
+
+        // Also map selections
+        const fcSels = sessionStorage.getItem('app_currentSelections');
+        if (fcSels) {
+            try {
+                const parsed = JSON.parse(fcSels);
+                const mapped = parsed.map((sel: any) => {
+                    const isNM = !!sel.plan_id;
+                    return {
+                        source: isNM ? 'new_model' : 'production',
+                        brand: sel.brand,
+                        model: sel.model,
+                        car_id: `${sel.brand}__${sel.model}`,
+                        variant_class: sel.variant,
+                        variant_id: sel.plan_id || sel.variant_id
+                    };
+                });
+                sessionStorage.setItem('stackup_selections', JSON.stringify(mapped));
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        sessionStorage.setItem('stackup_last_sync_time', fcUpdated);
+    }
+
     const [isOpen, setIsOpen] = useState<boolean>(true);
 
     const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
@@ -106,6 +154,49 @@ const StackUpSidebar: React.FC<StackUpSidebarProps> = ({ onSelectionChange }) =>
         sessionStorage.setItem('stackup_selectedModels', JSON.stringify(selectedModels));
         sessionStorage.setItem('stackup_selections', JSON.stringify(selections));
     }, [priceMin, priceMax, selectedBodyTypes, selectedBrands, openDropdownBrands, selectedModels, selections]);
+
+    // Also support dynamic sync on updates/mount if fc updated while mounted
+    useEffect(() => {
+        const fcUp = sessionStorage.getItem('fc_filters_updated_at');
+        const suSync = sessionStorage.getItem('stackup_last_sync_time');
+        if (fcUp && fcUp !== suSync) {
+            const pMin = sessionStorage.getItem('fc_priceMin');
+            if (pMin !== null) setPriceMin(parseFloat(pMin));
+            const pMax = sessionStorage.getItem('fc_priceMax');
+            if (pMax !== null) setPriceMax(parseFloat(pMax));
+            const bTypes = sessionStorage.getItem('fc_selectedBodyTypes');
+            if (bTypes !== null) setSelectedBodyTypes(JSON.parse(bTypes));
+            const brands = sessionStorage.getItem('fc_selectedBrands');
+            if (brands !== null) setSelectedBrands(JSON.parse(brands));
+            const openBrands = sessionStorage.getItem('fc_openDropdownBrands');
+            if (openBrands !== null) setOpenDropdownBrands(JSON.parse(openBrands));
+            const selModels = sessionStorage.getItem('fc_selectedModels');
+            if (selModels !== null) setSelectedModels(JSON.parse(selModels));
+
+            const fcSels = sessionStorage.getItem('app_currentSelections');
+            if (fcSels) {
+                try {
+                    const parsed = JSON.parse(fcSels);
+                    const mapped = parsed.map((sel: any) => {
+                        const isNM = !!sel.plan_id;
+                        return {
+                            source: isNM ? 'new_model' : 'production',
+                            brand: sel.brand,
+                            model: sel.model,
+                            car_id: `${sel.brand}__${sel.model}`,
+                            variant_class: sel.variant,
+                            variant_id: sel.plan_id || sel.variant_id
+                        };
+                    });
+                    setSelections(mapped);
+                    sessionStorage.setItem('stackup_selections', JSON.stringify(mapped));
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+            sessionStorage.setItem('stackup_last_sync_time', fcUp);
+        }
+    }, [catalog, initialSelections]);
 
     // ====================== Single bulk fetch ======================
     useEffect(() => {

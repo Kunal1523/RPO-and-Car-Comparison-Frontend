@@ -340,7 +340,7 @@ const App: React.FC = () => {
     return (
       <div className="flex flex-col h-screen bg-sky-50 overflow-hidden font-sans text-slate-900">
         <Header currentPage={currentPage} onPageChange={handlePageChange} />
-        <FeatureStackUpPage />
+        <FeatureStackUpPage initialSelections={currentSelections} />
       </div>
     );
   }
@@ -391,6 +391,7 @@ const App: React.FC = () => {
           isLoading={isLoading}
           selections={currentSelections}
           setSelections={setCurrentSelections}
+          pageContext="comparison"
         />
 
         {/* Main Content Area - FLEX COL, NO SCROLL on itself */}

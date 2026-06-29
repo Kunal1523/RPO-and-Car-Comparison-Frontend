@@ -573,6 +573,7 @@ interface SidebarProps {
   setSelections: React.Dispatch<React.SetStateAction<SelectionState[]>>;
   showCompareButton?: boolean;
   onFiltersChange?: (priceFilter: { min: number; max: number }) => void;
+  pageContext?: 'comparison' | 'pricing';
 }
 
 interface SidebarVariant {
@@ -599,26 +600,46 @@ const Sidebar: React.FC<SidebarProps> = ({
   setSelections,
   showCompareButton = true,
   onFiltersChange,
+  pageContext = 'comparison',
 }) => {
   const [allVariants, setAllVariants] = useState<SidebarVariant[]>([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [isOpen, setIsOpen] = useState<boolean>(true);
 
+  // Synchronize filters on initial render if pageContext is 'pricing'
+  const prefix = pageContext === 'pricing' ? 'pricing' : 'fc';
+  if (pageContext === 'pricing') {
+    const fcUpdated = sessionStorage.getItem('fc_filters_updated_at');
+    const pricingSync = sessionStorage.getItem('pricing_last_sync_time');
+    if (fcUpdated && fcUpdated !== pricingSync) {
+      const keys = ['priceMin', 'priceMax', 'selectedBodyTypes', 'selectedBrands', 'openDropdownBrands', 'selectedModels'];
+      keys.forEach(k => {
+        const fcVal = sessionStorage.getItem(`fc_${k}`);
+        if (fcVal !== null) {
+          sessionStorage.setItem(`pricing_${k}`, fcVal);
+        } else {
+          sessionStorage.removeItem(`pricing_${k}`);
+        }
+      });
+      sessionStorage.setItem('pricing_last_sync_time', fcUpdated || '');
+    }
+  }
+
   // Filters state
   const [priceMin, setPriceMin] = useState<number>(() => {
-    const saved = sessionStorage.getItem('fc_priceMin');
+    const saved = sessionStorage.getItem(`${prefix}_priceMin`);
     return saved ? parseFloat(saved) : 0;
   });
   const [priceMax, setPriceMax] = useState<number>(() => {
-    const saved = sessionStorage.getItem('fc_priceMax');
+    const saved = sessionStorage.getItem(`${prefix}_priceMax`);
     return saved ? parseFloat(saved) : 100;
   }); // Max 100 Lakhs initially
   const [selectedBodyTypes, setSelectedBodyTypes] = useState<string[]>(() => {
-    const saved = sessionStorage.getItem('fc_selectedBodyTypes');
+    const saved = sessionStorage.getItem(`${prefix}_selectedBodyTypes`);
     return saved ? JSON.parse(saved) : [];
   });
   const [selectedBrands, setSelectedBrands] = useState<string[]>(() => {
-    const saved = sessionStorage.getItem('fc_selectedBrands');
+    const saved = sessionStorage.getItem(`${prefix}_selectedBrands`);
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -629,23 +650,49 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   // Model dropdown state
   const [openDropdownBrands, setOpenDropdownBrands] = useState<string[]>(() => {
-    const saved = sessionStorage.getItem('fc_openDropdownBrands');
+    const saved = sessionStorage.getItem(`${prefix}_openDropdownBrands`);
     return saved ? JSON.parse(saved) : [];
   });
   const [selectedModels, setSelectedModels] = useState<Array<{ brand: string, model: string }>>(() => {
-    const saved = sessionStorage.getItem('fc_selectedModels');
+    const saved = sessionStorage.getItem(`${prefix}_selectedModels`);
     return saved ? JSON.parse(saved) : [];
   });
 
+  const prevSelectionsRef = React.useRef<SelectionState[]>(selections);
+
   // Persist all state
   useEffect(() => {
-    sessionStorage.setItem('fc_priceMin', priceMin.toString());
-    sessionStorage.setItem('fc_priceMax', priceMax.toString());
-    sessionStorage.setItem('fc_selectedBodyTypes', JSON.stringify(selectedBodyTypes));
-    sessionStorage.setItem('fc_selectedBrands', JSON.stringify(selectedBrands));
-    sessionStorage.setItem('fc_openDropdownBrands', JSON.stringify(openDropdownBrands));
-    sessionStorage.setItem('fc_selectedModels', JSON.stringify(selectedModels));
-  }, [priceMin, priceMax, selectedBodyTypes, selectedBrands, openDropdownBrands, selectedModels]);
+    const savedPriceMin = sessionStorage.getItem(`${prefix}_priceMin`);
+    const savedPriceMax = sessionStorage.getItem(`${prefix}_priceMax`);
+    const savedBodyTypes = sessionStorage.getItem(`${prefix}_selectedBodyTypes`);
+    const savedBrands = sessionStorage.getItem(`${prefix}_selectedBrands`);
+    const savedDropdownBrands = sessionStorage.getItem(`${prefix}_openDropdownBrands`);
+    const savedModels = sessionStorage.getItem(`${prefix}_selectedModels`);
+
+    const hasFiltersChanged = 
+      (savedPriceMin !== null && savedPriceMin !== priceMin.toString()) ||
+      (savedPriceMax !== null && savedPriceMax !== priceMax.toString()) ||
+      (savedBodyTypes !== null && savedBodyTypes !== JSON.stringify(selectedBodyTypes)) ||
+      (savedBrands !== null && savedBrands !== JSON.stringify(selectedBrands)) ||
+      (savedDropdownBrands !== null && savedDropdownBrands !== JSON.stringify(openDropdownBrands)) ||
+      (savedModels !== null && savedModels !== JSON.stringify(selectedModels));
+
+    const hasSelsChanged = JSON.stringify(prevSelectionsRef.current) !== JSON.stringify(selections);
+    prevSelectionsRef.current = selections;
+
+    const hasChanged = hasFiltersChanged || hasSelsChanged;
+
+    sessionStorage.setItem(`${prefix}_priceMin`, priceMin.toString());
+    sessionStorage.setItem(`${prefix}_priceMax`, priceMax.toString());
+    sessionStorage.setItem(`${prefix}_selectedBodyTypes`, JSON.stringify(selectedBodyTypes));
+    sessionStorage.setItem(`${prefix}_selectedBrands`, JSON.stringify(selectedBrands));
+    sessionStorage.setItem(`${prefix}_openDropdownBrands`, JSON.stringify(openDropdownBrands));
+    sessionStorage.setItem(`${prefix}_selectedModels`, JSON.stringify(selectedModels));
+
+    if (pageContext === 'comparison' && hasChanged) {
+      sessionStorage.setItem('fc_filters_updated_at', Date.now().toString());
+    }
+  }, [priceMin, priceMax, selectedBodyTypes, selectedBrands, openDropdownBrands, selectedModels, pageContext, prefix, selections]);
 
   useEffect(() => {
     const loadData = async () => {

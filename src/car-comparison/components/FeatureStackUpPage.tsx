@@ -17,6 +17,7 @@ import {
   StackUpFeatureRow,
   FeatureStackUpPref,
 } from '../stackUpTypes';
+import { SelectionState } from '../types';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -782,7 +783,11 @@ const ComparisonCard: React.FC<CompCardProps> = ({ compCard, allCards, mappingSt
 
 type StackTab = 'model' | 'comparison';
 
-const FeatureStackUpPage: React.FC = () => {
+interface FeatureStackUpPageProps {
+  initialSelections?: SelectionState[];
+}
+
+const FeatureStackUpPage: React.FC<FeatureStackUpPageProps> = ({ initialSelections }) => {
   // ── Tab state — persisted across page renders ──
   const [activeTab, setActiveTab] = useState<StackTab>(() => {
     return (sessionStorage.getItem('stackup_activeTab') as StackTab) || 'model';
@@ -894,7 +899,7 @@ const FeatureStackUpPage: React.FC = () => {
 
   return (
     <div className="flex h-screen font-sans text-slate-900 bg-[#c0ccd4] overflow-hidden">
-      <StackUpSidebar onSelectionChange={setSelections} />
+      <StackUpSidebar initialSelections={initialSelections} onSelectionChange={setSelections} />
 
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
 
