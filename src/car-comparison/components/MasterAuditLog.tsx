@@ -87,9 +87,9 @@ export const MasterAuditLog: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#f5f5f5] p-5 font-sans text-slate-800">
-      <div className="max-w-[1400px] mx-auto bg-white border border-[#ccc] rounded-sm shadow-sm p-5">
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#eee]">
+    <div className="flex-grow overflow-hidden bg-[#f5f5f5] p-5 font-sans text-slate-800 flex flex-col">
+      <div className="max-w-[1400px] w-full mx-auto bg-white border border-[#ccc] rounded-sm shadow-sm p-5 flex flex-col flex-1 overflow-hidden">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#eee] flex-shrink-0">
           <h2 className="text-lg font-bold text-[#0a385c]">Master Page Action Logs</h2>
           <button
             onClick={fetchLogs}
@@ -100,14 +100,14 @@ export const MasterAuditLog: React.FC = () => {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded-sm text-sm">
+          <div className="mb-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded-sm text-sm flex-shrink-0">
             {error}
           </div>
         )}
 
-        <div className="overflow-x-auto border border-[#bbb] rounded-sm custom-scrollbar">
+        <div className="flex-1 overflow-auto border border-[#bbb] rounded-sm custom-scrollbar min-h-0">
           <table className="w-full text-left border-collapse text-[12px]">
-            <thead className="bg-[#e2e2e2] sticky top-0">
+            <thead className="bg-[#e2e2e2] sticky top-0 z-10 shadow-sm">
               <tr>
                 <th className="border-b border-r border-[#bbb] px-3 py-2 font-bold whitespace-nowrap">Timestamp</th>
                 <th className="border-b border-r border-[#bbb] px-3 py-2 font-bold whitespace-nowrap">User</th>

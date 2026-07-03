@@ -2280,8 +2280,10 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data, selections }) =
 
     const nmId = nmCol.nm_variant_id;
     const copiedFromSource = (() => {
-      const localEntry = Object.entries(localNM).find(([k, fv]) => k.startsWith(`${nmId}::`) && fv.copied_from);
-      if (localEntry) return localEntry[1].copied_from;
+      const columnEntries = Object.entries(localNM).filter(([k]) => k.startsWith(`${nmId}::`));
+      if (columnEntries.length > 0) {
+        return columnEntries.find(([, fv]) => fv.copied_from)?.[1].copied_from ?? null;
+      }
       return Object.values(nmCol.feature_values || {}).find(fv => fv.copied_from)?.copied_from ?? null;
     })();
 
