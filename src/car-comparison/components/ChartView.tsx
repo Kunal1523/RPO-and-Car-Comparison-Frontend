@@ -948,12 +948,12 @@ const ChartView: React.FC<ChartViewProps> = ({
   const xSlotWidth = numCars > 0 ? innerWidth / numCars : innerWidth;
   const xCenter = (slot: number) => xSlotWidth * slot + xSlotWidth / 2;
 
-  // collision-avoidance: circle stays at TRUE price, only label shifts
+  // calculate positions and assign horizontal stagger to handle close/overlapping points
   const resolvedPoints = useMemo(() => {
     const groups = new Map<number, any[]>();
     rawPoints.forEach(p => {
       const trueY = yScale(p.price);
-      const point = { ...p, trueY, labelY: trueY };
+      const point = { ...p, trueY, stagger: 0 };
       if (!groups.has(p.carSlot)) groups.set(p.carSlot, []);
       groups.get(p.carSlot)!.push(point);
     });
@@ -961,24 +961,22 @@ const ChartView: React.FC<ChartViewProps> = ({
     const result: any[] = [];
     groups.forEach(group => {
       group.sort((a, b) => a.trueY - b.trueY);
-      for (let i = 1; i < group.length; i++) {
-        if (group[i].labelY - group[i - 1].labelY < MIN_LABEL_GAP) {
-          group[i].labelY = group[i - 1].labelY + MIN_LABEL_GAP;
+      
+      let lastY = -999;
+      let currentStagger = 0;
+      for (let i = 0; i < group.length; i++) {
+        if (group[i].trueY - lastY < 15) { // within 15px threshold
+          currentStagger += 1;
+        } else {
+          currentStagger = 0;
         }
-      }
-      const overflow = group.length ? group[group.length - 1].labelY - innerHeight : 0;
-      if (overflow > 0) {
-        for (let i = 0; i < group.length; i++) group[i].labelY -= overflow;
-        for (let i = 1; i < group.length; i++) {
-          if (group[i].labelY - group[i - 1].labelY < MIN_LABEL_GAP) {
-            group[i].labelY = group[i - 1].labelY + MIN_LABEL_GAP;
-          }
-        }
+        group[i].stagger = currentStagger;
+        lastY = group[i].trueY;
       }
       result.push(...group);
     });
     return result;
-  }, [rawPoints, yScale, innerHeight]);
+  }, [rawPoints, yScale]);
 
   const carGroups = useMemo(() => {
     if (!isCombinedMode) return [];
@@ -1039,7 +1037,7 @@ const ChartView: React.FC<ChartViewProps> = ({
       )}
 
       {/* Static, auto-fit chart — no zoom, no scroll needed */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden relative">
+      <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden relative custom-scrollbar">
         <svg width="100%" height={chartHeight} style={{ display: 'block' }}>
           <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
             {yTicks.map((t, i) => (
@@ -1092,10 +1090,9 @@ const ChartView: React.FC<ChartViewProps> = ({
             {resolvedPoints.map((p, idx) => {
               const cx = xCenter(p.carSlot);
               const circleY = p.trueY;
-              const labelY = p.labelY;
               const labelText = `${p.variant_name} (${formatLakhsTruncate(p.price)} L)`;
               const textWidth = labelText.length * 5.2 + 10;
-              const hasOffset = Math.abs(labelY - circleY) > 1;
+              const xOffset = 18 + (p.stagger || 0) * 28;
 
               return (
                 <g
@@ -1107,19 +1104,8 @@ const ChartView: React.FC<ChartViewProps> = ({
                 >
                   <circle cx={cx} cy={circleY} r={6} fill="white" stroke={p.carColor} strokeWidth={2} />
 
-                  {hasOffset && (
-                    <polyline
-                      points={`${cx},${circleY} ${cx + 10},${circleY} ${cx + 14},${labelY}`}
-                      fill="none"
-                      stroke={p.carColor}
-                      strokeWidth={1}
-                      strokeDasharray="2 2"
-                      opacity={0.7}
-                    />
-                  )}
-
-                  <rect x={cx + 18} y={labelY - 10} width={textWidth} height={20} fill="white" fillOpacity={0.95} stroke="#cbd5e1" strokeWidth={1} rx={4} />
-                  <text x={cx + 23} y={labelY + 1} fill="#334155" fontSize={9} fontWeight={600} textAnchor="start" dominantBaseline="middle">
+                  <rect x={cx + xOffset} y={circleY - 10} width={textWidth} height={20} fill="white" fillOpacity={0.95} stroke="#cbd5e1" strokeWidth={1} rx={4} />
+                  <text x={cx + xOffset + 5} y={circleY + 1} fill="#334155" fontSize={9} fontWeight={600} textAnchor="start" dominantBaseline="middle">
                     {labelText}
                   </text>
                 </g>

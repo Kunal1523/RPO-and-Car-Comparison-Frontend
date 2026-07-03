@@ -1237,7 +1237,7 @@ const PriceComparisonPage = ({ initialSelections }: PriceComparisonPageProps) =>
                 <p className="font-medium text-sm">Select at least 2 variants using the sidebar to view data.</p>
               </div>
             ) : globalViewMode === 'chart' ? (
-              <div className="flex-1 p-1">
+              <div className="flex-1 min-h-0 overflow-hidden p-1 flex flex-col">
                 <ChartView
                   rawPricing={allCarsData[0].pricing} // fallback if 1 car
                   chartColor={allCarsData[0].color}

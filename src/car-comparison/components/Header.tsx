@@ -89,66 +89,73 @@ const Header: React.FC<HeaderProps> = ({ currentPage = 'comparison', onPageChang
       </div>
 
       {/* ── NAV TABS ── */}
-      {onPageChange && (
-        <div
-          className="flex items-center justify-between px-5 border-t"
-          style={{ borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.18)' }}
-        >
-          {/* Tabs */}
-          <div className="flex items-center gap-0.5">
-            {NAV_TABS.map(({ key, label, Icon }) => {
-              const active = currentPage === key;
-              return (
+      {onPageChange && (() => {
+        const userStr = sessionStorage.getItem('manualLoginUser');
+        const userObj = userStr ? JSON.parse(userStr) : null;
+        const isGuest = userObj?.isGuest === true;
+        const filteredNavTabs = isGuest ? NAV_TABS.filter(t => t.key !== 'master') : NAV_TABS;
+
+        return (
+          <div
+            className="flex items-center justify-between px-5 border-t"
+            style={{ borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.18)' }}
+          >
+            {/* Tabs */}
+            <div className="flex items-center gap-0.5">
+              {filteredNavTabs.map(({ key, label, Icon }) => {
+                const active = currentPage === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => onPageChange(key)}
+                    className={`
+                      relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold
+                      transition-all duration-200 focus:outline-none rounded-t-md
+                      ${active
+                        ? 'text-white'
+                        : 'text-blue-200/70 hover:text-white/90'
+                      }
+                    `}
+                  >
+                    <Icon size={14} className={active ? 'text-white' : 'text-blue-300/70'} />
+                    {label}
+
+                    {/* Active underline indicator */}
+                    {active && (
+                      <span
+                        className="absolute bottom-0 left-0 right-0 h-[3px] rounded-t-full"
+                        style={{ background: 'linear-gradient(90deg, #60a5fa, #a78bfa)' }}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right slot (for injected controls & Log Button) */}
+            <div className="flex items-center gap-3">
+              <div id="header-action-bar" className="flex items-center gap-3" />
+              
+              {!isGuest && onPageChange && (
                 <button
-                  key={key}
-                  onClick={() => onPageChange(key)}
+                  onClick={() => onPageChange('master-log')}
                   className={`
-                    relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold
-                    transition-all duration-200 focus:outline-none rounded-t-md
-                    ${active
-                      ? 'text-white'
-                      : 'text-blue-200/70 hover:text-white/90'
+                    flex items-center gap-2 px-3 py-1.5 text-[13px] font-bold rounded-md shadow-sm
+                    transition-all duration-200 border
+                    ${currentPage === 'master-log'
+                      ? 'bg-yellow-400 text-slate-900 border-yellow-500 scale-105'
+                      : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30 hover:bg-yellow-400/40 hover:text-yellow-100'
                     }
                   `}
                 >
-                  <Icon size={14} className={active ? 'text-white' : 'text-blue-300/70'} />
-                  {label}
-
-                  {/* Active underline indicator */}
-                  {active && (
-                    <span
-                      className="absolute bottom-0 left-0 right-0 h-[3px] rounded-t-full"
-                      style={{ background: 'linear-gradient(90deg, #60a5fa, #a78bfa)' }}
-                    />
-                  )}
+                  <ClipboardList size={14} className={currentPage === 'master-log' ? 'text-slate-900' : 'text-yellow-300'} />
+                  <span>Log: Master Change</span>
                 </button>
-              );
-            })}
+              )}
+            </div>
           </div>
-
-          {/* Right slot (for injected controls & Log Button) */}
-          <div className="flex items-center gap-3">
-            <div id="header-action-bar" className="flex items-center gap-3" />
-            
-            {onPageChange && (
-              <button
-                onClick={() => onPageChange('master-log')}
-                className={`
-                  flex items-center gap-2 px-3 py-1.5 text-[13px] font-bold rounded-md shadow-sm
-                  transition-all duration-200 border
-                  ${currentPage === 'master-log'
-                    ? 'bg-yellow-400 text-slate-900 border-yellow-500 scale-105'
-                    : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30 hover:bg-yellow-400/40 hover:text-yellow-100'
-                  }
-                `}
-              >
-                <ClipboardList size={14} className={currentPage === 'master-log' ? 'text-slate-900' : 'text-yellow-300'} />
-                <span>Log: Master Change</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+        );
+      })()}
     </header>
   );
 };

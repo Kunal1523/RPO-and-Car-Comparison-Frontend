@@ -751,6 +751,43 @@ const Sidebar: React.FC<SidebarProps> = ({
     setModalBrand('');
   };
 
+  const selectAllVariants = () => {
+    setSelections(prev => {
+      const otherSelections = prev.filter(s => {
+        return !(s.brand === modalBrand && s.model === modalModel);
+      });
+      
+      const newSels = activeVariants.map(v => {
+        const plan_id = modalBrand === 'NM' ? v.variantId : undefined;
+        return {
+          brand: modalBrand,
+          model: modalModel,
+          version: v.version,
+          variant: v.name,
+          variant_id: v.variantId,
+          plan_id
+        };
+      });
+      
+      const nmPlanIds = new Set(newSels.map(x => x.plan_id).filter(Boolean) as string[]);
+      const filteredOthers = modalBrand === 'NM' 
+        ? otherSelections.filter(s => s.plan_id === undefined || !nmPlanIds.has(s.plan_id))
+        : otherSelections;
+
+      return [...filteredOthers, ...newSels];
+    });
+  };
+
+  const clearAllVariants = () => {
+    setSelections(prev => {
+      if (modalBrand === 'NM') {
+        const nmPlanIds = new Set(activeVariants.map(v => v.variantId));
+        return prev.filter(s => s.plan_id === undefined || !nmPlanIds.has(s.plan_id));
+      }
+      return prev.filter(s => !(s.brand === modalBrand && s.model === modalModel));
+    });
+  };
+
   const isVariantSelected = (brand: string, model: string, variant: string, version: string, plan_id?: string) => {
     if (brand === 'NM') return selections.some(s => s.plan_id === plan_id);
     return selections.some(s => s.brand === brand && s.model === model && s.variant === variant && s.version === version);
@@ -1219,7 +1256,23 @@ const Sidebar: React.FC<SidebarProps> = ({
               </table>
             </div>
 
-            <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end gap-3">
+            <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-between items-center">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={selectAllVariants}
+                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded text-xs transition-colors border border-blue-200"
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAllVariants}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded text-xs transition-colors border border-slate-250"
+                >
+                  Clear All
+                </button>
+              </div>
               <button onClick={closeVariantModal} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-medium rounded text-sm transition-colors">
                 Done
               </button>

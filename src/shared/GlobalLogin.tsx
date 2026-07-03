@@ -33,6 +33,18 @@ const USERS = [
         email: import.meta.env.VITE_EMAIL_3,
         password: import.meta.env.VITE_PASSWORD_3,
         name: 'msil User3'
+    },
+    {
+        email: import.meta.env.VITE_GUEST_EMAIL_1,
+        password: import.meta.env.VITE_GUEST_PASSWORD_1,
+        name: 'Guest User 1',
+        isGuest: true
+    },
+    {
+        email: import.meta.env.VITE_GUEST_EMAIL_2,
+        password: import.meta.env.VITE_GUEST_PASSWORD_2,
+        name: 'Guest User 2',
+        isGuest: true
     }
 ].filter(u => u.email && u.password);
 
@@ -53,7 +65,7 @@ const GlobalLogin: React.FC<GlobalLoginProps> = ({ onLoginSuccess }) => {
             if (validUser) {
                 // Shared login state for both apps
                 sessionStorage.setItem('isLoggedIn', 'true');
-                const user = { username: email, name: validUser.name, loginType: 'manual' };
+                const user = { username: email, name: validUser.name, loginType: 'manual', isGuest: !!validUser.isGuest };
                 sessionStorage.setItem('manualLoginUser', JSON.stringify(user));
                 onLoginSuccess();
             } else {

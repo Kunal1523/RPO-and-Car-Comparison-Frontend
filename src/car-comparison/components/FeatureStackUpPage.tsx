@@ -50,14 +50,12 @@ const COMP_COLORS = {
   addition: { bg: 'bg-[#dcfce7] border-[#bbf7d0]',      circleBg: 'bg-[#22c55e]', text: 'text-green-800',  label: 'Added',       hex: '#dcfce7' },
   deletion: { bg: 'bg-[#fee2e2] border-[#fecaca]',      circleBg: 'bg-[#ef4444]', text: 'text-red-800',    label: 'Deleted',     hex: '#fee2e2' },
   absent:   { bg: 'bg-[#ffedd5] border-[#fed7aa]',      circleBg: 'bg-[#f97316]', text: 'text-orange-800', label: 'Not in Base', hex: '#ffedd5' },
-  notExist: { bg: 'bg-[#f3f4f6] border-[#d1d5db]',      circleBg: 'bg-[#9ca3af]', text: 'text-gray-500',   label: 'Not exist at all', hex: '#f3f4f6' },
 };
 type CompColor = keyof typeof COMP_COLORS;
 
 function classify(compVal: string | undefined, baseVal: string | undefined, inBase: boolean): CompColor {
   const hC = !!compVal && compVal.trim() !== '' && compVal.toLowerCase() !== 'no' && compVal.toLowerCase() !== 'no information found';
   const hB = !!baseVal && baseVal.trim() !== '' && baseVal.toLowerCase() !== 'no' && baseVal.toLowerCase() !== 'no information found';
-  if (!hB && !hC) return 'notExist';
   if (!inBase && hC) return 'absent';
   if (hB && hC && compVal === baseVal) return 'same';
   if (hB && hC) return 'change';
@@ -540,13 +538,21 @@ const ComparisonBlock: React.FC<CompBlockProps> = ({ compVariant, baseVariant, l
   const baseFeatMap = new Map<string, string>();
   baseVariant.features.forEach((f) => baseFeatMap.set(f.feature_name.trim().toLowerCase(), f.value));
 
-  const mappedFeatures = compVariant.features.map(f => {
-    const fName = f.feature_name.trim().toLowerCase();
-    const bv2 = baseFeatMap.get(fName);
-    const inBase = targetFeatureNames.has(fName);
-    const color = classify(f.value, bv2, inBase);
-    return { f, color, baseVal: bv2 };
-  });
+  const mappedFeatures = compVariant.features
+    .map(f => {
+      const fName = f.feature_name.trim().toLowerCase();
+      const bv2 = baseFeatMap.get(fName);
+      const inBase = targetFeatureNames.has(fName);
+      const color = classify(f.value, bv2, inBase);
+      return { f, color, baseVal: bv2 };
+    })
+    .filter(r => {
+      const compVal = r.f.value;
+      const baseVal = r.baseVal;
+      const hC = !!compVal && compVal.trim() !== '' && compVal.toLowerCase() !== 'no' && compVal.toLowerCase() !== 'no information found';
+      const hB = !!baseVal && baseVal.trim() !== '' && baseVal.toLowerCase() !== 'no' && baseVal.toLowerCase() !== 'no information found';
+      return hC || hB;
+    });
 
   const shown = mappedFeatures.filter(r => activeFilters[r.color] && (showHidden ? r.f.is_hidden : !r.f.is_hidden));
   const diffCount = mappedFeatures.filter(r => r.color !== 'same').length;
@@ -608,7 +614,7 @@ const ComparisonCard: React.FC<CompCardProps> = ({ compCard, allCards, mappingSt
   const [showHidden, setShowHidden] = useState(false);
   const [showPriorityPopup, setShowPriorityPopup] = useState(false);
   const [activeFilters, setActiveFilters] = useState<Record<CompColor, boolean>>({
-    same: true, change: true, addition: true, deletion: true, absent: true, notExist: false
+    same: true, change: true, addition: true, deletion: true, absent: true
   });
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);

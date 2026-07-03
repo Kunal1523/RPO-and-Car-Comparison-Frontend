@@ -28,12 +28,28 @@ type PageView = 'comparison' | 'pricing' | 'stackup' | 'chatbot' | 'master' | 'm
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentPage, setCurrentPage] = useState<PageView>(() => {
-    return (sessionStorage.getItem('app_currentPage') as PageView) || 'master';
+    const saved = sessionStorage.getItem('app_currentPage') as PageView;
+    const userStr = sessionStorage.getItem('manualLoginUser');
+    const userObj = userStr ? JSON.parse(userStr) : null;
+    const isGuest = userObj?.isGuest === true;
+    if (isGuest && (saved === 'master' || saved === 'master-log' || !saved)) {
+      return 'comparison';
+    }
+    return saved || 'master';
   });
   const [isNewsSidebarOpen, setIsNewsSidebarOpen] = useState(false);
 
   useEffect(() => {
     sessionStorage.setItem('app_currentPage', currentPage);
+  }, [currentPage]);
+
+  useEffect(() => {
+    const userStr = sessionStorage.getItem('manualLoginUser');
+    const userObj = userStr ? JSON.parse(userStr) : null;
+    const isGuest = userObj?.isGuest === true;
+    if (isGuest && (currentPage === 'master' || currentPage === 'master-log')) {
+      setCurrentPage('comparison');
+    }
   }, [currentPage]);
 
   useEffect(() => {
@@ -99,14 +115,19 @@ const App: React.FC = () => {
     }
   }, [currentSelections, comparisonData, isLoading]);
 
-  // ✅ UPDATED: Fetch news only for unique car models
+  // ✅ UPDATED: Fetch news only for unique car models (excluding CUSTOM_PLAN and internal NM models)
   useEffect(() => {
     const fetchNews = async () => {
       // Get unique car models from all selections
       const uniqueModels = Array.from(
         new Set(
           currentSelections
-            .map(sel => sel.brand === 'CUSTOM_PLAN' ? null : sel.model)
+            .filter(sel => {
+              const b = (sel.brand || '').trim().toUpperCase();
+              const m = (sel.model || '').trim().toUpperCase();
+              return b !== 'CUSTOM_PLAN' && b !== 'NM' && !b.includes('NM') && !m.startsWith('NM');
+            })
+            .map(sel => sel.model)
             .filter((model): model is string => Boolean(model && model.trim() !== ''))
         )
       );

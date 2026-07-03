@@ -357,6 +357,34 @@ const StackUpSidebar: React.FC<StackUpSidebarProps> = ({ onSelectionChange, init
         return selections.some((s) => s.car_id === carId && s.variant_class === variantClass);
     };
 
+    const selectAllVariants = () => {
+        setSelections((prev) => {
+            const carId = makeCarId(modalBrand, modalModel);
+            const otherSelections = prev.filter((s) => s.car_id !== carId);
+            const newSels = activeVariantRows.map((row) => ({
+                source: modalBrand === CUSTOM_PLAN_BRAND ? ('new_model' as const) : ('production' as const),
+                brand: modalBrand,
+                model: modalModel,
+                car_id: carId,
+                variant_class: row.variant_class,
+                variant_id: row.variant_id,
+            }));
+            
+            if (!isModelSelected(modalBrand, modalModel)) {
+                setSelectedModels((prevModels) => [...prevModels, { brand: modalBrand, model: modalModel }]);
+            }
+            
+            return [...otherSelections, ...newSels];
+        });
+    };
+
+    const clearAllVariants = () => {
+        setSelections((prev) => {
+            const carId = makeCarId(modalBrand, modalModel);
+            return prev.filter((s) => s.car_id !== carId);
+        });
+    };
+
     const toggleVariantSelection = (brand: string, model: string, row: VariantRow) => {
         const carId = makeCarId(brand, model);
         const isSelected = isVariantSelected(brand, model, row.variant_class);
@@ -815,7 +843,23 @@ const StackUpSidebar: React.FC<StackUpSidebarProps> = ({ onSelectionChange, init
                             </table>
                         </div>
 
-                        <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end gap-3">
+                        <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-between items-center">
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={selectAllVariants}
+                                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded text-xs transition-colors border border-blue-200"
+                                >
+                                    Select All
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={clearAllVariants}
+                                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded text-xs transition-colors border border-slate-250"
+                                >
+                                    Clear All
+                                </button>
+                            </div>
                             <button
                                 onClick={closeVariantModal}
                                 className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-medium rounded text-sm transition-colors"
