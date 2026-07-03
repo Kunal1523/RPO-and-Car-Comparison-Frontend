@@ -422,9 +422,10 @@ interface MappingPopupProps {
   mappingState: { targetModelKey: string; map: Record<string, string> };
   onSave: (targetModelKey: string, map: Record<string, string>) => void;
   onClose: () => void;
+  selections: StackUpSelection[];
 }
 
-const MappingPopup: React.FC<MappingPopupProps> = ({ compCard, allCards, mappingState, onSave, onClose }) => {
+const MappingPopup: React.FC<MappingPopupProps> = ({ compCard, allCards, mappingState, onSave, onClose, selections }) => {
   const [targetModelKey, setTargetModelKey] = useState<string>(mappingState.targetModelKey);
   const [localMap, setLocalMap] = useState<Record<string, string>>({ ...mappingState.map });
 
@@ -432,6 +433,9 @@ const MappingPopup: React.FC<MappingPopupProps> = ({ compCard, allCards, mapping
   
   const targetCard = allCards.find(c => c.model_key === targetModelKey);
   const availableTargets = allCards.filter(c => c.model_key !== compCard.model_key);
+
+  const compVariants = selections.filter(sel => `${sel.source}__${sel.car_id}` === compCard.model_key);
+  const targetVariants = targetCard ? selections.filter(sel => `${sel.source}__${sel.car_id}` === targetCard.model_key) : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -473,10 +477,11 @@ const MappingPopup: React.FC<MappingPopupProps> = ({ compCard, allCards, mapping
         {targetCard ? (
           <div className="flex justify-center mb-6">
             <div className="flex flex-col gap-2">
-              {compCard.variant_blocks.map((cv) => {
-                const currentBase = localMap[cv.variant_id] || '';
+              {compVariants.map((cv) => {
+                const cvId = cv.variant_id || cv.variant_class;
+                const currentBase = localMap[cvId] || '';
                 return (
-                  <div key={cv.variant_id} className="flex items-center gap-4">
+                  <div key={cvId} className="flex items-center gap-4">
                     <div className="w-16 bg-[#679ba1] text-slate-900 font-bold py-2 rounded text-center text-[13px] shadow-sm">
                       {cv.variant_class}
                     </div>
@@ -484,14 +489,17 @@ const MappingPopup: React.FC<MappingPopupProps> = ({ compCard, allCards, mapping
                     <div className="relative w-16">
                       <select
                         value={currentBase}
-                        onChange={(e) => setMap(cv.variant_id, e.target.value)}
+                        onChange={(e) => setMap(cvId, e.target.value)}
                         className="w-full appearance-none text-[13px] font-bold rounded py-2 text-center outline-none cursor-pointer shadow-sm"
                         style={{ background: '#679ba1', color: '#1e293b' }}
                       >
                         <option value="">—</option>
-                        {targetCard.variant_blocks.map((bv) => (
-                          <option key={bv.variant_id} value={bv.variant_id}>{bv.variant_class}</option>
-                        ))}
+                        {targetVariants.map((bv) => {
+                          const bvId = bv.variant_id || bv.variant_class;
+                          return (
+                            <option key={bvId} value={bvId}>{bv.variant_class}</option>
+                          );
+                        })}
                       </select>
                       {!currentBase && <ChevronDown size={12} className="absolute right-1 top-[10px] pointer-events-none text-slate-700" />}
                     </div>
@@ -607,9 +615,10 @@ interface CompCardProps {
   mappingState: { targetModelKey: string; map: Record<string, string> };
   onMappingUpdate: (targetKey: string, map: Record<string, string>) => void;
   onCardUpdate: (c: ModelStackCard) => void;
+  selections: StackUpSelection[];
 }
 
-const ComparisonCard: React.FC<CompCardProps> = ({ compCard, allCards, mappingState, onMappingUpdate, onCardUpdate }) => {
+const ComparisonCard: React.FC<CompCardProps> = ({ compCard, allCards, mappingState, onMappingUpdate, onCardUpdate, selections }) => {
   const [showPopup, setShowPopup] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [showPriorityPopup, setShowPriorityPopup] = useState(false);
@@ -755,6 +764,7 @@ const ComparisonCard: React.FC<CompCardProps> = ({ compCard, allCards, mappingSt
           mappingState={mappingState}
           onSave={onMappingUpdate}
           onClose={() => setShowPopup(false)}
+          selections={selections}
         />
       )}
 
@@ -1023,6 +1033,7 @@ const FeatureStackUpPage: React.FC<FeatureStackUpPageProps> = ({ initialSelectio
                       mappingState={modelMapping}
                       onMappingUpdate={(tk, m) => setCompMappings((prev) => ({ ...prev, [card.model_key]: { targetModelKey: tk, map: m } }))}
                       onCardUpdate={updateCard}
+                      selections={selections}
                     />
                   );
                 })}

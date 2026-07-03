@@ -2280,11 +2280,17 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data, selections }) =
 
     const nmId = nmCol.nm_variant_id;
     const copiedFromSource = (() => {
-      const columnEntries = Object.entries(localNM).filter(([k]) => k.startsWith(`${nmId}::`));
+      const columnEntries = Object.entries(localNM).filter(([k]) => k.toLowerCase().startsWith(`${nmId.toLowerCase()}::`));
       if (columnEntries.length > 0) {
-        return columnEntries.find(([, fv]) => fv.copied_from)?.[1].copied_from ?? null;
+        // If there's no actual modified feature content in localNM, treat it as not copied yet
+        const hasActualLocalContent = columnEntries.some(([, fv]) => fv.value || fv.cost_delta !== 0);
+        if (!hasActualLocalContent) return null;
+        return columnEntries.find(([, fv]) => fv.copied_from)?.[1]?.copied_from ?? null;
       }
-      return Object.values(nmCol.feature_values || {}).find(fv => fv.copied_from)?.copied_from ?? null;
+      const serverFeatures = Object.values(nmCol.feature_values || {});
+      const hasActualServerContent = serverFeatures.some(fv => fv.value || fv.cost_delta !== 0);
+      if (!hasActualServerContent) return null;
+      return serverFeatures.find(fv => fv.copied_from)?.copied_from ?? null;
     })();
 
     if (copiedFromSource) {
@@ -2350,10 +2356,10 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data, selections }) =
         Object.keys(nmCol.feature_values || {}).forEach(fid => {
            next[`${nmCol.nm_variant_id}::${fid}`] = { value: '', cost_delta: 0, is_edited: false, copied_from: null, sub_variant_values: {} };
         });
-        // Reset any local overrides
-        const prefix = `${nmCol.nm_variant_id}::`;
+        // Reset any local overrides (case-insensitive to be safe)
+        const prefix = `${nmCol.nm_variant_id.toLowerCase()}::`;
         Object.keys(next).forEach(k => { 
-           if (k.startsWith(prefix)) {
+           if (k.toLowerCase().startsWith(prefix)) {
               next[k] = { value: '', cost_delta: 0, is_edited: false, copied_from: null, sub_variant_values: {} };
            } 
         });
@@ -2787,24 +2793,24 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({ data, selections }) =
               const nmId = nmData?.nm_variant_id ?? '';
               const costTotal = nmCostTotals[v] ?? 0;
 
-              // Copied-from: get from localNM first, then server
-              const copiedFromSource = isNM
-                ? (() => {
-                  const columnEntries = Object.entries(localNM).filter(([k]) => k.startsWith(`${nmId}::`));
-                  if (columnEntries.length > 0) {
-                    return columnEntries.find(([, fv]) => fv.copied_from)?.[1].copied_from ?? null;
-                  }
-                  return Object.values(nmData?.feature_values || {}).find(fv => fv.copied_from)?.copied_from ?? null;
-                })()
-                : null;
-
               const hasContent = isNM && (() => {
-                const columnEntries = Object.entries(localNM).filter(([k]) => k.startsWith(`${nmId}::`));
+                const columnEntries = Object.entries(localNM).filter(([k]) => k.toLowerCase().startsWith(`${nmId.toLowerCase()}::`));
                 if (columnEntries.length > 0) {
                   return columnEntries.some(([, fv]) => fv.value || fv.cost_delta !== 0 || fv.copied_from);
                 }
                 return Object.values(nmData?.feature_values || {}).some(fv => fv.value || fv.cost_delta !== 0 || fv.copied_from);
               })();
+
+              // Copied-from: get from localNM first, then server (only if column has content)
+              const copiedFromSource = (isNM && hasContent)
+                ? (() => {
+                  const columnEntries = Object.entries(localNM).filter(([k]) => k.toLowerCase().startsWith(`${nmId.toLowerCase()}::`));
+                  if (columnEntries.length > 0) {
+                    return columnEntries.find(([, fv]) => fv.copied_from)?.[1]?.copied_from ?? null;
+                  }
+                  return Object.values(nmData?.feature_values || {}).find(fv => fv.copied_from)?.copied_from ?? null;
+                })()
+                : null;
 
               const displayName = isNM ? getColDisplayName(v) : (data?.base_variant_classes?.[v] ? `${v} (${data.base_variant_classes[v]})` : v);
 
