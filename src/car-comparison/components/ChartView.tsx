@@ -1092,7 +1092,9 @@ const ChartView: React.FC<ChartViewProps> = ({
               const circleY = p.trueY;
               const labelText = `${p.variant_name} (${formatLakhsTruncate(p.price)} L)`;
               const textWidth = labelText.length * 5.2 + 10;
-              const xOffset = 18 + (p.stagger || 0) * 28;
+              const stagger = p.stagger || 0;
+              const xOffset = 18 + (2 - Math.min(2, stagger)) * 8;
+              const yOffset = circleY - 10 + (Math.min(2, stagger) - 1) * 4;
 
               return (
                 <g
@@ -1104,8 +1106,8 @@ const ChartView: React.FC<ChartViewProps> = ({
                 >
                   <circle cx={cx} cy={circleY} r={6} fill="white" stroke={p.carColor} strokeWidth={2} />
 
-                  <rect x={cx + xOffset} y={circleY - 10} width={textWidth} height={20} fill="white" fillOpacity={0.95} stroke="#cbd5e1" strokeWidth={1} rx={4} />
-                  <text x={cx + xOffset + 5} y={circleY + 1} fill="#334155" fontSize={9} fontWeight={600} textAnchor="start" dominantBaseline="middle">
+                  <rect x={cx + xOffset} y={yOffset} width={textWidth} height={20} fill="white" fillOpacity={0.95} stroke="#cbd5e1" strokeWidth={1} rx={4} />
+                  <text x={cx + xOffset + 5} y={yOffset + 11} fill="#334155" fontSize={9} fontWeight={600} textAnchor="start" dominantBaseline="middle">
                     {labelText}
                   </text>
                 </g>
